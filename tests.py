@@ -12,18 +12,27 @@ def test_palm_matching():
 
 
 def test_cl_class():
-    import field_class
-    new_cl = field_class.TheoryCl(30)
+    import grf_classes
+    new_cl = grf_classes.TheoryCl(30)
     print(new_cl.ne,len(new_cl.ne))
     assert np.allclose(new_cl.ee,np.zeros(31)), 'Something wrong with zero Cl assignment'
 
 def test_cov_xi():
-    import setup_cov,field_class
-    covs = np.load('precalc/cov_xip_l30_n256_circ1000.npz')
-    kids55_cl = field_class.TheoryCl(30,path='Cl_3x2pt_kids55.txt')
-    circ_mask = field_class.SphereMask([2],circmaskattr=(1000,256),lmax=30) # should complain if wpm_arr is None
+    import setup_cov,grf_classes
+    covs = np.load('../corrfunc_distr/cov_xip_l10_n256_circ1000.npz')
+    cov_xip = covs['cov']
+    kids55_cl = grf_classes.TheoryCl(10,path='Cl_3x2pt_kids55.txt')
+    circ_mask = grf_classes.SphereMask([2],circmaskattr=(1000,256),lmax=10) # should complain if wpm_arr is None
     
     test_cov = setup_cov.cov_xi(kids55_cl,mask_object=circ_mask,pos_m=True)
-    assert np.allclose(covs,test_cov), 'covariance calculation wrong'
+    assert np.array_equal(cov_xip,test_cov), 'covariance calculation wrong'
+    
+    nomask_cov = setup_cov.cov_xi(kids55_cl,pos_m=True)
+    diag = np.diag(nomask_cov)
+    diag_arr = np.diag(diag)
+    assert np.array_equal(nomask_cov,diag_arr)
+
+    # mask with only ones should yield the same covariance
+    
 
 test_cov_xi()
