@@ -1,0 +1,9 @@
+**/results
+**/plots
+**/__pycache__
+*.pdf
+*.obj
+*.txt
+*.npz
+*.fits
+.python_version
