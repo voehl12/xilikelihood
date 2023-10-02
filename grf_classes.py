@@ -24,6 +24,7 @@ class TheoryCl:
             self.path = path
             self.read_file()
             self.load_cl()
+            print('Loaded C_l with lmax = {:d}'.format(self.lmax))
         else:
             print('Warning: no theory Cl provided, calculating with Cl=0')
             self.set_cl_zero()
