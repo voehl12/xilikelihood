@@ -67,15 +67,21 @@ def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
                     cov_matrix[pos_y[0]:pos_y[1],pos_x[0]:pos_x[1]] = cov_2D
     else:
         cov_matrix = np.zeros((n_cov,n_cov))
+        diag = np.zeros(n_cov)
         for i in alm_inds:
-            t = int(np.floor(i/2))
+            t = int(np.floor(i/2)) # same c_l for Re and Im
             len_sub = lmax + 1
             cov_part = 0.5*np.repeat(theory_cell[t,t],len_sub)
             cov_part[::len_sub] *= 2
+            # alm with same m but different sign dont have vanishing covariance. 
+            print(len(diag))
             len_2D = len(cov_part)
-            pos_y = (len_2D * i,len_2D * (i + 1))
-            pos_x = pos_y
-            cov_matrix[pos_y[0]:pos_y[1],pos_x[0]:pos_x[1]] = cov_part
+            pos = (len_2D * i,len_2D * (i + 1))
+            
+            diag[pos[0]:pos[1]] = cov_part
+        assert len(diag) == n_cov
+        cov_matrix = np.diag(diag)
+            
 
     cov_matrix = np.where(np.isnan(cov_matrix), cov_matrix.T, cov_matrix) 
     assert np.allclose(cov_matrix, cov_matrix.T), 'Covariance matrix not symmetric'   
