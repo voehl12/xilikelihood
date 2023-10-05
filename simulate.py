@@ -20,7 +20,9 @@ def create_maps(cl=None,nside=256,lmax=None):
         maps = hp.sphtfunc.synfast(cl, nside,lmax=lmax,verbose=True)
         return maps
 
-def add_noise(maps,sigma_n,lmax=None):
+def add_noise(maps,sigma_n=None,lmax=None):
+    if not sigma_n:
+        return maps
     npix = hp.get_map_size(maps[0])
     rng = default_rng()
     if lmax:
@@ -110,26 +112,43 @@ def cl2xi(pcl_22,lmax=None,mask=None,norm_lm=False):
                             * wigners_m(t_in_deg,lmin) * (cl_short(lmin)[0] - cl_short(lmin)[1] - 2j * cl_short(lmin)[2]))
     return xi_p,xi_m
                                                                                       
-def prep_mask_treecorr(mask):
+def prep_cat_treecorr(nside,mask=None):
     """takes healpy mask, returns mask needed for treecorr simulation"""
-    all_pixs = np.arange(len(mask))
-    mask = np.array(1-mask,dtype=int)
-    masked_pixs = np.ma.array(all_pixs,mask=mask).compressed()
-    phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
-    tqu_mask = np.tile(mask,(3,1))
-    treecorr_mask = (tqu_mask,phi,thet)
-    return treecorr_mask
+    if not mask:
+        all_pix = np.arange(hp.nside2npix(nside))
+        phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
+        treecorr_mask_cat = (None,phi,thet)
+    else:
+        all_pixs = np.arange(len(mask))
+        mask = np.array(1-mask,dtype=int)
+        masked_pixs = np.ma.array(all_pixs,mask=mask).compressed()
+        phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
+        tqu_mask = np.tile(mask,(3,1))
+        treecorr_mask_cat = (tqu_mask,phi,thet)
+    return treecorr_mask_cat
 
-def prep_angles_treecorr():
+def prep_angles_treecorr(seps_in_deg):
+    if type(angles_in_deg[0]) is tuple:
+        bin_size = angles_in_deg[0][1] - angles_in_deg[0][0]
+        thetamin = angles_in_deg[0][0]
+        thetamax = angles_in_deg[-1][1]
+    else:
+        bin_size = theta[1] - theta[0]
+        nbins = np.floor((theta[-1] - theta[0]) / dtheta) + 1
+        thetamin, thetamax = theta[0]-0.5*dtheta, theta[-1]+0.5*dtheta
+    return thetamin, thetamax, bin_size
 
 
-def get_xi_treecorr(maps_TQU,bin_size,thetamin,thetamax,mask=None):
+
+def get_xi_treecorr(maps_TQU,treecorr_seps,cat_angles,mask_treecorr=None):
     """takes mapas and mask, returns treecorr correlation function"""
-    if mask:
-        (tqu_mask,phi,thet) = mask
+    """need to run cat and angles prep once before simulating"""
+    phi, thet = cat_angles
+    if mask_treecorr:
+        tqu_mask = mask_treecorr
         maps_TQU = np.ma.array(maps_TQU,mask=tqu_mask)
         maps_TQU = np.ma.compress_cols(masked_TQU)
-    
+    thetamin, thetamax, bin_size = treecorr_seps
     cat = treecorr.Catalog(ra=phi, dec=thet, g1=-maps_TQU[1], g2=maps_TQU[2], ra_units='deg', dec_units='deg') 
     gg = treecorr.GGCorrelation(min_sep=thetamin, max_sep=thetamax, bin_size=bin_size, bin_type='Linear', sep_units='deg',bin_slop=0)
     gg.process(cat)
@@ -138,39 +157,64 @@ def get_xi_treecorr(maps_TQU,bin_size,thetamin,thetamax,mask=None):
     angsep = gg.rnom
     return xi_p, xi_m, angsep
 
-def get_xi_namaster(maps_TQU,angles,mask=None,lmax=None):
+def get_xi_namaster(maps_TQU,seps_in_deg,mask=None,lmax=None,lmin=[0]):
     pcl_22 = get_pcl(maps_TQU,mask)
     xi_p, xi_m = cl2xi(pcl_22,lmax=lmax,mask=mask,norm_lm=norm_lm) # as functions of angle [degrees] and minimum multipole moment
     
     # as xi_p is already a function of t: could implement binned version here
     # check whether theta is a list of angles or tuples of angles
-    if type(theta[0]) is tuple:
-        t = np.empty(len(theta),dtype=object) # make an array of tuples
-        t[:] = theta # put boundary tuples into array in order to make a meshgrid
+    if type(seps_in_deg[0]) is tuple:
+        t = np.empty(len(seps_in_deg),dtype=object) # make an array of tuples
+        t[:] = seps_in_deg # put boundary tuples into array in order to make a meshgrid
         t_grid, l_grid = np.meshgrid(t,lmin)
         # xip/xim are defined as functions of angle in degrees, so integration bounds should be in degrees
         # found error: integration needs to be weighted by t.
         weight = lambda t: t
-        xip_integrand = lambda t, lm: xi_p(t,lm) * weight(t)
-        xim_integrand = lambda t, lm: xi_m(t,lm) * weight(t)
+        xip_integrand = lambda t_in_deg, lm: xi_p(t_in_deg,lm) * weight(t_in_deg)
+        xim_integrand = lambda t_in_deg, lm: xi_m(t_in_deg,lm) * weight(t_in_deg)
         xip_binned = lambda th, lm: quad(xip_integrand,th[0],th[1],args=(lm,))[0] / (0.5 * (np.radians(th[1])**2 - np.radians(th[0])**2))
         xim_binned = lambda th, lm: quad(xim_integrand,th[0],th[1],args=(lm,))[0] / (0.5 * (np.radians(th[1])**2 - np.radians(th[0])**2))
         xi_p_arr = list(map(xip_binned,t_grid.flat,l_grid.flat))
         xi_m_arr = list(map(xim_binned,t_grid.flat,l_grid.flat))
     else:
-        t_grid, l_grid = np.meshgrid(theta,lmin)
+        t_grid, l_grid = np.meshgrid(seps_in_deg,lmin)
         xi_p_arr = list(map(xi_p,t_grid.flat,l_grid.flat))
         xi_m_arr = list(map(xi_m,t_grid.flat,l_grid.flat))
     # is reshape correct? yes.
-    return i, np.real(np.array(xi_p_arr).reshape(len(lmin),len(theta))), np.real(np.array(xi_m_arr).reshape(len(lmin),len(theta)))
+    return np.real(np.array(xi_p_arr).reshape(len(lmin),len(seps_in_deg))), np.real(np.array(xi_m_arr).reshape(len(lmin),len(seps_in_deg)))
 
+
+
+def xi_sim(j,cl,seps_in_deg,lmin=[0],nside=256,mask=None,sigma_n=None,mode='namaster',batchsize=1,path='/cluster/scratch/veoehl/xi_sims/xi_lm60_circmask_kids55_binned_treecorr'):
+    xip,xim = [],[]
+            
+    if mode == 'namaster':
+        for i in range(batchsize): 
+                maps_TQU = create_maps((cl.tt,cl.te,cl.ee,cl.bb),lmax=cl.lmax,nside=nside)
+                maps = add_noise(sigma_n,lmax=cl.lmax)
+                res = get_xi_namaster(maps,seps_in_deg,mask)
+                xi_p, xi_m = res
+                xip.append(xi_p)
+                xim.append(xi_m)
+        np.savez(path+'/job{:d}.npz'.format(j),mode=mode,theta=seps_in_deg,lmin=lmin,xip=np.array(xip),xim=np.array(xim))
 
     
-def xi_sim(cell_object,mask_,angles=None,bins=None,sigma_n=None,mode='namaster'):
+    elif mode == 'treecorr':
+        tqu_mask,phi,thet = prep_cat_treecorr(nside,mask)
+        treecorr_seps = prep_angles_treecorr(seps_in_deg)
+        for i in range(batchsize): 
+            maps_TQU = create_maps((cl.tt,cl.te,cl.ee,cl.bb),lmax=cl.lmax,nside=nside)
+            maps = add_noise(sigma_n,lmax=cl.lmax)
+            res = get_xi_treecorr(maps,treecorr_seps,(phi,thet),tqu_mask)
+            xi_p, xi_m, angsep = res
+            xip.append(xi_p)
+            xim.append(xi_m)
+        np.savez(path+'/job{:d}.npz'.format(j),mode=mode,theta=angsep,xip=np.array(xip),xim=np.array(xim))
 
 
 
 
 
 
-def pcl_sim(cell_object,mask_file):
+
+def pcl_sim(cell_object,ells,mask_file):
