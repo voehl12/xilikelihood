@@ -1,5 +1,6 @@
 import numpy as np
 import healpy as hp 
+from scipy.integrate import quad
 
 def create_maps(cl=None,nside=256,lmax=None):
     """
