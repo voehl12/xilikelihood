@@ -3,6 +3,7 @@ import numpy as np
 import healpy as hp
 import wigner
 from scipy.special import eval_legendre
+from scipy.integrate import quad_vec
 
 
  
