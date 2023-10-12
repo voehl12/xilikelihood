@@ -57,13 +57,18 @@ class SphereMask:
         
         """
         self.name = name
-        if mask_path:
+        if mask_path is not None:
             self.mask_path = mask_path
             self.read_file()
             
-        elif circmaskattr:
-            self.area, self.nside = circmaskattr
-            self.create_circmask()
+        elif circmaskattr is not None:
+            if circmaskattr[0] == 'fullsky':
+                self.nside = circmaskattr[1]
+                self.fullsky_mask()
+            else:
+
+                self.area, self.nside = circmaskattr
+                self.create_circmask()
         else:
             raise RuntimeError('Please specify either a mask path or attributes for a circular mask')
 
@@ -103,6 +108,7 @@ class SphereMask:
         # self.area (calculate unmasked area from pixel sizes)
 
     def create_circmask(self):
+        # implement loading of such a mask, rename function to get_circmask
         npix = hp.nside2npix(self.nside)
         m = np.zeros(npix)
         vec = hp.ang2vec(np.pi / 2, 0)
@@ -114,7 +120,13 @@ class SphereMask:
         self.mask_path = 'circular_{:d}sqd_nside{:d}.fits'.format(self.area,self.nside)
         hp.fitsfunc.write_map(self.mask_path,m,overwrite=True)
         
-         
+    def fullsky_mask(self):
+        npix = hp.nside2npix(self.nside)
+        m = np.ones(npix)
+        self.mask = m
+        self.mask_path = 'fullsky_nside{:d}.fits'.format(self.nside)
+        hp.fitsfunc.write_map(self.mask_path,m,overwrite=True)
+
     def mask2wlm(self):
         """
         Calculate spherical harmonics of the mask. 
