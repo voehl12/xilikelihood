@@ -47,7 +47,7 @@ def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
     
 
     if mask_object:
-        if not mask_object.w_arr:
+        if mask_object.w_arr is None:
             mask_object.calc_w_arrs()
             del mask_object.wpm_arr
         w_arr = mask_object.w_arr
