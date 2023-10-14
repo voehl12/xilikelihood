@@ -37,14 +37,14 @@ def test_cov_xi():
     
     nomask_mask = grf_classes.SphereMask([2],circmaskattr=('fullsky',256),lmax=10)
     nomask_bruteforce_cov = setup_cov.cov_xi(kids55_cl,mask_object=nomask_mask,pos_m=True)
+    assert np.allclose(nomask_bruteforce_cov-nomask_cov,np.zeros_like(nomask_cov)), (nomask_bruteforce_cov-nomask_cov)[np.argwhere(np.invert((np.isclose(nomask_bruteforce_cov-nomask_cov,np.zeros_like(nomask_cov),atol=1e-10))))]
+
+    noise_cov = setup_cov.cov_xi(noise_sigma='default',pos_m=True,lmax=10)
     plt.figure()
-    plt.imshow(2*nomask_bruteforce_cov-nomask_cov)
-    plt.colorbar()
-    plt.figure()
-    plt.plot(kids55_cl.ee)
-    plt.show() 
-    
-    assert np.allclose(nomask_bruteforce_cov-nomask_cov,np.zeros_like(nomask_cov),atol=1e-10), (nomask_bruteforce_cov-nomask_cov)[np.argwhere(np.invert((np.isclose(nomask_bruteforce_cov-nomask_cov,np.zeros_like(nomask_cov),atol=1e-10))))]
+    plt.imshow(noise_cov)
+    plt.show()
+
+
 
     # next: constant C_l, pure noise implementation
 
