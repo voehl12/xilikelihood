@@ -7,10 +7,9 @@ import wigner
 from scipy.special import eval_legendre
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
+from helper_funcs import get_sigma_n
 
 
-def get_sigma_n(nside):
-    return 0.23 /np.sqrt(5 * hp.nside2pixarea(nside,degrees=True)*3600)
 
 def create_maps(cl=None,nside=256,lmax=None):
     """
