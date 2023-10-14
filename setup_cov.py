@@ -1,5 +1,6 @@
 import cov_calc 
 import numpy as np
+from helper_funcs import get_sigma_n
 
 
 def cell_cube(cl_object):
@@ -18,7 +19,7 @@ def noise_cl(sigma2,len_l):
     return sigma2*c_all
 
 
-def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
+def cov_xi(cl_object=None,mask_object=None,pos_m=False,noise_sigma=None,lmax=None):
     """
     order of alm follows structure of cov_4D - meaning first sort by E/B Re/Im, then by l and then by m
     only positive m part of covariance is needed (not so sure about this - current version: testing with all m) - way to only calculate this, just like wlmlpmp are only plugged into the sum for given l as needed
@@ -28,16 +29,23 @@ def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
     alm_kinds = ['ReE', 'ImE', 'ReB', 'ImB']
     alm_inds = cov_calc.match_alm_inds(alm_kinds)
     n_alm = len(alm_inds)
-
-
-    theory_cell = cell_cube(cl_object)
+    if cl_object is not None:
+        theory_cell = cell_cube(cl_object)
+        lmax = cl_object.lmax
+    elif noise_sigma is None:
+            raise RuntimeError('Specify either power spectrum or noise variance and lmax')
+    else:
+        theory_cell = np.zeros((3,3,lmax+1))
+    
 
     # take lmax from c_ell object
-    lmax = cl_object.lmax
+    
     lmin = 0
 
-    if noise_sigma:
-        theory_cell += noise_cl(noise_sigma**2,cl_object.len_l)
+    if noise_sigma is not None:
+        if noise_sigma == 'default':
+            noise_sigma = get_sigma_n()
+        theory_cell += noise_cl(noise_sigma**2,lmax+1)
 
     if pos_m:
         n_cov = n_alm * (lmax - lmin + 1) * (lmax + 1)
@@ -74,10 +82,14 @@ def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
             for i in alm_inds:
                 t = int(np.floor(i/2)) # same c_l for Re and Im
                 len_sub = lmax + 1
-                cov_part = 0.5*np.repeat(theory_cell[t,t],len_sub)
-                cov_part[::len_sub] *= 2
+                cell_ranges = [np.repeat(theory_cell[t,t,i],i+1) for i in range(lmax+1)]
+                full_ranges = [np.append(cell_ranges[i],np.zeros(lmax+1-len(cell_ranges[i]))) for i in range(len(cell_ranges))]
+                cov_part = 0.5*np.ndarray.flatten(np.array(full_ranges))
+                if i % 2 == 0:
+                    cov_part[::len_sub] *= 2
+                else:
+                    cov_part[::len_sub] *= 0
                 # alm with same m but different sign dont have vanishing covariance. This is only relevant if pos_m = False.
-                print(len(diag))
                 len_2D = len(cov_part)
                 pos = (len_2D * i,len_2D * (i + 1))
                 
@@ -92,11 +104,13 @@ def cov_xi(cl_object,mask_object=None,pos_m=False,noise_sigma=None):
 
 
 def save_cov():
+    print('saving covariance matrix...')
     # np.savez('cov_xip_l{:d}_n{:d}_none_nomask_noise.npz'.format(lmax,nside),cov=cov_xip_noise)
 
     pass
 
 def check_cov():
+    print('checking for covariance matrix...')
     #name='cov_xip_l{:d}_n{:d}_none_nomask.npz'.format(lmax,nside)):
     """ try:
         covs = np.load(name)
