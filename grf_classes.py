@@ -10,7 +10,7 @@ def save_maskobject(maskobject,dir=''):
     pickle.dump(maskobject, maskfile)
 
 class TheoryCl:
-    def __init__(self,lmax,path=None,theory_lmin=2):
+    def __init__(self,lmax,path=None,theory_lmin=2,clname='3x2pt_kids'):
         self.ell = np.arange(lmax+1)
         self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
@@ -22,6 +22,7 @@ class TheoryCl:
         self.path = None
         if path:
             self.path = path
+            self.name = clname
             self.read_file()
             self.load_cl()
             print('Loaded C_l with lmax = {:d}'.format(self.lmax))
@@ -42,7 +43,7 @@ class TheoryCl:
         self.nn = spectra[2]
 
     def set_cl_zero(self):
-        
+        self.name = 'none'
         self.ee = self.ne = self.nn = np.zeros(self.len_l)
 
 
@@ -51,12 +52,12 @@ class TheoryCl:
 class SphereMask:
     # possibility to use different masks for different fields? -> NO, that would defeat the purpose of a class for 
     # a given mask. Rather have several instances. 
-    def __init__(self,spins,mask_path=None,circmaskattr=None,prep_wlm=True,lmin=None,lmax=None,name='mask') -> None:
+    def __init__(self,spins,mask_path=None,circmaskattr=None,prep_wlm=True,lmin=None,lmax=None,maskname='mask') -> None:
         """
         circmaskattr: tuple (area,nside) for a circular mask
         
         """
-        self.name = name
+        self.name = maskname
         if mask_path is not None:
             self.mask_path = mask_path
             self.read_file()
@@ -65,6 +66,7 @@ class SphereMask:
             if circmaskattr[0] == 'fullsky':
                 self.nside = circmaskattr[1]
                 self.fullsky_mask()
+                
             else:
 
                 self.area, self.nside = circmaskattr
@@ -90,6 +92,7 @@ class SphereMask:
             self.lmax = lmax
         else:
             self.lmax = 3*self.nside - 1
+            print('Warning: lmax has been set to {:d}.'.format(self.lmax))
         if lmin:
             self.lmin = lmin
         else:
@@ -118,6 +121,7 @@ class SphereMask:
         self.mask = m
 
         self.mask_path = 'circular_{:d}sqd_nside{:d}.fits'.format(self.area,self.nside)
+        self.name = 'circ{:d}'.format(self.area)
         hp.fitsfunc.write_map(self.mask_path,m,overwrite=True)
         
     def fullsky_mask(self):
@@ -125,6 +129,7 @@ class SphereMask:
         m = np.ones(npix)
         self.mask = m
         self.mask_path = 'fullsky_nside{:d}.fits'.format(self.nside)
+        self.name = 'fullsky'
         hp.fitsfunc.write_map(self.mask_path,m,overwrite=True)
 
     def mask2wlm(self):
