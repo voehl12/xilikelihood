@@ -41,6 +41,7 @@ def add_noise(maps,sigma_n=None,lmax=None,testing=False):
     if lmax is not None:
         noise_map_q = limit_noise(rng.normal(size=(npix),scale=sigma_n),lmax)
         noise_map_u = limit_noise(rng.normal(size=(npix),scale=sigma_n),lmax)
+        # if i limit the noise, the measured C_ell will be smaller than the input variance, therefore the measured correlation function will be smaller than the predicted one. 
     else:
         noise_map_q = rng.normal(size=(npix),scale=sigma_n)
         noise_map_u = rng.normal(size=(npix),scale=sigma_n)
@@ -113,7 +114,7 @@ def cl2xi(pcl_22,lmax=None,mask=None,norm_lm=False):
     if mask is None:
         mask = np.ones(hp.nside2npix(256))
         # more precise than setting
-        #norm = lambda t_in_deg, lmin: 1 / (8 * np.pi)
+        #norm = lambda t_in_deg, lmin: 1 / (8 * np.pi**2)
 
     if norm_lm == True:
         w_lm = mask_to_wlm(mask)
