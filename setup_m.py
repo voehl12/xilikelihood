@@ -4,6 +4,7 @@ import healpy as hp
 import wigner
 from scipy.special import eval_legendre
 from scipy.integrate import quad_vec
+import os.path
 
 
  
@@ -32,7 +33,7 @@ def bin_prefactors(bin_in_deg,wl,kind='p'):
     
     norm_l = np.arange(len(wl))
     legendres = lambda t_in_rad: eval_legendre(norm_l,np.cos(t_in_rad))
-    norm = 1 / np.sum((2 * norm_l + 1) * legendres * wl) / (2 * np.pi)
+    norm = lambda t_in_rad: 1 / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * wl) / (2 * np.pi)
     if kind == 'p':
         wigners = lambda t_in_rad: wigner.wigner_dl(norm_l[0],norm_l[-1],2,2,t_in_rad)
     elif kind == 'm':
@@ -41,7 +42,7 @@ def bin_prefactors(bin_in_deg,wl,kind='p'):
         raise RuntimeError('correlation function kind needs to be p or m')
 
     
-    integrand = lambda t_in_rad: norm * wigners * t_in_rad
+    integrand = lambda t_in_rad: norm(t_in_rad) * wigners(t_in_rad) * t_in_rad
     # norm * d_l * weights 
     W = 0.5 * (t1**2 - t0**2) # weights already integrated
     A_ell = quad_vec(integrand,t0,t1)
@@ -67,6 +68,21 @@ def mmatrix_xi(t_in_deg,mask_object,kind='p'):
 
 
 def mmatrix_pcl():
+    # add zeros depending on overall lmax so can be used for inter l cross correlations as well
     pass
 
 
+def save_m(m,name):
+    print('saving M matrix...')
+    np.savez(name,matrix=m)
+
+
+def check_m(name):
+    print('checking for M matrix...')
+    return os.path.isfile(name)
+    
+
+def load_m(name):
+    print('loading M matrix...')
+    mfile = np.load(name)
+    return mfile['matrix']
