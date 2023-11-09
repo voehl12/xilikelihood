@@ -1,29 +1,377 @@
+import numpy as np
+import cov_calc, helper_funcs
+import scipy.stats as stats
+from scipy.integrate import quad_vec
+import wigner
+import os.path
+from grf_classes import TheoryCl, SphereMask
 
 
+class Cov(SphereMask, TheoryCl):
+    """
+    Class to calculate and store covariances for masked Gaussian random fields.
 
-class AlmCov(TheoryCl,SphereMask):
-    def __init__(self,):
-        super().__init__(lmax,spins,path=None,theory_lmin=2,clname='3x2pt_kids',mask_path=None,circmaskattr=None,prep_wlm=True,lmin=None,lmax=None,maskname='mask')
+    Attributes
+    ----------
+    cov_alm : 2D array
+        covariance matrix of pseudo alm (currently E and B modes)
+    ang_bins : list of tuples
+        angular bins for the correlation function under consideration (so far only one)
+    cov_xi : float
+        total (sample and shot noise) Gaussian covariance of a correlation function
+    cov_sn : float
+        shot noise Gaussian covariance of a correlation function
+    xi: float
+        mean of correlation function considered (only if Gaussian covariances are calculated)
+    exact_lmax : integer
+        maximum multipole moment to which calculations are taken to
+    __sigma_e : tuple or None
+        (sigma_epsilon,n_gal_per_arcmin2), single component intrinstic ellipticity dispersion, number density of galaxies.
+        if None: no shot noise. Private because it shouldn't be changed afterwards.
 
+    Methods
+    -------
+    cov_alm_xi(exact_lmax=None,pos_m=False)
+        Calculates 2D covariance matrix of pseudo alm cov_alm needed for likelihoods of spin-2 correlation functions or power spectra (E and B modes)
+    cov_xi_gaussian(lmin=0, noise_apo=False)
+        Calculates Gaussian (auto) covariance (shot noise and sample variance) of a xi_plus correlation function (so far no cross correlations implemented)
 
+    Parameters
+    ----------
+    SphereMask : _type_
+        _description_
+    TheoryCl : _type_
+        _description_
+    """
 
+    def __init__(
+        self,
+        exact_lmax,
+        spins,
+        lmax=None,
+        sigma_e=None,
+        clpath=None,
+        theory_lmin=2,
+        clname="3x2pt_kids_55",
+        maskpath=None,
+        circmaskattr=None,
+        prep_wlm=True,
+        lmin=None,
+        maskname="mask",
+    ):
+        SphereMask.__init__(
+            self,
+            exact_lmax=exact_lmax,
+            spins=spins,
+            maskpath=maskpath,
+            circmaskattr=circmaskattr,
+            prep_wlm=prep_wlm,
+            lmin=lmin,
+            maskname=maskname,
+        )
+        if lmax is None:
+            self.lmax = 3 * self.nside - 1
+        else:
+            self.lmax = lmax
+        TheoryCl.__init__(
+            self, lmax=self.lmax, clpath=clpath, theory_lmin=theory_lmin, clname=clname
+        )
 
+        self._sigma_e = sigma_e
+        self.set_noise_sigma()
+        self.ang_bins = None
 
+        self.set_covalmpath()
 
-    # could contain covariance for all pseudo alm kinds and all information about them. Then calculating covariance for xi or Cl will just 
-    # inherit from here. 
-    # different classes if either theoryCl (-> pure noise) or mask are not given?
+    @property
+    def sigma_e(self):
+        return self._sigma_e
 
+    @sigma_e.setter
+    def sigma_e(self, new_sigma):
+        if new_sigma is None or new_sigma != self._sigma_e:
+            self._sigma_e = new_sigma
+            self.set_covalmpath()
+            self.set_noise_sigma()
+            if hasattr(self, "cov_alm"):
+                self.cov_alm_xi(exact_lmax=self._exact_lmax, pos_m=True)
 
-    def cell_cube(self):
-        c_all = np.zeros((3,3,self.len_l))
-        c_all[0,0] = self.ee.copy()
-        c_all[0,2] = self.ne.copy()
-        c_all[2,0] = self.ne.copy()
-        c_all[2,2] = self.nn.copy()
+            if hasattr(self, "cov_xi"):
+                self.cov_xi_gaussian()
+
+            else:
+                print("Set new noise level, nothing to recalculate.")
+
+    @property
+    def exact_lmax(self):
+        return self._exact_lmax
+
+    @exact_lmax.setter
+    def exact_lmax(self, new_lmax):
+        if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
+            self._exact_lmax = new_lmax
+            self.set_covalmpath()
+            if hasattr(self, "cov_alm"):
+                self.cov_alm_xi(pos_m=True)
+            if hasattr(self, "wlm"):
+                self.mask2wlm()
+            if hasattr(self, "w_arr"):
+                self.calc_w_arrs()
+
+    def cell_cube(self, exact_lmax):
+        c_all = np.zeros((3, 3, exact_lmax + 1))
+        c_all[0, 0] = self.ee.copy()[: exact_lmax + 1]
+        c_all[0, 2] = self.ne.copy()[: exact_lmax + 1]
+        c_all[2, 0] = self.ne.copy()[: exact_lmax + 1]
+        c_all[2, 2] = self.nn.copy()[: exact_lmax + 1]
         return c_all
 
+    def cov_alm_xi(self, exact_lmax=None, pos_m=False):
+        """
+        calculates covariance of pseudo-alm needed for the correlation function xi
 
+        always a covariance of pseudo alms - order and number depends on two point statistics considered
+        order of alm follows structure of cov_4D - meaning first sort by E/B Re/Im, then by l and then by m
+        only positive m part of covariance is needed (not so sure about this - current version: testing with all m) - way to only calculate this, just like wlmlpmp are only plugged into the sum for given l as needed
+        only valid for E/B alms so far.
+        could implement limitation of m to current l, would make n_cov smaller overall
 
-    def calc_matrix():
+        Parameters
+        ----------
+        exact_lmax : integer, optional
+            maximum multipole moment for exact calculations (only maximum multipole moment relevant here), by default None
+        pos_m : bool, optional
+            only calculate contributions for positive m (seems to be sufficient for plus correlation function, couldn't show analytically why yet), by default False
 
+        Returns
+        -------
+        2D array
+            covariance matrix for real and imaginiary E and B mode pseudo alms
+
+        Raises
+        ------
+        NotImplementedError
+            if all m covariance (including negative) calculation is attempted for fullsky version
+        """
+        if self.check_cov():
+            self.load_cov()
+            return self.cov_alm
+        else:
+            alm_kinds = ["ReE", "ImE", "ReB", "ImB"]
+            alm_inds = cov_calc.match_alm_inds(alm_kinds)
+            n_alm = len(alm_inds)
+            if exact_lmax is None:
+                exact_lmax = self._exact_lmax
+            elif exact_lmax != self._exact_lmax:
+                self.exact_lmax = exact_lmax
+
+            theory_cell = self.cell_cube(exact_lmax)
+
+            lmin = 0
+
+            if hasattr(self, _noise_sigma):
+                theory_cell += helper_funcs.noise_cl(self._noise_sigma, exact_lmax + 1)
+
+            if pos_m:
+                n_cov = n_alm * (exact_lmax - lmin + 1) * (exact_lmax + 1)
+            else:
+                n_cov = n_alm * (exact_lmax - lmin + 1) * (2 * exact_lmax + 1)
+
+            if self.maskname == "fullsky":
+                if pos_m == False:
+                    raise NotImplementedError(
+                        "No mask case covariance matrix only implemented for positive m"
+                    )
+                else:
+                    cov_matrix = np.zeros((n_cov, n_cov))
+                    diag = np.zeros(n_cov)
+                    for i in alm_inds:
+                        t = int(np.floor(i / 2))  # same c_l for Re and Im
+                        len_sub = exact_lmax + 1
+                        cell_ranges = [
+                            np.repeat(theory_cell[t, t, i], i + 1) for i in range(exact_lmax + 1)
+                        ]
+                        full_ranges = [
+                            np.append(
+                                cell_ranges[i],
+                                np.zeros(exact_lmax + 1 - len(cell_ranges[i])),
+                            )
+                            for i in range(len(cell_ranges))
+                        ]
+                        cov_part = 0.5 * np.ndarray.flatten(np.array(full_ranges))
+                        if i % 2 == 0:
+                            cov_part[::len_sub] *= 2
+                        else:
+                            cov_part[::len_sub] *= 0
+                        # alm with same m but different sign dont have vanishing covariance. This is only relevant if pos_m = False.
+                        len_2D = len(cov_part)
+                        pos = (len_2D * i, len_2D * (i + 1))
+
+                        diag[pos[0] : pos[1]] = cov_part
+                    assert len(diag) == n_cov
+                    cov_matrix = np.diag(diag)
+
+            else:
+                cov_matrix = self.cov_masked(alm_inds, n_cov, theory_cell, lmin, pos_m)
+
+            cov_matrix = np.where(np.isnan(cov_matrix), cov_matrix.T, cov_matrix)
+            assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
+            self.cov_alm = cov_matrix
+            self.save_cov()
+            return cov_matrix
+
+    def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
+        if self.w_arr is None:
+            self.calc_w_arrs()
+            del self.wpm_arr
+        w_arr = self.w_arr
+        cov_matrix = np.full((n_cov, n_cov), np.nan)
+        for i in alm_inds:
+            for j in alm_inds:
+                if i > j:
+                    continue
+                else:
+                    cov_part = cov_calc.cov_4D(
+                        i, j, w_arr, self.exact_lmax, lmin, theory_cell, pos_m=pos_m
+                    )
+                    len_2D = cov_part.shape[0] * cov_part.shape[1]
+
+                    cov_2D = np.reshape(cov_part, (len_2D, len_2D))
+                    pos_y = (len_2D * i, len_2D * (i + 1))
+                    pos_x = (len_2D * j, len_2D * (j + 1))
+                    cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
+        return cov_matrix
+
+    def cov_cl_gaussian(self, apo=False):
+        cl_e = self.ee.copy()
+        noise2 = np.zeros_like(cl_e)
+        ell = np.arange(self.lmax + 1)
+        if hasattr(self, "_noise_sigma"):
+            apo_width = self.lmax / 3
+            noise_B = noise_E = self._noise_sigma * np.ones_like(cl_e)
+            if apo:
+                noise_B *= stats.norm.pdf(ell, 0, apo_width) / np.max(
+                    stats.norm.pdf(ell, 0, apo_width)
+                )
+                noise_E *= stats.norm.pdf(ell, 0, apo_width) / np.max(
+                    stats.norm.pdf(ell, 0, apo_width)
+                )
+            cl_e += noise_E
+            cl2 = np.square(cl_e) + np.square(noise_B)
+            noise2 += np.square(noise_E) + np.square(noise_B)
+        else:
+            cl2 = np.square(cl_e)
+
+        diag = 2 * cl2
+        noise_diag = 2 * noise2
+        return diag, noise_diag
+
+    def cov_xi_gaussian(self, lmin=0, noise_apo=False):
+        """
+        Calculates covariance of xip correlation function in Gaussian approximation.
+
+        Using fsky factor to take mask into account
+
+        Parameters
+        ----------
+        lmin : int, optional
+            mimimum multipole moment, by default 0
+        noise_apo : bool, optional
+            enable noise apodization, by default False
+
+        Raises
+        ------
+        NotImplementedError
+            if more than one angular bin is given
+        """
+        # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
+        fsky = self.area / 41253
+        c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
+        c_tot, c_sn = c_tot[lmin:], c_sn[lmin:]
+        lmax = self.lmax
+
+        l = 2 * np.arange(lmin, lmax + 1) + 1
+        wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
+            lmin, lmax, 2, 2, theta_in_rad
+        )
+        norm = 1 / (4 * np.pi)
+        if len(self.ang_bins) == 1:
+            bin1 = self.ang_bins[0]
+            binmin_in_arcmin = bin1[0] * 60
+            binmax_in_arcmin = bin1[1] * 60
+
+            upper = np.radians(binmax_in_arcmin / 60)
+            lower = np.radians(binmin_in_arcmin / 60)
+
+            t_norm = 2 / (upper**2 - lower**2)
+            cov_xi = (
+                1
+                / fsky
+                * t_norm**2
+                * norm**2
+                * np.sum((quad_vec(wigner_int, lower, upper)[0]) ** 2 * c_tot * l)
+            )
+            cov_sn = (
+                1
+                / fsky
+                * t_norm**2
+                * norm**2
+                * np.sum((quad_vec(wigner_int, lower, upper)[0]) ** 2 * l * c_sn)
+            )
+            pure_noise_mean = (
+                t_norm * norm * np.sum((quad_vec(wigner_int, lower, upper)[0]) * l * np.sqrt(c_sn))
+            )
+            mean = (
+                t_norm
+                * norm
+                * np.sum((quad_vec(wigner_int, lower, upper)[0]) * l * (self.ee.copy()[lmin:]))
+                + pure_noise_mean
+            )
+        else:
+            raise NotImplementedError("Gaussian cross-correlation not implemented yet")
+
+        self.cov_xi = cov_xi
+        self.cov_sn = cov_sn
+        self.xi = mean
+
+    def set_noise_sigma(self):
+        if self._sigma_e is not None:
+            if isinstance(self._sigma_e, str):
+                self._noise_sigma = helper_funcs.get_noise_cl()
+            else:
+                self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+        else:
+            try:
+                del self._noise_sigma
+            except:
+                pass
+
+    def save_cov(self):
+        print("saving covariance matrix...")
+        np.savez(self.covalm_path, cov=self.cov_alm)
+
+    def check_cov(self):
+        print("checking for covariance matrix...")
+        return os.path.isfile(self.covalm_path)
+
+    def load_cov(self):
+        print("loading covariance matrix...")
+        covfile = np.load(self.covalm_path)
+        self.cov_alm = covfile["cov"]
+        return covfile["cov"]
+
+    def set_covalmpath(self):
+        if self._sigma_e is not None:
+            if isinstance(self._sigma_e, str):
+                self.sigmaname = self._sigma_e
+            else:
+                self.sigmaname = str(self._sigma_e)
+                sigmae = sigmae.replace(".", "")
+            covname = "cov_xi_l{:d}_n{:d}_{}_{}_noise{}.npz".format(
+                self.exact_lmax, self.nside, self.maskname, self.clname, self.sigmaname
+            )
+        else:
+            covname = "cov_xi_l{:d}_n{:d}_{}_{}.npz".format(
+                self.exact_lmax, self.nside, self.maskname, self.clname
+            )
+        self.covalm_path = covname
