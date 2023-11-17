@@ -30,28 +30,25 @@ def test_cl_class():
 
 
 def test_cov_xi():
-    import setup_cov, grf_classes
+    import cov_setup
     import matplotlib.pyplot as plt
 
     covs = np.load("../corrfunc_distr/cov_xip_l10_n256_circ1000.npz")
     cov_xip = covs["cov"]
-    kids55_cl = grf_classes.TheoryCl(10, path="Cl_3x2pt_kids55.txt")
-    circ_mask = grf_classes.SphereMask(
-        [2], circmaskattr=(1000, 256), lmax=10
-    )  # should complain if wpm_arr is None
+    circ_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=(1000, 256))
 
-    test_cov = setup_cov.cov_xi(kids55_cl, mask_object=circ_mask, pos_m=True)
-    assert np.array_equal(cov_xip, test_cov), "covariance calculation wrong"
-
-    nomask_cov = setup_cov.cov_xi(kids55_cl, pos_m=True)
-    diag = np.diag(nomask_cov)
+    test_cov = circ_cov.cov_alm_xi(pos_m=True)
+    assert np.allclose(cov_xip, test_cov), "covariance calculation wrong"
+    nomask_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=("fullsky", 256))
+    nomask_cov_array = nomask_cov.cov_alm_xi(pos_m=True)
+    diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
-    assert np.array_equal(nomask_cov, diag_arr)
-
-    nomask_mask = grf_classes.SphereMask([2], circmaskattr=("fullsky", 256), lmax=10)
-    nomask_bruteforce_cov = setup_cov.cov_xi(kids55_cl, mask_object=nomask_mask, pos_m=True)
-    assert np.allclose(nomask_bruteforce_cov - nomask_cov, np.zeros_like(nomask_cov)), (
-        nomask_bruteforce_cov - nomask_cov
+    assert np.array_equal(nomask_cov_array, diag_arr)
+    nomask_cov.maskname = "disguised_fullsky"
+    nomask_cov.set_covalmpath()
+    nomask_bruteforce_cov = nomask_cov.cov_alm_xi(pos_m=True)
+    assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array)), (
+        nomask_bruteforce_cov - nomask_cov_array
     )[
         np.argwhere(
             np.invert(
@@ -65,11 +62,6 @@ def test_cov_xi():
             )
         )
     ]
-
-    noise_cov = setup_cov.cov_xi(noise_sigma="default", pos_m=True, lmax=10)
-    plt.figure()
-    plt.imshow(noise_cov)
-    plt.show()
 
     # next: constant C_l, pure noise implementation
 
@@ -410,7 +402,9 @@ def cov_object_test(cov_object, angbin, ax, lims=(0, 2e-5)):
 
     ax.plot(x, pdf_lowell, label=r"low $\ell$", color="C3", linestyle="dashed", alpha=alpha)
     ax.axvline(mean_lowell, color="C3", linestyle="dashed", alpha=alpha)
-    x, pdf, norm, mean = calc_pdf.pdf_xi_1D(angbin, cov_object, steps=4096, savestuff=True)
+    x, pdf, norm, mean, skewness = calc_pdf.pdf_xi_1D(
+        angbin, cov_object, steps=4096, savestuff=True
+    )
     ax.plot(
         x,
         stats.norm.pdf(x, cov_object.xi, np.sqrt(cov_object.cov_xi)),
@@ -437,26 +431,123 @@ def cov_object_test(cov_object, angbin, ax, lims=(0, 2e-5)):
         ax.legend()
 
 
-from cov_setup import Cov
+def plot_exactvsgaussian():
+    from cov_setup import Cov
 
-exact_lmax = 30
+    exact_lmax = 10
 
-new_cov = Cov(
-    exact_lmax,
-    [2],
-    circmaskattr=(1000, 256),
-    clpath="Cl_3x2pt_kids55.txt",
-    sigma_e="default",
-)
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(17, 17))
-cov_object_test(new_cov, [(0.5, 1)], ax1, lims=(0, 1.5e-5))
-cov_object_test(new_cov, [(1, 2)], ax2, lims=(-2e-6, 8e-6))
-cov_object_test(new_cov, [(4, 6)], ax3, lims=(-2e-6, 3e-6))
-cov_object_test(new_cov, [(10, 13)], ax4, lims=(-1.3e-6, 1e-6))
-new_cov.sigma_e = None
-cov_object_test(new_cov, [(0.5, 1)], ax1, lims=(0, 1.5e-5))
-cov_object_test(new_cov, [(1, 2)], ax2, lims=(-2e-6, 8e-6))
-cov_object_test(new_cov, [(4, 6)], ax3, lims=(-2e-6, 3e-6))
-cov_object_test(new_cov, [(10, 13)], ax4, lims=(-1.3e-6, 1e-6))
-plt.savefig("plots/exact_vs_gaussian.png")
-plt.show()
+    new_cov = Cov(
+        exact_lmax,
+        [2],
+        circmaskattr=(1000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e="default",
+    )
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(17, 17))
+    cov_object_test(new_cov, [(0.5, 1)], ax1, lims=(0, 1.5e-5))
+    cov_object_test(new_cov, [(1, 2)], ax2, lims=(-2e-6, 8e-6))
+    cov_object_test(new_cov, [(4, 6)], ax3, lims=(-2e-6, 3e-6))
+    cov_object_test(new_cov, [(10, 13)], ax4, lims=(-1.3e-6, 1e-6))
+    new_cov.sigma_e = None
+    cov_object_test(new_cov, [(0.5, 1)], ax1, lims=(0, 1.5e-5))
+    cov_object_test(new_cov, [(1, 2)], ax2, lims=(-2e-6, 8e-6))
+    cov_object_test(new_cov, [(4, 6)], ax3, lims=(-2e-6, 3e-6))
+    cov_object_test(new_cov, [(10, 13)], ax4, lims=(-1.3e-6, 1e-6))
+    plt.savefig("plots/exact_vs_gaussian_ellthres{:d}.png".format(exact_lmax))
+    plt.show()
+
+
+def plot_skewness():
+    from cov_setup import Cov
+    import calc_pdf, grf_classes
+    from matplotlib.gridspec import GridSpec
+    import scipy.stats as stats
+
+    fig = plt.figure()
+
+    gs = GridSpec(2, 3)
+    new_cov = Cov(
+        30,
+        [2],
+        circmaskattr=(1000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e="default",
+        l_smooth="auto",
+    )
+
+    lmax = [30, 35, 40]
+    angbin = [(4, 6)]
+    lims = -2e-6, 3e-6
+    skews, stds, means, means_lowell_exact, means_highell, means_lowell_pcl, means_lowell_cl = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+    ax = fig.add_subplot(gs[0, :])
+    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$".format(*angbin[0]))
+    color = plt.cm.viridis(np.linspace(0, 1, len(lmax)))
+    for i, el in enumerate(lmax):
+        new_cov.exact_lmax = el
+        new_cov.cl2pseudocl()
+        x, pdf, norm, mean, std, skewness, mean_lowell, mean_highell = calc_pdf.pdf_xi_1D(
+            angbin, new_cov, steps=4096, savestuff=True
+        )
+        ax.plot(x, pdf, color=color[i], label=r"$\ell_{{\mathrm{{exact}}}} = {:d}$".format(el))
+        ax.set_xlim(lims)
+        stds.append(std)
+        means.append(mean)
+        skews.append((skewness))
+        means_lowell_exact.append(mean_lowell)
+        means_highell.append(mean_highell)
+        new_cov.cov_xi_gaussian(lmax=el)
+        means_lowell_pcl.append(new_cov.xi_pcl)
+        means_lowell_cl.append(new_cov.xi_cl)
+    new_cov.cov_xi_gaussian()
+    ax.plot(
+        x,
+        stats.norm.pdf(x, new_cov.xi_pcl, np.sqrt(new_cov.cov_xi)),
+        label="Gaussian approximation, Pseudo Cl",
+        color="black",
+        linestyle="dotted",
+    )
+    ax.plot(
+        x,
+        stats.norm.pdf(x, new_cov.xi_cl, np.sqrt(new_cov.cov_xi)),
+        label="Gaussian approximation",
+        color="black",
+        linestyle="dashed",
+    )
+    ax.legend()
+    ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
+    ax6 = fig.add_subplot(gs[1, 0])
+    ax6.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+    ax6.set_ylabel(r"Skewness")
+    ax6.plot(lmax, skews)
+    ax7 = fig.add_subplot(gs[1, 1])
+    ax7.plot(lmax, stds / new_cov.cov_xi)
+    ax7.axhline(1, color="black", linestyle="dotted")
+    ax7.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+    ax7.set_ylabel(r"$\sigma / \sigma_{\mathrm{Gauss}}$")
+    ax8 = fig.add_subplot(gs[1, 2])
+    ax8.plot(lmax, means / new_cov.xi_pcl, label="convolution")
+    # ax8.plot(lmax, means_lowell / new_cov.xi_pcl, label="low ell")
+    # ax8.plot(lmax, means_highell / new_cov.xi_pcl, label="high ell")
+    sum_of_means = [means_lowell_exact[i] + means_highell[i] for i in range(len(means))]
+    mean_pcl_exact_comp = [means_lowell_pcl[i] / means_lowell_exact[i] for i in range(len(means))]
+    mean_pcl_cl_comp = [means_lowell_pcl[i] / means_lowell_cl[i] for i in range(len(means))]
+    ax8.plot(lmax, mean_pcl_exact_comp, label="low ell comparison, pcl to exact")
+    ax8.plot(lmax, mean_pcl_cl_comp, label="low ell comparison, pcl to cl")
+    ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means")
+    ax8.axhline(1, color="black", linestyle="dotted")
+    ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+    ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
+    ax8.legend()
+
+    plt.show()
+
+
+plot_skewness()
