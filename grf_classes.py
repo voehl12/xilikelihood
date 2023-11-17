@@ -1,5 +1,6 @@
 import numpy as np
 import healpy as hp
+import graveyard
 import wpm_funcs
 import pickle
 import os.path
@@ -53,6 +54,7 @@ class TheoryCl:
         self.ee = spectra[0]
         self.ne = spectra[1]
         self.nn = spectra[2]
+        self.bb = np.zeros_like(self.ee)
 
     def set_cl_zero(self):
         self.clname = "none"
@@ -85,10 +87,10 @@ class SphereMask:
         spins=[0, 2],
         maskpath=None,
         circmaskattr=None,
-        prep_wlm=True,
         lmin=0,
         exact_lmax=None,
         maskname="mask",
+        l_smooth=None,
     ) -> None:
         """
 
@@ -156,13 +158,15 @@ class SphereMask:
 
         self.lmin = lmin
 
-        if prep_wlm:
-            self.mask2wlm()
         self.L = None
         self.M = None
         self.w0_arr = None
         self.wpm_arr = None
-        self.w_arr = None
+        self._w_arr = None
+        if l_smooth == "auto":
+            self.l_smooth = self._exact_lmax
+        else:
+            self.l_smooth = l_smooth
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
@@ -177,7 +181,7 @@ class SphereMask:
         if os.path.isfile(self.maskpath):
             self.mask = hp.fitsfunc.read_map(self.maskpath, verbose=True)
             assert np.allclose(
-                self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask), atol=10
+                self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask), rtol=0.1
             ), (self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask))
         else:
             npix = hp.nside2npix(self.nside)
@@ -198,7 +202,8 @@ class SphereMask:
         self.maskname = "fullsky"
         hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
 
-    def mask2wlm(self):
+    @property
+    def wlm(self):
         """Calculates spherical harmonic coefficients of the mask
 
         Returns
@@ -206,7 +211,49 @@ class SphereMask:
         array
             spin 0 alm of mask in healpix ordering
         """
-        self.wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
+
+        if self.l_smooth is None:
+            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
+        elif isinstance(self.l_smooth, int):
+            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
+            self._wlm *= wpm_funcs.smooth_alm(self._wlm, self.l_smooth, self._exact_lmax)
+        elif self.l_smooth == "auto":
+            self.l_smooth = self._exact_lmax
+            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
+            self._wlm *= wpm_funcs.smooth_alm(self._wlm, self._exact_lmax, self._exact_lmax)
+        else:
+            raise RuntimeError("l_smooth needs to be None, integer or auto")
+        return self._wlm
+
+    @property
+    def wlm_lmax(self):
+        """Calculates spherical harmonic coefficients of the mask to bandlimit of mask
+
+        Returns
+        -------
+        array
+            spin 0 alm of mask in healpix ordering
+        """
+        if self.l_smooth is None:
+            self._wlm_lmax = hp.sphtfunc.map2alm(self.mask)
+        elif isinstance(self.l_smooth, int):
+            self._wlm_lmax = hp.sphtfunc.map2alm(self.mask)
+            self._wlm_lmax *= wpm_funcs.smooth_alm(
+                self._wlm_lmax, self.l_smooth, 3 * self.nside - 1
+            )
+        elif self.l_smooth == "auto":
+            self.l_smooth = self._exact_lmax
+            self._wlm = hp.sphtfunc.map2alm(self.mask)
+            self._wlm *= wpm_funcs.smooth_alm(self._wlm_lmax, self._exact_lmax, 3 * self.nside - 1)
+
+        else:
+            raise RuntimeError("l_smooth needs to be None or integer")
+        return self._wlm_lmax
+
+    @property
+    def wl(self):
+        self._wl = hp.sphtfunc.alm2cl(self.wlm_lmax)
+        return self._wl
 
     def initiate_w_arrs(self):
         self.L = np.arange(self._exact_lmax + 1)
@@ -229,31 +276,25 @@ class SphereMask:
         l2_ind = np.argmin(np.fabs(L2 - self.L))
         inds = (l1_ind, m1_ind, l2_ind, m2_ind)
 
-        if not self.spin0:
-            w0 = None
+        if self.spin0 is None:
+            w0 = 0
         else:
-            wigners0 = wpm_funcs.prepare_wigners(0, L1, L2, M1, M2, self._exact_lmax)
-            if not wigners0:
-                w0 = None
-            else:
-                allowed_l, wigners0 = wigners0
-                wlm_l = wpm_funcs.get_wlm_l(self.wlm, m, self._exact_lmax, allowed_l)
-                prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
-                w0 = (-1) ** np.abs(M1) * np.sum(wigners0 * prefac * wlm_l)
+            allowed_l, wigners0 = wpm_funcs.prepare_wigners(0, L1, L2, M1, M2, self._exact_lmax)
+
+            wlm_l = wpm_funcs.get_wlm_l(self._wlm, m, self._exact_lmax, allowed_l)
+            prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
+            w0 = (-1) ** np.abs(M1) * np.sum(wigners0 * prefac * wlm_l)
 
         if not self.spin2 or np.logical_or(L1 < 2, L2 < 2):
-            wp, wm = None, None
+            wp, wm = 0, 0
         else:
-            wigners2 = wpm_funcs.prepare_wigners(2, L1, L2, M1, M2, self._exact_lmax)
-            if not wigners2:
-                wp, wm = None, None
-            else:
-                allowed_l, wp_l, wm_l = wigners2
-                prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
-                wlm_l = wpm_funcs.get_wlm_l(self.wlm, m, self._exact_lmax, allowed_l)
-                wlm_l_large = np.where(np.abs((wlm_l)) > 1e-17, wlm_l, 0)
-                wp = 0.5 * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wp_l)
-                wm = 0.5 * 1j * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wm_l)
+            allowed_l, wp_l, wm_l = wpm_funcs.prepare_wigners(2, L1, L2, M1, M2, self._exact_lmax)
+
+            prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
+            wlm_l = wpm_funcs.get_wlm_l(self._wlm, m, self._exact_lmax, allowed_l)
+            wlm_l_large = np.where(np.abs((wlm_l)) > 1e-17, wlm_l, 0)
+            wp = 0.5 * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wp_l)
+            wm = 0.5 * 1j * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wm_l)
 
         return (inds, w0, wp, wm)
 
@@ -265,8 +306,9 @@ class SphereMask:
             inds = (slice(0, 2), *inds)
             self.wpm_arr[inds] = [wp, wm]
 
-    def calc_w_arrs(self, verbose=True):
-        if not self.w0_arr and not self.wpm_arr:
+    @property
+    def w_arr(self, verbose=True):
+        if self.w0_arr is None and self.wpm_arr is None:
             self.initiate_w_arrs()
 
         arglist = []
@@ -288,6 +330,7 @@ class SphereMask:
 
         # pool = mup.Pool(processes=n_proc)
         # with mup.Pool(processes=n_proc) as pool:
+        self.wlm
         for arg in arglist:
             result = self.calc_w_element(*arg)
             self.save_w_element(result)
@@ -296,15 +339,30 @@ class SphereMask:
             # pool.join()
 
         if self.spin0 and self.spin2:
-            self.w_arr = np.append(self.wpm_arr, self.w0_arr, axis=0)
+            self._w_arr = np.append(self.wpm_arr, self.w0_arr, axis=0)
             self.w0_arr = (
-                None  # could also delete these attributes from the instance itself to make space?
+                None  # could also delete these attributes from the instance itself to make space
             )
             self.wpm_arr = None
+            return self._w_arr
 
         elif self.spin0:
             helper = np.empty_like(self.w0_arr)[None, :, :, :, :]
-            self.w_arr = np.append(np.append(helper, helper, axis=0), self.w0_arr, axis=0)
+            self._w_arr = np.append(np.append(helper, helper, axis=0), self.w0_arr, axis=0)
+            self.w0_arr = (
+                None  # could also delete these attributes from the instance itself to make space
+            )
+            self.wpm_arr = None
+            return self._w_arr
 
         elif self.spin2:
-            self.w_arr = self.wpm_arr
+            self._w_arr = self.wpm_arr
+            self.w0_arr = None
+            self.wpm_arr = None
+            return self._w_arr
+
+    @property
+    def m_llp(self):
+        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wlm_lmax, self._exact_lmax)
+        self._m_llp = m_llp_p, m_llp_m
+        return self._m_llp
