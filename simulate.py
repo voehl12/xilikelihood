@@ -98,7 +98,7 @@ def cl2xi(pcl_22, lmax=None, mask=None, norm_lm=False):
     3nside-1 lmax.
     returns xi_p and xi_m as functions of angle in degree and lmin.
     """
-
+    # TODO: rewrite with bin integration before summation (could take bin prefactors from setup_m.py)
     cl_e, cl_b, cl_eb = pcl_22[0], pcl_22[1], pcl_22[2]
     if lmax is None:
         lmax = len(cl_e) - 1
