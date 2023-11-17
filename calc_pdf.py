@@ -1,6 +1,7 @@
 import setup_cov, setup_m, cf_to_pdf, helper_funcs
 from cov_setup import Cov
 import numpy as np
+from scipy.interpolate import UnivariateSpline
 
 
 def pdf_xi_1D(
@@ -14,14 +15,17 @@ def pdf_xi_1D(
 ):
     exact_lmax = cov_object.exact_lmax
     maskname = cov_object.maskname
-    cov_object.ang_bins = angular_bin_in_deg
+    cov_object.ang_bins_in_deg = angular_bin_in_deg
 
     if type(angular_bin_in_deg[0]) is tuple:
         ang = "{:.0f}_{:.0f}".format(angular_bin_in_deg[0][0], angular_bin_in_deg[0][1])
     else:
         raise RuntimeError("Specify angular bin as tuple of two values in degrees.")
-
-    mname = "m_xi{}_l{:d}_t{}_{}.npz".format(kind, exact_lmax, ang, maskname)
+    if cov_object.l_smooth is None:
+        smoothstring = ""
+    else:
+        smoothstring = "_lapodize{:d}".format(cov_object.l_smooth)
+    mname = "m_xi{}_l{:d}_t{}_{}{}.npz".format(kind, exact_lmax, ang, maskname, smoothstring)
 
     try:
         cov = cov_object.cov_alm
@@ -31,7 +35,7 @@ def pdf_xi_1D(
     if setup_m.check_m(mname):
         m = setup_m.load_m(mname)
     else:
-        m = setup_m.mmatrix_xi(angular_bin_in_deg[0], exact_lmax, cov_object.wlm, kind=kind)
+        m = setup_m.mmatrix_xi(angular_bin_in_deg[0], exact_lmax, cov_object.wl, kind=kind)
         if savestuff:
             setup_m.save_m(m, mname)
 
@@ -56,21 +60,41 @@ def pdf_xi_1D(
     cf = np.prod(
         np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=1
     )  # gives t steps different values for characteristic function
-
+    mean_lowell = helper_funcs.nth_moment(1, t, cf)
     if high_ell_extension:
         cf *= high_ell_gaussian_cf(t, cov_object)
-    mean = helper_funcs.nth_moment(1, t, cf)
+        mean_highell = cov_object.xi_pcl
+    skewness = helper_funcs.skewness(t, cf)
+
     x, pdf = cf_to_pdf.cf_to_pdf_1d(cf, t0, dt_xip)
-    mean = np.trapz(x * pdf, x)
+    mean = np.trapz(x * pdf, x=x)
+    first, second = helper_funcs.nth_moment(2, t, cf)
+    std = second - mean**2
     norm = np.trapz(pdf, x=x)
 
-    return x, pdf, norm, mean
+    return x, pdf, norm, mean, std, skewness, mean_lowell, mean_highell
 
 
-def high_ell_gaussian_cf(t, cov_object):
+def high_ell_gaussian_cf(t_lowell, cov_object):
     cov_object.cov_xi_gaussian(lmin=cov_object.exact_lmax)
-    gauss_cf = helper_funcs.gaussian_cf(t, cov_object.xi, np.sqrt(cov_object.cov_xi))
-    return gauss_cf
+    xip_max = max(
+        np.fabs(cov_object.xi_pcl - 300 * np.sqrt(cov_object.cov_xi)),
+        np.fabs(cov_object.xi_pcl + 300 * np.sqrt(cov_object.cov_xi)),
+    )
+    dt_xip = 0.45 * 2 * np.pi / xip_max
+    steps = 4096
+    t0 = -0.5 * dt_xip * (steps - 1)
+    t = np.linspace(t0, -t0, steps - 1)
+
+    gauss_cf = helper_funcs.gaussian_cf(t, cov_object.xi_pcl, np.sqrt(cov_object.cov_xi))
+    print(helper_funcs.skewness(t, gauss_cf))
+    assert np.allclose(helper_funcs.skewness(t, gauss_cf), 0, atol=1e-3), helper_funcs.skewness(
+        t, gauss_cf
+    )
+    interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
+        t_lowell
+    ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)
+    return interp_to_lowell
 
 
 def pdf_pcl():
