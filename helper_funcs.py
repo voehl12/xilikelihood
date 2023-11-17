@@ -103,19 +103,3 @@ def bin_prefactors(bin_in_deg, wl, lmax, kind="p"):
     A_ell = quad_vec(integrand, t0, t1)
 
     return 2 * np.pi * A_ell[0] / W
-
-
-def cl_decay(sigma, *args):
-    lmax, thres = args
-    return -lmax * (lmax + 1) * sigma**2 - 2 * np.log(2 * lmax + 1) - thres
-
-
-def get_smoothing_sigma_weird(lmax, thres):
-    s0 = 1 / 180 * np.pi
-    res = fsolve(cl_decay, s0, args=(lmax, thres), maxfev=10000)
-    print(res.x)
-    return res
-
-
-def get_smoothing_sigma(lmax, thres):
-    return np.sqrt(-(thres) / (lmax * (lmax + 1)))
