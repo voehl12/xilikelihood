@@ -1,63 +1,23 @@
 # functions to set up pdf calculations
 import numpy as np
 import healpy as hp
-import wigner
-from scipy.special import eval_legendre
-from scipy.integrate import quad_vec
+import helper_funcs
+
 import os.path
 
 
-def ang_prefactors(t_in_deg, wl, kind="p"):
-    # normalization factor automatically has same l_max as the pseudo-Cl summation
-
-    t = np.radians(t_in_deg)
-    norm_l = np.arange(len(wl))
-    legendres = eval_legendre(norm_l, np.cos(t))
-    norm = 1 / np.sum((2 * norm_l + 1) * legendres * wl) / (2 * np.pi)
-
-    if kind == "p":
-        wigners = wigner.wigner_dl(norm_l[0], norm_l[-1], 2, 2, t)
-    elif kind == "m":
-        wigners = wigner.wigner_dl(norm_l[0], norm_l[-1], 2, -2, t)
-    else:
-        raise RuntimeError("correlation function kind needs to be p or m")
-
-    return 2 * np.pi * norm * wigners
-
-
-def bin_prefactors(bin_in_deg, wl, kind="p"):
-    t0, t1 = bin_in_deg
-    t0, t1 = np.radians(t0), np.radians(t1)
-
-    norm_l = np.arange(len(wl))
-    legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
-    norm = lambda t_in_rad: 1 / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * wl) / (2 * np.pi)
-    if kind == "p":
-        wigners = lambda t_in_rad: wigner.wigner_dl(norm_l[0], norm_l[-1], 2, 2, t_in_rad)
-    elif kind == "m":
-        wigners = lambda t_in_rad: wigner.wigner_dl(norm_l[0], norm_l[-1], 2, -2, t_in_rad)
-    else:
-        raise RuntimeError("correlation function kind needs to be p or m")
-
-    integrand = lambda t_in_rad: norm(t_in_rad) * wigners(t_in_rad) * t_in_rad
-    # norm * d_l * weights
-    W = 0.5 * (t1**2 - t0**2)  # weights already integrated
-    A_ell = quad_vec(integrand, t0, t1)
-
-    return 2 * np.pi * A_ell[0] / W
-
-
-def mmatrix_xi(t_in_deg, lmax, wlm, kind="p"):
+def mmatrix_xi(t_in_deg, lmax, wl, kind="p"):
     # idea: if theta is a tuple: call bin_prefactors
     # TODO: implement xi_minus (need to add minus sign to B mode pseudo alms)
     n_field = 2  # for xi+, there need to be two fields.
     len_sub = lmax + 1
-    wl = hp.sphtfunc.alm2cl(wlm)
+
     # diag = fac(l0) * len(sub), fac(l1) * len(sub), ...
     if type(t_in_deg) is tuple:
-        fac_arr = bin_prefactors(t_in_deg, wl, kind)
+        fac_arr = helper_funcs.bin_prefactors(t_in_deg, wl, len(wl) - 1, kind)
+        fac_arr = fac_arr[:len_sub]
     else:
-        fac_arr = ang_prefactors(t_in_deg, wl, kind)
+        fac_arr = helper_funcs.ang_prefactors(t_in_deg, wl, lmax, kind)
     diag = 2 * np.repeat(fac_arr, len_sub)
     diag[::len_sub] *= 0.5
     # every m = 0 entry is halved --> first of every l stretch.
