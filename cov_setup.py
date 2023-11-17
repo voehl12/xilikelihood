@@ -55,9 +55,9 @@ class Cov(SphereMask, TheoryCl):
         clname="3x2pt_kids_55",
         maskpath=None,
         circmaskattr=None,
-        prep_wlm=True,
         lmin=None,
         maskname="mask",
+        l_smooth=None,
     ):
         SphereMask.__init__(
             self,
@@ -65,9 +65,9 @@ class Cov(SphereMask, TheoryCl):
             spins=spins,
             maskpath=maskpath,
             circmaskattr=circmaskattr,
-            prep_wlm=prep_wlm,
             lmin=lmin,
             maskname=maskname,
+            l_smooth=l_smooth,
         )
         if lmax is None:
             self.lmax = 3 * self.nside - 1
@@ -79,7 +79,7 @@ class Cov(SphereMask, TheoryCl):
 
         self._sigma_e = sigma_e
         self.set_noise_sigma()
-        self.ang_bins = None
+        self.ang_bins_in_deg = None
 
         self.set_covalmpath()
 
@@ -110,13 +110,10 @@ class Cov(SphereMask, TheoryCl):
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
             self._exact_lmax = new_lmax
+            self.l_smooth = new_lmax
             self.set_covalmpath()
             if hasattr(self, "cov_alm"):
                 self.cov_alm_xi(pos_m=True)
-            if hasattr(self, "wlm"):
-                self.mask2wlm()
-            if hasattr(self, "w_arr"):
-                self.calc_w_arrs()
 
     def cell_cube(self, exact_lmax):
         c_all = np.zeros((3, 3, exact_lmax + 1))
@@ -153,6 +150,11 @@ class Cov(SphereMask, TheoryCl):
         NotImplementedError
             if all m covariance (including negative) calculation is attempted for fullsky version
         """
+        if exact_lmax is None:
+            exact_lmax = self._exact_lmax
+        elif exact_lmax != self._exact_lmax:
+            self.exact_lmax = exact_lmax
+
         if self.check_cov():
             self.load_cov()
             return self.cov_alm
@@ -160,16 +162,12 @@ class Cov(SphereMask, TheoryCl):
             alm_kinds = ["ReE", "ImE", "ReB", "ImB"]
             alm_inds = cov_calc.match_alm_inds(alm_kinds)
             n_alm = len(alm_inds)
-            if exact_lmax is None:
-                exact_lmax = self._exact_lmax
-            elif exact_lmax != self._exact_lmax:
-                self.exact_lmax = exact_lmax
 
             theory_cell = self.cell_cube(exact_lmax)
 
             lmin = 0
 
-            if hasattr(self, _noise_sigma):
+            if hasattr(self, "_noise_sigma"):
                 theory_cell += helper_funcs.noise_cl(self._noise_sigma, exact_lmax + 1)
 
             if pos_m:
@@ -221,9 +219,6 @@ class Cov(SphereMask, TheoryCl):
             return cov_matrix
 
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
-        if self.w_arr is None:
-            self.calc_w_arrs()
-            del self.wpm_arr
         w_arr = self.w_arr
         cov_matrix = np.full((n_cov, n_cov), np.nan)
         for i in alm_inds:
@@ -232,7 +227,7 @@ class Cov(SphereMask, TheoryCl):
                     continue
                 else:
                     cov_part = cov_calc.cov_4D(
-                        i, j, w_arr, self.exact_lmax, lmin, theory_cell, pos_m=pos_m
+                        i, j, w_arr, self._exact_lmax, lmin, theory_cell, pos_m=pos_m
                     )
                     len_2D = cov_part.shape[0] * cov_part.shape[1]
 
@@ -266,7 +261,7 @@ class Cov(SphereMask, TheoryCl):
         noise_diag = 2 * noise2
         return diag, noise_diag
 
-    def cov_xi_gaussian(self, lmin=0, noise_apo=False):
+    def cov_xi_gaussian(self, lmin=0, lmax=None, noise_apo=False):
         """
         Calculates covariance of xip correlation function in Gaussian approximation.
 
@@ -287,59 +282,65 @@ class Cov(SphereMask, TheoryCl):
         # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
         fsky = self.area / 41253
         c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
-        c_tot, c_sn = c_tot[lmin:], c_sn[lmin:]
-        lmax = self.lmax
+        if lmax is None:
+            lmax = self.lmax
+        c_tot, c_sn = c_tot[lmin : lmax + 1], c_sn[lmin : lmax + 1]
 
         l = 2 * np.arange(lmin, lmax + 1) + 1
         wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
             lmin, lmax, 2, 2, theta_in_rad
         )
         norm = 1 / (4 * np.pi)
-        if len(self.ang_bins) == 1:
-            bin1 = self.ang_bins[0]
-            binmin_in_arcmin = bin1[0] * 60
-            binmax_in_arcmin = bin1[1] * 60
+        if len(self.ang_bins_in_deg) > 1:
+            raise NotImplementedError("Gaussian cross-correlation not implemented yet")
+        else:
+            bin1 = self.ang_bins_in_deg[0]
+            binmin_in_deg = bin1[0]
+            binmax_in_deg = bin1[1]
 
-            upper = np.radians(binmax_in_arcmin / 60)
-            lower = np.radians(binmin_in_arcmin / 60)
+            upper = np.radians(binmax_in_deg)
+            lower = np.radians(binmin_in_deg)
 
             t_norm = 2 / (upper**2 - lower**2)
+            # much closer to cl-xi if the normalization in the bin prefactors is taken to lmax! (two orders of magnitude, even with apodized mask)
+            p_cl_prefactors = helper_funcs.bin_prefactors(bin1, self.wl, self.lmax)
+            integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
             cov_xi = (
-                1
-                / fsky
-                * t_norm**2
-                * norm**2
-                * np.sum((quad_vec(wigner_int, lower, upper)[0]) ** 2 * c_tot * l)
+                1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * c_tot * l)
             )
-            cov_sn = (
-                1
-                / fsky
-                * t_norm**2
-                * norm**2
-                * np.sum((quad_vec(wigner_int, lower, upper)[0]) ** 2 * l * c_sn)
-            )
-            pure_noise_mean = (
-                t_norm * norm * np.sum((quad_vec(wigner_int, lower, upper)[0]) * l * np.sqrt(c_sn))
-            )
-            mean = (
+            cov_sn = 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * l * c_sn)
+            pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
+            cl_mean = (
                 t_norm
                 * norm
-                * np.sum((quad_vec(wigner_int, lower, upper)[0]) * l * (self.ee.copy()[lmin:]))
-                + pure_noise_mean
+                * np.sum(
+                    integrated_wigners
+                    * l
+                    * (self.ee.copy()[lmin : lmax + 1] + np.ones_like(l) * np.sqrt(c_sn))
+                )
             )
-        else:
-            raise NotImplementedError("Gaussian cross-correlation not implemented yet")
+
+            mean = np.sum(
+                p_cl_prefactors[lmin : lmax + 1]
+                * l
+                * (self.p_ee.copy()[lmin : lmax + 1] + self.p_bb.copy()[lmin : lmax + 1])
+            )
 
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
-        self.xi = mean
+        self.xi_pcl = mean
+        self.xi_cl = cl_mean
 
     def set_noise_sigma(self):
         if self._sigma_e is not None:
             if isinstance(self._sigma_e, str):
                 self._noise_sigma = helper_funcs.get_noise_cl()
-            else:
+            elif isinstance(self._sigma_e, tuple):
                 self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+            else:
+                raise RuntimeError(
+                    "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
+                )
         else:
             try:
                 del self._noise_sigma
@@ -360,18 +361,51 @@ class Cov(SphereMask, TheoryCl):
         self.cov_alm = covfile["cov"]
         return covfile["cov"]
 
-    def set_covalmpath(self):
-        if self._sigma_e is not None:
-            if isinstance(self._sigma_e, str):
-                self.sigmaname = self._sigma_e
-            else:
-                self.sigmaname = str(self._sigma_e)
-                sigmae = sigmae.replace(".", "")
-            covname = "cov_xi_l{:d}_n{:d}_{}_{}_noise{}.npz".format(
-                self.exact_lmax, self.nside, self.maskname, self.clname, self.sigmaname
-            )
+    def set_char_string(self):
+        if self.l_smooth is None:
+            smoothstring = ""
         else:
-            covname = "cov_xi_l{:d}_n{:d}_{}_{}.npz".format(
-                self.exact_lmax, self.nside, self.maskname, self.clname
-            )
+            smoothstring = "lapodize{:d}".format(self.l_smooth)
+        if self._sigma_e is None:
+            self.sigmaname = ""
+        else:
+            if isinstance(self._sigma_e, str):
+                self.sigmaname = "noise" + self._sigma_e
+
+            else:
+                self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
+
+        charstring = "_l{:d}_n{:d}_{}_{}_{}_{}.npz".format(
+            self._exact_lmax,
+            self.nside,
+            self.maskname,
+            self.clname,
+            self.sigmaname,
+            smoothstring,
+        )
+        return charstring
+
+    def set_covalmpath(self):
+        charac = self.set_char_string()
+        covname = "covariances/cov_xi" + charac
         self.covalm_path = covname
+
+    def cl2pseudocl(self):
+        pclpath = "pcl" + self.set_char_string()
+        if os.path.isfile(pclpath):
+            pclfile = np.load(pclpath)
+            self.p_ee = pclfile["pcl_ee"]
+            self.p_bb = pclfile["pcl_bb"]
+        else:
+            m_llp_p, m_llp_m = self.m_llp
+            if hasattr(self, "_noise_sigma"):
+                cl_e = self.ee.copy() + self._noise_sigma * np.ones_like(self.ee)
+                cl_b = self.bb.copy() + self._noise_sigma * np.ones_like(self.bb)
+            else:
+                cl_e = self.ee.copy()
+                cl_b = self.bb.copy()
+
+            self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
+            self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+            print("saving pseudo_cl...")
+            np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb)
