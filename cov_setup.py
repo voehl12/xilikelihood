@@ -58,6 +58,7 @@ class Cov(SphereMask, TheoryCl):
         lmin=None,
         maskname="mask",
         l_smooth=None,
+        smooth_signal=False,
     ):
         SphereMask.__init__(
             self,
@@ -74,7 +75,12 @@ class Cov(SphereMask, TheoryCl):
         else:
             self.lmax = lmax
         TheoryCl.__init__(
-            self, lmax=self.lmax, clpath=clpath, theory_lmin=theory_lmin, clname=clname
+            self,
+            lmax=self.lmax,
+            clpath=clpath,
+            theory_lmin=theory_lmin,
+            clname=clname,
+            smooth_signal=smooth_signal,
         )
 
         self._sigma_e = sigma_e
@@ -110,7 +116,8 @@ class Cov(SphereMask, TheoryCl):
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
             self._exact_lmax = new_lmax
-            self.l_smooth = new_lmax
+            if self.l_smooth_auto:
+                self.l_smooth = new_lmax
             self.set_covalmpath()
             if hasattr(self, "cov_alm"):
                 self.cov_alm_xi(pos_m=True)
@@ -280,6 +287,8 @@ class Cov(SphereMask, TheoryCl):
             if more than one angular bin is given
         """
         # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
+        if self.ang_bins_in_deg is None:
+            raise RuntimeError("need to set angular bin for xi covariance.")
         fsky = self.area / 41253
         c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
         if lmax is None:
@@ -303,7 +312,9 @@ class Cov(SphereMask, TheoryCl):
 
             t_norm = 2 / (upper**2 - lower**2)
             # much closer to cl-xi if the normalization in the bin prefactors is taken to lmax! (two orders of magnitude, even with apodized mask)
-            p_cl_prefactors = helper_funcs.bin_prefactors(bin1, self.wl, self.lmax)
+            p_cl_prefactors = helper_funcs.bin_prefactors(
+                bin1, self.wl, self._exact_lmax, self.lmax
+            )
             integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
             cov_xi = (
                 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * c_tot * l)
@@ -359,7 +370,6 @@ class Cov(SphereMask, TheoryCl):
         print("loading covariance matrix...")
         covfile = np.load(self.covalm_path)
         self.cov_alm = covfile["cov"]
-        return covfile["cov"]
 
     def set_char_string(self):
         if self.l_smooth is None:
@@ -391,6 +401,7 @@ class Cov(SphereMask, TheoryCl):
         self.covalm_path = covname
 
     def cl2pseudocl(self):
+        # from namaster scientific documentation paper
         pclpath = "pcl" + self.set_char_string()
         if os.path.isfile(pclpath):
             pclfile = np.load(pclpath)
