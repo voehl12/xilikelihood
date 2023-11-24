@@ -467,26 +467,22 @@ def plot_skewness():
 
     gs = GridSpec(2, 3)
     new_cov = Cov(
-        30,
-        [2],
-        circmaskattr=(1000, 256),
-        clpath="Cl_3x2pt_kids55.txt",
-        sigma_e="default",
-        l_smooth="auto",
+        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=10
     )
 
-    lmax = [30, 35, 40]
+    lmax = [30, 35, 40, 45, 50]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
-    skews, stds, means, means_lowell_exact, means_highell, means_lowell_pcl, means_lowell_cl = (
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
-    )
+    (
+        skews,
+        stds,
+        means,
+        means_lowell_exact,
+        means_highell,
+        means_lowell_pcl,
+        means_lowell_cl,
+        means_highell_cl,
+    ) = ([], [], [], [], [], [], [], [])
     ax = fig.add_subplot(gs[0, :])
     ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$".format(*angbin[0]))
     color = plt.cm.viridis(np.linspace(0, 1, len(lmax)))
@@ -498,11 +494,12 @@ def plot_skewness():
         )
         ax.plot(x, pdf, color=color[i], label=r"$\ell_{{\mathrm{{exact}}}} = {:d}$".format(el))
         ax.set_xlim(lims)
-        stds.append(std)
+        stds.append(std.real)
         means.append(mean)
-        skews.append((skewness))
+        skews.append(skewness.real)
         means_lowell_exact.append(mean_lowell)
         means_highell.append(mean_highell)
+        means_highell_cl.append(new_cov.xi_cl)
         new_cov.cov_xi_gaussian(lmax=el)
         means_lowell_pcl.append(new_cov.xi_pcl)
         means_lowell_cl.append(new_cov.xi_cl)
@@ -539,8 +536,10 @@ def plot_skewness():
     sum_of_means = [means_lowell_exact[i] + means_highell[i] for i in range(len(means))]
     mean_pcl_exact_comp = [means_lowell_pcl[i] / means_lowell_exact[i] for i in range(len(means))]
     mean_pcl_cl_comp = [means_lowell_pcl[i] / means_lowell_cl[i] for i in range(len(means))]
+    mean_pcl_cl_highell_comp = [means_highell[i] / means_highell_cl[i] for i in range(len(means))]
     ax8.plot(lmax, mean_pcl_exact_comp, label="low ell comparison, pcl to exact")
     ax8.plot(lmax, mean_pcl_cl_comp, label="low ell comparison, pcl to cl")
+    ax8.plot(lmax, mean_pcl_cl_highell_comp, label="high ell comparison, pcl to cl")
     ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means")
     ax8.axhline(1, color="black", linestyle="dotted")
     ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
@@ -548,6 +547,96 @@ def plot_skewness():
     ax8.legend()
 
     plt.show()
+
+
+def sum_testing():
+    import wpm_funcs
+    from cov_setup import Cov
+
+    exact_lm = 30
+    new_cov = Cov(
+        exact_lm,
+        [2],
+        circmaskattr=(4000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e="default",
+        l_smooth="auto",
+    )
+
+    M = 0
+    buffer_lmax = exact_lm + 10
+    ell, wigners = wpm_funcs.prepare_wigners(2, 3, 5, 2, 2, buffer_lmax)
+    wlppM = wpm_funcs.get_wlm_l(new_cov.wlm_lmax, M, new_cov.lmax, ell)
+    factors = wpm_funcs.w_factor(ell, 3, 5)
+
+    plt.figure()
+    plt.plot(ell, wigners * wlppM * factors)
+    plt.show()
+
+
+def test_files():
+    from cov_setup import Cov
+
+    new_cov = Cov(
+        20,
+        [2],
+        circmaskattr=(4000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e=None,
+        l_smooth=20,
+    )
+    cov_calc = new_cov.cov_alm_xi()
+
+    cov_from_file = new_cov.cov_alm_xi()
+    print(np.max(np.fabs(cov_calc - cov_from_file)))
+    plt.figure()
+    plt.imshow(cov_calc.real)
+    plt.colorbar()
+
+    plt.figure()
+    plt.imshow(cov_calc.imag)
+    plt.colorbar()
+
+    plt.figure()
+    plt.imshow(cov_from_file.real)
+    plt.colorbar()
+
+    plt.figure()
+    plt.imshow(cov_from_file.imag)
+    plt.colorbar()
+    plt.show()
+
+
+def sum_partition():
+    from cov_setup import Cov
+
+    new_cov = Cov(
+        30,
+        [2],
+        circmaskattr=(4000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e=None,
+        l_smooth=20,
+    )
+    new_cov.cl2pseudocl()
+    new_cov.ang_bins_in_deg = [(4, 6)]
+    LM = [10, 20, 30, 35, 40, 50]
+    low, high, all = [], [], []
+    for lmax in LM:
+        new_cov.cov_xi_gaussian(lmax=lmax)
+        low.append(new_cov.xi_pcl)
+        new_cov.cov_xi_gaussian(lmin=lmax)
+        high.append(new_cov.xi_pcl)
+        new_cov.cov_xi_gaussian()
+        all.append(new_cov.xi_pcl)
+    sumofmeans = [low[i] + high[i] for i in range(len(low))]
+    plt.figure()
+    plt.plot(LM, low)
+    plt.plot(LM, high)
+    plt.plot(LM, all)
+    plt.plot(LM, sumofmeans)
+    plt.show()
+    # could the overlap be the problem?
 
 
 plot_skewness()
