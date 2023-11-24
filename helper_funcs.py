@@ -51,7 +51,7 @@ def nth_moment(n, t, cf):
         + UnivariateSpline(t, cf.real, k=k, s=0).derivative(n=i)(0)
         for i in range(1, 4)
     ]
-    return [np.abs(1j**-k * derivs_at_zero[k - 1]) for k in range(1, n + 1)]
+    return [(1j**-k * derivs_at_zero[k - 1]) for k in range(1, n + 1)]
 
 
 def skewness(t, cf):
@@ -78,22 +78,22 @@ def ang_prefactors(t_in_deg, wl, kind="p"):
     return 2 * np.pi * norm * wigners
 
 
-def bin_prefactors(bin_in_deg, wl, lmax, kind="p"):
+def bin_prefactors(bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
     t0, t1 = bin_in_deg
     t0, t1 = np.radians(t0), np.radians(t1)
-
-    norm_l = np.arange(lmax + 1)
+    buffer = 0
+    norm_l = np.arange(norm_lmax + buffer + 1)
     legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
     # TODO: check whether this sum needs to be done after the integration as well (even possible?)
     norm = (
         lambda t_in_rad: 1
-        / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * wl[: lmax + 1])
+        / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * wl[: norm_lmax + buffer + 1])
         / (2 * np.pi)
     )
     if kind == "p":
-        wigners = lambda t_in_rad: wigner.wigner_dl(0, lmax, 2, 2, t_in_rad)
+        wigners = lambda t_in_rad: wigner.wigner_dl(0, out_lmax, 2, 2, t_in_rad)
     elif kind == "m":
-        wigners = lambda t_in_rad: wigner.wigner_dl(0, lmax, 2, -2, t_in_rad)
+        wigners = lambda t_in_rad: wigner.wigner_dl(0, out_lmax, 2, -2, t_in_rad)
     else:
         raise RuntimeError("correlation function kind needs to be p or m")
 
