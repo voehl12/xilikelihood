@@ -17,10 +17,12 @@ class TheoryCl:
     A class to read, store and handle 2D theory power spectra
     """
 
-    def __init__(self, lmax=30, clpath=None, theory_lmin=2, clname="3x2pt_kids"):
+    def __init__(
+        self, lmax=30, clpath=None, theory_lmin=2, clname="3x2pt_kids", smooth_signal=False
+    ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
-
+        self.smooth_signal = smooth_signal
         self.ell = np.arange(self.lmax + 1)
         self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
@@ -36,6 +38,15 @@ class TheoryCl:
             self.read_clfile()
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
+            if self.smooth_signal == True:
+                smooth_ell = 100
+                self.ee *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.nn *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.ne *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.bb *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.clname += "_smooth{:d}".format(smooth_ell)
+                print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
+
         else:
             print("Warning: no theory Cl provided, calculating with Cl=0")
             self.set_cl_zero()
@@ -164,8 +175,10 @@ class SphereMask:
         self.wpm_arr = None
         self._w_arr = None
         if l_smooth == "auto":
+            self.l_smooth_auto = True
             self.l_smooth = self._exact_lmax
         else:
+            self.l_smooth_auto = False
             self.l_smooth = l_smooth
 
     def read_maskfile(self):
@@ -200,6 +213,7 @@ class SphereMask:
         self.mask = m
         self.maskpath = "fullsky_nside{:d}.fits".format(self.nside)
         self.maskname = "fullsky"
+        self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
         hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
 
     @property
@@ -223,6 +237,8 @@ class SphereMask:
             self._wlm *= wpm_funcs.smooth_alm(self._wlm, self._exact_lmax, self._exact_lmax)
         else:
             raise RuntimeError("l_smooth needs to be None, integer or auto")
+        mask_smooth = hp.sphtfunc.alm2map(self._wlm, self.nside)
+        self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._wlm
 
     @property
@@ -248,6 +264,8 @@ class SphereMask:
 
         else:
             raise RuntimeError("l_smooth needs to be None or integer")
+        mask_smooth = hp.sphtfunc.alm2map(self._wlm_lmax, self.nside)
+        self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._wlm_lmax
 
     @property
@@ -275,25 +293,36 @@ class SphereMask:
         l1_ind = np.argmin(np.fabs(L1 - self.L))
         l2_ind = np.argmin(np.fabs(L2 - self.L))
         inds = (l1_ind, m1_ind, l2_ind, m2_ind)
+        self.buffer_lmax = self._exact_lmax + 0
 
         if self.spin0 is None:
             w0 = 0
         else:
-            allowed_l, wigners0 = wpm_funcs.prepare_wigners(0, L1, L2, M1, M2, self._exact_lmax)
+            allowed_l, wigners0 = wpm_funcs.prepare_wigners(0, L1, L2, M1, M2, self.buffer_lmax)
 
-            wlm_l = wpm_funcs.get_wlm_l(self._wlm, m, self._exact_lmax, allowed_l)
+            wlm_l = wpm_funcs.get_wlm_l(
+                self._wlm_lmax, m, self.lmax, allowed_l
+            )  # needs the lmax the wlm are calculated for.
             prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
             w0 = (-1) ** np.abs(M1) * np.sum(wigners0 * prefac * wlm_l)
 
-        if not self.spin2 or np.logical_or(L1 < 2, L2 < 2):
+        if self.spin2 is None or np.logical_or(L1 < 2, L2 < 2):
             wp, wm = 0, 0
         else:
-            allowed_l, wp_l, wm_l = wpm_funcs.prepare_wigners(2, L1, L2, M1, M2, self._exact_lmax)
+            allowed_l, wp_l, wm_l = wpm_funcs.prepare_wigners(2, L1, L2, M1, M2, self.buffer_lmax)
 
             prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
-            wlm_l = wpm_funcs.get_wlm_l(self._wlm, m, self._exact_lmax, allowed_l)
+            wlm_l = wpm_funcs.get_wlm_l(self._wlm_lmax, m, self.lmax, allowed_l)
             wlm_l_large = np.where(np.abs((wlm_l)) > 1e-17, wlm_l, 0)
             wp = 0.5 * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wp_l)
+            """ assert np.allclose(
+                np.sum(prefac * wlm_l * wp_l).real - np.cumsum(prefac * wlm_l * wp_l).real[-10:],
+                np.zeros(10),
+            )
+            assert np.allclose(
+                np.sum(prefac * wlm_l * wp_l).imag - np.cumsum(prefac * wlm_l * wp_l).imag[-10:],
+                np.zeros(10),
+            ) """
             wm = 0.5 * 1j * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wm_l)
 
         return (inds, w0, wp, wm)
@@ -331,6 +360,7 @@ class SphereMask:
         # pool = mup.Pool(processes=n_proc)
         # with mup.Pool(processes=n_proc) as pool:
         self.wlm
+        self.wlm_lmax
         for arg in arglist:
             result = self.calc_w_element(*arg)
             self.save_w_element(result)
