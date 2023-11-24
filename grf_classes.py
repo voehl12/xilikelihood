@@ -1,6 +1,5 @@
 import numpy as np
 import healpy as hp
-import graveyard
 import wpm_funcs
 import pickle
 import os.path
