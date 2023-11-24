@@ -14,8 +14,8 @@ def mmatrix_xi(t_in_deg, lmax, wl, kind="p"):
 
     # diag = fac(l0) * len(sub), fac(l1) * len(sub), ...
     if type(t_in_deg) is tuple:
-        fac_arr = helper_funcs.bin_prefactors(t_in_deg, wl, len(wl) - 1, kind)
-        fac_arr = fac_arr[:len_sub]
+        fac_arr = helper_funcs.bin_prefactors(t_in_deg, wl, lmax, lmax, kind)
+
     else:
         fac_arr = helper_funcs.ang_prefactors(t_in_deg, wl, lmax, kind)
     diag = 2 * np.repeat(fac_arr, len_sub)
