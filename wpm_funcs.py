@@ -100,12 +100,13 @@ def purified_wigner(l_arr, lp, lpp, purified=True):
 
 
 def m_llp(wlm, exact_lmax):
+    sum_buffer = 0
     wl = hp.sphtfunc.alm2cl(wlm)
     len_l = len(wl)
-    m_3d_pp = np.zeros((len_l, len_l, exact_lmax + 1))
+    m_3d_pp = np.zeros((len_l, len_l, exact_lmax + sum_buffer + 1))
     m_3d_mm = np.zeros_like(m_3d_pp)
     l = lp = np.arange(len_l)
-    lpp = np.arange(exact_lmax + 1)
+    lpp = np.arange(exact_lmax + sum_buffer + 1)
 
     for cp, i in enumerate(lp):
         for cpp, j in enumerate(lpp):
@@ -121,7 +122,12 @@ def m_llp(wlm, exact_lmax):
 
 
 def smooth_gauss(l, l_smooth):
-    sigma2 = l_smooth**2 / 5 * np.log10(np.e)
+    sigma2 = l_smooth**2 / 12 * np.log10(np.e)
+    return np.exp(-(l**2) / (2 * sigma2))
+
+
+def smooth_cl(l, l_smooth):
+    sigma2 = l_smooth**2 / 6 * np.log10(np.e)
     return np.exp(-(l**2) / (2 * sigma2))
 
 
