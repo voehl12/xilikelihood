@@ -116,7 +116,6 @@ class Cov(SphereMask, TheoryCl):
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
             self._exact_lmax = new_lmax
-            self.wlm
             if self.l_smooth_auto:
                 self.l_smooth = new_lmax
             self.set_covalmpath()
