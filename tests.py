@@ -471,7 +471,8 @@ def plot_skewness():
     )
     # problem when cov is initialized and then set to the same lmax? yes! and only when cov is read from file
     # matters for variance and skewness, mean is not affected
-    lmax = [30,30, 35]
+    # cov_xi is different for the first and second exact_lmax = 30
+    lmax = [30, 30, 35]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
