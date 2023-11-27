@@ -163,7 +163,7 @@ class Cov(SphereMask, TheoryCl):
         elif exact_lmax != self._exact_lmax:
             self.exact_lmax = exact_lmax
         theory_cell = self.cell_cube(exact_lmax)
-        
+
         if self.check_cov():
             self.load_cov()
             return self.cov_alm
@@ -222,7 +222,7 @@ class Cov(SphereMask, TheoryCl):
             assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
             self.cov_alm = cov_matrix
             self.save_cov()
-            return cov_matrix
+            return self.cov_alm
 
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
         w_arr = self.w_arr
