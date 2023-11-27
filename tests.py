@@ -463,14 +463,14 @@ def plot_skewness():
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
 
-    fig = plt.figure(figsize=(20,14))
+    fig = plt.figure(figsize=(20, 14))
 
     gs = GridSpec(2, 3)
     new_cov = Cov(
         30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=20
     )
 
-    lmax = [30, 35, 40]
+    lmax = [20, 30, 35]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -546,7 +546,7 @@ def plot_skewness():
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
     ax8.legend()
 
-    plt.savefig('testfile.png')
+    plt.savefig("testfile.png")
 
 
 def sum_testing():
