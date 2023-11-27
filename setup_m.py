@@ -6,11 +6,14 @@ import helper_funcs
 import os.path
 
 
-def mmatrix_xi(t_in_deg, lmax, wl, kind="p"):
+def mmatrix_xi(t_in_deg, lmax, wl, kind="p", pos_m=True):
     # idea: if theta is a tuple: call bin_prefactors
     # TODO: implement xi_minus (need to add minus sign to B mode pseudo alms)
     n_field = 2  # for xi+, there need to be two fields.
-    len_sub = lmax + 1
+    if pos_m == True:
+        len_sub = lmax + 1
+    else:
+        len_sub = 2 * lmax + 1
 
     # diag = fac(l0) * len(sub), fac(l1) * len(sub), ...
     if type(t_in_deg) is tuple:
@@ -19,7 +22,11 @@ def mmatrix_xi(t_in_deg, lmax, wl, kind="p"):
     else:
         fac_arr = helper_funcs.ang_prefactors(t_in_deg, wl, lmax, kind)
     diag = 2 * np.repeat(fac_arr, len_sub)
-    diag[::len_sub] *= 0.5
+    if pos_m == True:
+        diag[::len_sub] *= 0.5
+    else:
+        diag[lmax + 1 :: len_sub] *= 0.5
+
     # every m = 0 entry is halved --> first of every l stretch.
     m = np.diag(np.tile(diag, n_field * 2))
     return m
