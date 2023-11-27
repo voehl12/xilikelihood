@@ -31,12 +31,14 @@ def pdf_xi_1D(
     try:
         cov = cov_object.cov_alm
     except:
-        cov = cov_object.cov_alm_xi(exact_lmax=exact_lmax, pos_m=True)
+        cov = cov_object.cov_alm_xi(exact_lmax=exact_lmax, pos_m=False)
 
     if setup_m.check_m(mname):
         m = setup_m.load_m(mname)
     else:
-        m = setup_m.mmatrix_xi(angular_bin_in_deg[0], exact_lmax, cov_object.wl, kind=kind)
+        m = setup_m.mmatrix_xi(
+            angular_bin_in_deg[0], exact_lmax, cov_object.wl, kind=kind, pos_m=False
+        )
         if savestuff:
             setup_m.save_m(m, mname)
 
