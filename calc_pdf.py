@@ -74,8 +74,8 @@ def pdf_xi_1D(
 def high_ell_gaussian_cf(t_lowell, cov_object):
     cov_object.cov_xi_gaussian(lmin=cov_object.exact_lmax + 1)
     xip_max = max(
-        np.fabs(cov_object.xi_pcl - 1500 * np.sqrt(cov_object.cov_xi)),
-        np.fabs(cov_object.xi_pcl + 1500 * np.sqrt(cov_object.cov_xi)),
+        np.fabs(cov_object.xi_pcl - 500 * np.sqrt(cov_object.cov_xi)),
+        np.fabs(cov_object.xi_pcl + 500 * np.sqrt(cov_object.cov_xi)),
     )
     dt_xip = 0.45 * 2 * np.pi / xip_max
     steps = 4096
