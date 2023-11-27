@@ -467,10 +467,11 @@ def plot_skewness():
 
     gs = GridSpec(2, 3)
     new_cov = Cov(
-        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=20
+        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=10
     )
-
-    lmax = [20, 30, 35]
+    # problem when cov is initialized and then set to the same lmax? yes! and only when cov is read from file
+    # matters for variance and skewness, mean is not affected
+    lmax = [30,30, 35]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
