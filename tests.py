@@ -467,7 +467,7 @@ def plot_skewness():
 
     gs = GridSpec(2, 3)
     new_cov = Cov(
-        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=10
+        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=20
     )
 
     lmax = [30, 35, 40]
