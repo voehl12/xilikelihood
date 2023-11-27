@@ -116,6 +116,7 @@ class Cov(SphereMask, TheoryCl):
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
             self._exact_lmax = new_lmax
+            self.wlm
             if self.l_smooth_auto:
                 self.l_smooth = new_lmax
             self.set_covalmpath()
@@ -161,7 +162,8 @@ class Cov(SphereMask, TheoryCl):
             exact_lmax = self._exact_lmax
         elif exact_lmax != self._exact_lmax:
             self.exact_lmax = exact_lmax
-
+        theory_cell = self.cell_cube(exact_lmax)
+        
         if self.check_cov():
             self.load_cov()
             return self.cov_alm
@@ -169,9 +171,6 @@ class Cov(SphereMask, TheoryCl):
             alm_kinds = ["ReE", "ImE", "ReB", "ImB"]
             alm_inds = cov_calc.match_alm_inds(alm_kinds)
             n_alm = len(alm_inds)
-
-            theory_cell = self.cell_cube(exact_lmax)
-
             lmin = 0
 
             if hasattr(self, "_noise_sigma"):
