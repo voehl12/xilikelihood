@@ -38,16 +38,20 @@ def mmatrix_pcl():
 
 
 def save_m(m, name):
-    print("saving M matrix...")
+    print("Saving M matrix.")
     np.savez(name, matrix=m)
 
 
 def check_m(name):
-    print("checking for M matrix...")
-    return os.path.isfile(name)
-
+    print("Checking for M matrix...")
+    if os.path.isfile(name):
+        print("Found.")
+        return True
+    else:
+        print("Not found.")
+        return False
 
 def load_m(name):
-    print("loading M matrix...")
+    print("Loading M matrix.")
     mfile = np.load(name)
     return mfile["matrix"]
