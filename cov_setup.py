@@ -287,7 +287,7 @@ class Cov(SphereMask, TheoryCl):
         # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
         if self.ang_bins_in_deg is None:
             raise RuntimeError("need to set angular bin for xi covariance.")
-        fsky = self.area / 41253
+        fsky = self.eff_area / 41253
         c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
         if lmax is None:
             lmax = self.lmax
