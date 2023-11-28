@@ -86,6 +86,24 @@ def mask_to_wlm(mask, lmax=None):
     """
     return hp.sphtfunc.map2alm(mask, lmax=lmax)
 
+class simulation:
+    # inherits theory c_ell and mask stuff, use properties to set up simulations (not for single simulation)
+    pass
+
+def cl2xi_new(pcl_22, ang_bins_in_deg, lmax=None, mask=None):
+    cl_e, cl_b, cl_eb = pcl_22[0], pcl_22[1], pcl_22[2]
+    lmin = 0
+    l = 2 * np.arange(lmin, lmax + 1) + 1
+    wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(lmin, lmax, 2, 2, theta_in_rad)
+    norm = 1 / (4 * np.pi)
+    bin1 = ang_bins_in_deg[0]
+    binmin_in_deg = bin1[0]
+    binmax_in_deg = bin1[1]
+    upper = np.radians(binmax_in_deg)
+    lower = np.radians(binmin_in_deg)
+    t_norm = 2 / (upper**2 - lower**2)
+    p_cl_prefactors = helper_funcs.bin_prefactors(bin1, self.wl, self._exact_lmax, self.lmax)
+    mean = np.sum(p_cl_prefactors[lmin : lmax + 1] * l * (cl_e[lmin : lmax + 1] + cl_b[lmin : lmax + 1]))
 
 def cl2xi(pcl_22, lmax=None, mask=None, norm_lm=False):
     """
