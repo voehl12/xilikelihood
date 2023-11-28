@@ -262,14 +262,18 @@ class SphereMask:
 
         else:
             raise RuntimeError("l_smooth needs to be None or integer")
-        mask_smooth = hp.sphtfunc.alm2map(self._wlm_lmax, self.nside)
-        self.eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._wlm_lmax
 
     @property
     def wl(self):
         self._wl = hp.sphtfunc.alm2cl(self.wlm_lmax)
         return self._wl
+    
+    @property
+    def eff_area(self):
+        mask_smooth = hp.sphtfunc.alm2map(self.wlm_lmax, self.nside)
+        self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
+        return self._eff_area
 
     def initiate_w_arrs(self):
         self.L = np.arange(self._exact_lmax + 1)
