@@ -287,6 +287,7 @@ class Cov(SphereMask, TheoryCl):
         # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
         if self.ang_bins_in_deg is None:
             raise RuntimeError("need to set angular bin for xi covariance.")
+        self.wlm_lmax
         fsky = self.eff_area / 41253
         c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
         if lmax is None:
@@ -357,15 +358,22 @@ class Cov(SphereMask, TheoryCl):
                 pass
 
     def save_cov(self):
-        print("saving covariance matrix...")
+        print("Saving covariance matrix.")
         np.savez(self.covalm_path, cov=self.cov_alm)
 
     def check_cov(self):
-        print("checking for covariance matrix...")
-        return os.path.isfile(self.covalm_path)
+        print("Checking for covariance matrix... ",end='')
+        if os.path.isfile(self.covalm_path):
+            print("Found.")
+            return True
+        else:
+            print("Not found.")
+            return False
+
+        
 
     def load_cov(self):
-        print("loading covariance matrix...")
+        print("loading covariance matrix.")
         covfile = np.load(self.covalm_path)
         self.cov_alm = covfile["cov"]
 
@@ -375,7 +383,7 @@ class Cov(SphereMask, TheoryCl):
         else:
             smoothstring = "lapodize{:d}".format(self.l_smooth)
         if self._sigma_e is None:
-            self.sigmaname = ""
+            self.sigmaname = "nonoise"
         else:
             if isinstance(self._sigma_e, str):
                 self.sigmaname = "noise" + self._sigma_e
@@ -395,7 +403,7 @@ class Cov(SphereMask, TheoryCl):
 
     def set_covalmpath(self):
         charac = self.set_char_string()
-        covname = "covariances/cov_xi" + charac
+        covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
         self.covalm_path = covname
 
     def cl2pseudocl(self):

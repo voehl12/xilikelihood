@@ -38,7 +38,7 @@ class TheoryCl:
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
             if self.smooth_signal == True:
-                smooth_ell = 100
+                smooth_ell = self.lmax
                 self.ee *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
                 self.nn *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
                 self.ne *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
@@ -262,18 +262,22 @@ class SphereMask:
 
         else:
             raise RuntimeError("l_smooth needs to be None or integer")
-        mask_smooth = hp.sphtfunc.alm2map(self._wlm_lmax, self.nside)
-        self.eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._wlm_lmax
 
     @property
     def wl(self):
         self._wl = hp.sphtfunc.alm2cl(self.wlm_lmax)
         return self._wl
+    
+    @property
+    def eff_area(self):
+        mask_smooth = hp.sphtfunc.alm2map(self.wlm_lmax, self.nside)
+        self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
+        return self._eff_area
 
     def initiate_w_arrs(self):
         self.L = np.arange(self._exact_lmax + 1)
-        print("calc w_array for ", self.L)
+        print("4D W_llpmmp will be calculated for lmax = {:d}".format(self._exact_lmax))
         self.M = np.arange(-self._exact_lmax, self._exact_lmax + 1)
         Nl = len(self.L)
         Nm = len(self.M)
@@ -359,13 +363,16 @@ class SphereMask:
         # with mup.Pool(processes=n_proc) as pool:
         self.wlm
         self.wlm_lmax
-        for arg in arglist:
+        print("Starting computation of 4D W_llpmmp arrays... ",end='')
+        for i,arg in enumerate(arglist):
+            print("Computing 4D W_llpmmp arrays......{:4.1f}%".format(i/len(arglist) * 100), end='\r')
             result = self.calc_w_element(*arg)
             self.save_w_element(result)
             # pool.apply_async(self.calc_w_element, args=arg,callback=self.save_w_element)
             # pool.close()
             # pool.join()
-
+        print()
+        print("Finished.")
         if self.spin0 and self.spin2:
             self._w_arr = np.append(self.wpm_arr, self.w0_arr, axis=0)
             self.w0_arr = (

@@ -467,12 +467,13 @@ def plot_skewness():
 
     gs = GridSpec(2, 3)
     new_cov = Cov(
-        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e=None, l_smooth=10
+        30, [2], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", sigma_e="default", l_smooth=20,smooth_signal=True
     )
+    # set noise apodization
     # problem when cov is initialized and then set to the same lmax? yes! and only when cov is read from file
     # matters for variance and skewness, mean is not affected
     # cov_xi is different for the first and second exact_lmax = 30
-    lmax = [30, 30, 35]
+    lmax = [30, 35, 40,50]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -548,7 +549,7 @@ def plot_skewness():
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
     ax8.legend()
 
-    plt.savefig("testfile.png")
+    plt.savefig("skweness{}.png".format(new_cov.set_char_string()))
 
 
 def sum_testing():
