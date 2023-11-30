@@ -1,13 +1,12 @@
 import numpy as np
 import healpy as hp
-from scipy.integrate import quad
+
 import pymaster as nmt
 import treecorr
-import wigner
-from scipy.special import eval_legendre
+
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
-from helper_funcs import get_noise_pixelsigma, get_noise_cl, pcl2xi
+from helper_funcs import get_noise_cl, pcl2xi, prep_prefactors
 from cov_setup import Cov
 
 
@@ -116,27 +115,37 @@ class TwoPointSimulation(Cov):
             pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
             return pcl_e, pcl_b, pcl_eb
 
-    def get_xi_namaster(self, maps_TQU, sep_in_deg, lmin=0):
+    def get_xi_namaster(self, maps_TQU, prefactors, lmin=0):
         # pcl2xi should work for several angles at once.
         pcl_22 = self.get_pcl(maps_TQU)
-        xi_p, xi_m = pcl2xi(pcl_22, sep_in_deg, self.wl, self._exact_lmax, self.lmax, lmin=lmin)
+        xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
         return xi_p, xi_m
 
-    def xi_sim(self, j, seps_in_deg, lmin=0):
+    def xi_sim(self, j, lmin=0, plot=False):
         xip, xim = [], []
 
         if self.ximode == "namaster":
+            prefactors = prep_prefactors(self.seps_in_deg, self.wl, self._exact_lmax, self.lmax)
             for _i in range(self.batchsize):
+                print(
+                    "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
+                    end="\r",
+                )
                 maps_TQU = self.create_maps()
                 maps = self.add_noise(maps_TQU)
-                xi_p, xi_m = self.get_xi_namaster(maps, seps_in_deg, lmin)
+                xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin)
                 xip.append(xi_p)
                 xim.append(xi_m)
-
+            xip = np.array(xip)
+            xim = np.array(xim)
+            if plot:
+                plt.figure()
+                plt.hist(xip[:, 0], bins=30)
+                plt.show()
             np.savez(
                 self.simpath + "/job{:d}.npz".format(j),
                 mode=self.ximode,
-                theta=seps_in_deg,
+                theta=self.seps_in_deg,
                 lmin=lmin,
                 xip=np.array(xip),
                 xim=np.array(xim),
