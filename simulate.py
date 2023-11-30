@@ -108,7 +108,7 @@ class TwoPointSimulation(Cov):
             return cl_e, cl_b, cl_eb
         else:
             # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
-            f_2 = nmt.NmtField(self.mask, maps_TQU[1:])
+            f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:])
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
             cl_22 = nmt.compute_coupled_cell(f_2, f_2)
@@ -121,7 +121,7 @@ class TwoPointSimulation(Cov):
         xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
         return xi_p, xi_m
 
-    def xi_sim(self, j, lmin=0, plot=False):
+    def xi_sim(self, j, lmin=0, plot=False,save_pcl=False):
         xip, xim = [], []
 
         if self.ximode == "namaster":
@@ -141,7 +141,7 @@ class TwoPointSimulation(Cov):
             if plot:
                 plt.figure()
                 plt.hist(xip[:, 0], bins=30)
-                plt.show()
+                plt.savefig('sim_demo.png')
             np.savez(
                 self.simpath + "/job{:d}.npz".format(j),
                 mode=self.ximode,
