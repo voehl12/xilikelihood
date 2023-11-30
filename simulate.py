@@ -7,178 +7,140 @@ import wigner
 from scipy.special import eval_legendre
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
-from helper_funcs import get_noise_pixelsigma, get_noise_cl
+from helper_funcs import get_noise_pixelsigma, get_noise_cl, pcl2xi
+from cov_setup import Cov
 
 
-def create_maps(cl=None, nside=256, lmax=None):
-    """
-    Create Gaussian random maps from C_l
-    C_l need to be tuple of arrays in order:  TT, TE, EE, *BB
-    * are zero for pure shear
-    """
-    if cl is None:
-        npix = hp.nside2npix(nside)
-        zeromaps = np.zeros((3, npix))
-        return zeromaps
-    else:
-        np.random.seed()
-        if lmax:
-            lmax = lmax
-        else:
-            lmax = 3 * nside - 1
-        maps = hp.sphtfunc.synfast(cl, nside, lmax=lmax, verbose=True)
-        return maps
-
-
-def add_noise(maps, sigma_n=None, lmax=None, testing=False):
-    nside = hp.get_nside(maps[0])
-    if sigma_n is None:
-        return maps
-    elif sigma_n == "default":
-        sigma_n = get_noise_pixelsigma(nside=nside)
-    npix = hp.get_map_size(maps[0])
-    rng = default_rng()
-    if lmax is not None:
-        noise_map_q = limit_noise(rng.normal(size=(npix), scale=sigma_n), lmax)
-        noise_map_u = limit_noise(rng.normal(size=(npix), scale=sigma_n), lmax)
-        # if i limit the noise, the measured C_ell will be smaller than the input variance, therefore the measured correlation function will be smaller than the predicted one.
-    else:
-        noise_map_q = rng.normal(size=(npix), scale=sigma_n)
-        noise_map_u = rng.normal(size=(npix), scale=sigma_n)
-    if testing == True:
-        cl_t = hp.anafast(noise_map_q)
-        assert np.allclose(np.mean(cl_t), get_noise_cl(), rtol=1e-01), (
-            np.mean(cl_t),
-            get_noise_cl(),
-        )
-
-    maps[1] += noise_map_q
-    maps[2] += noise_map_u
-
-    return maps
-
-
-def limit_noise(noisemap, lmax):
-    nside = hp.get_nside(noisemap)
-    almq = hp.map2alm(noisemap)
-    clq = hp.sphtfunc.alm2cl(almq)
-    np.random.seed()
-    return hp.sphtfunc.synfast(clq, nside, lmax=lmax)
-
-
-def get_pcl(maps_TQU, mask=None):
-    if mask is None:
-        cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb = hp.anafast(maps_TQU)
-        return cl_e, cl_b, cl_eb
-    else:
-        # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
-        f_2 = nmt.NmtField(mask, maps_TQU[1:])
-        # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
-        # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
-        cl_22 = nmt.compute_coupled_cell(f_2, f_2)
-        pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
-        return pcl_e, pcl_b, pcl_eb
-
-
-def mask_to_wlm(mask, lmax=None):
-    """
-    calculate spherical harmonic transform of a given mask.
-    """
-    return hp.sphtfunc.map2alm(mask, lmax=lmax)
-
-class simulation:
+class TwoPointSimulation(Cov):
     # inherits theory c_ell and mask stuff, use properties to set up simulations (not for single simulation)
-    pass
-
-def cl2xi_new(pcl_22, ang_bins_in_deg, lmax=None, mask=None):
-    cl_e, cl_b, cl_eb = pcl_22[0], pcl_22[1], pcl_22[2]
-    lmin = 0
-    l = 2 * np.arange(lmin, lmax + 1) + 1
-    wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(lmin, lmax, 2, 2, theta_in_rad)
-    norm = 1 / (4 * np.pi)
-    bin1 = ang_bins_in_deg[0]
-    binmin_in_deg = bin1[0]
-    binmax_in_deg = bin1[1]
-    upper = np.radians(binmax_in_deg)
-    lower = np.radians(binmin_in_deg)
-    t_norm = 2 / (upper**2 - lower**2)
-    p_cl_prefactors = helper_funcs.bin_prefactors(bin1, self.wl, self._exact_lmax, self.lmax)
-    mean = np.sum(p_cl_prefactors[lmin : lmax + 1] * l * (cl_e[lmin : lmax + 1] + cl_b[lmin : lmax + 1]))
-
-def cl2xi(pcl_22, lmax=None, mask=None, norm_lm=False):
-    """
-    function to convert pseudo-Cl to correlation function estimator for given angular separation
-    right now takes the same l-limits for the normalization factor, but this might have to be adjusted
-    to taking the maximum lmax here, since it would be no problem computationally
-    (unlike for the correlation function summation and therefore covariance matrix)
-    norm_lm: whether the lmax for the norm should be a different one. If True, lmax for the norm will be 3*nside - 1,
-    regardless of lmax for the pseudo_Cl summation. Turns out, this only makes a difference if lmax is less than 20% of the
-    3nside-1 lmax.
-    returns xi_p and xi_m as functions of angle in degree and lmin.
-    """
-    # TODO: rewrite with bin integration before summation (could take bin prefactors from helper_funcs.py)
-    cl_e, cl_b, cl_eb = pcl_22[0], pcl_22[1], pcl_22[2]
-    if lmax is None:
-        lmax = len(cl_e) - 1
-    if lmax > len(cl_e):
-        raise RuntimeError("lmax for correlation function estimator is too large!")
-    else:
-        cl_short = lambda lmin: (
-            cl_e[lmin : lmax + 1],
-            cl_b[lmin : lmax + 1],
-            cl_eb[lmin : lmax + 1],
-        )
-        l = lambda lmin: np.arange(lmin, lmax + 1)
-
-    wigners_p = lambda t_in_deg, lmin: wigner.wigner_dl(lmin, lmax, 2, 2, np.radians(t_in_deg))
-    wigners_m = lambda t_in_deg, lmin: wigner.wigner_dl(lmin, lmax, 2, -2, np.radians(t_in_deg))
-
-    if mask is None:
-        mask = np.ones(hp.nside2npix(256))
-        # more precise than setting
-        # norm = lambda t_in_deg, lmin: 1 / (8 * np.pi**2)
-
-    if norm_lm == True:
-        w_lm = mask_to_wlm(mask)
-        wl = hp.sphtfunc.alm2cl(w_lm)
-        l_norm = np.arange(len(wl))
-        legendres = lambda t_in_deg: eval_legendre(l_norm, np.cos(np.radians(t_in_deg)))
-        norm = (
-            lambda t_in_deg, lmin: 1
-            / np.sum((2 * l_norm + 1) * legendres(t_in_deg) * wl)
-            / (2 * np.pi)
+    def __init__(
+        self,
+        seps_in_deg,
+        ximode="namaster",
+        batchsize=1,
+        simpath="simulations/",
+        exact_lmax=None,
+        spins=[2],
+        lmax=None,
+        sigma_e=None,
+        clpath=None,
+        theory_lmin=2,
+        clname="3x2pt_kids_55",
+        maskpath=None,
+        circmaskattr=None,
+        lmin=None,
+        maskname="mask",
+        l_smooth=None,
+        smooth_signal=False,
+    ):
+        super().__init__(
+            exact_lmax,
+            spins,
+            lmax,
+            sigma_e,
+            clpath,
+            theory_lmin,
+            clname,
+            maskpath,
+            circmaskattr,
+            lmin,
+            maskname,
+            l_smooth,
+            smooth_signal,
         )
 
-    else:
-        w_lm = mask_to_wlm(mask, lmax)
-        wl_arr = hp.sphtfunc.alm2cl(w_lm)
-        wl = lambda lmin: wl_arr[lmin:]
-        legendres = lambda t_in_deg, lmin: eval_legendre(l(lmin), np.cos(np.radians(t_in_deg)))
-        norm = (
-            lambda t_in_deg, lmin: 1
-            / np.sum((2 * l(lmin) + 1) * legendres(t_in_deg, lmin) * wl(lmin))
-            / (2 * np.pi)
-        )
+        self.ximode = ximode
+        self.batchsize = batchsize
+        self.simpath = simpath
+        self.seps_in_deg = seps_in_deg
 
-    xi_p = (
-        lambda t_in_deg, lmin: 2
-        * np.pi
-        * norm(np.radians(t_in_deg), lmin)
-        * np.sum(
-            (2 * l(lmin) + 1) * wigners_p(t_in_deg, lmin) * (cl_short(lmin)[0] + cl_short(lmin)[1])
-        )
-    )
-    xi_m = (
-        lambda t_in_deg, lmin: 2
-        * np.pi
-        * norm(np.radians(t_in_deg), lmin)
-        * np.sum(
-            (2 * l(lmin) + 1)
-            * wigners_m(t_in_deg, lmin)
-            * (cl_short(lmin)[0] - cl_short(lmin)[1] - 2j * cl_short(lmin)[2])
-        )
-    )
-    return xi_p, xi_m
+    def create_maps(self):
+        """
+        Create Gaussian random maps from C_l
+        C_l need to be tuple of arrays in order:  TT, TE, EE, *BB
+        * are zero for pure shear
+        """
+        if self.clpath is None:
+            npix = hp.nside2npix(self.nside)
+            zeromaps = np.zeros((3, npix))
+            return zeromaps
+        else:
+            np.random.seed()
+            maps = hp.sphtfunc.synfast(
+                (self.nn, self.ne, self.ee, self.bb), self.nside, lmax=self.lmax, verbose=True
+            )
+            return maps
+
+    def add_noise(self, maps, testing=False):
+        if hasattr(self, "pixelsigma"):
+            sigma = self.pixelsigma
+        else:
+            return maps
+        rng = default_rng()
+
+        noise_map_q = self.limit_noise(rng.normal(size=(self.npix), scale=sigma), self.lmax)
+        noise_map_u = self.limit_noise(rng.normal(size=(self.npix), scale=sigma), self.lmax)
+
+        if testing == True:
+            cl_t = hp.anafast(noise_map_q)
+            assert np.allclose(np.mean(cl_t), get_noise_cl(), rtol=1e-01), (
+                np.mean(cl_t),
+                get_noise_cl(),
+            )
+
+        maps[1] += noise_map_q
+        maps[2] += noise_map_u
+
+        return maps
+
+    def limit_noise(self, noisemap):
+        almq = hp.map2alm(noisemap)
+        clq = hp.sphtfunc.alm2cl(almq)
+
+        if self.smooth_signal:
+            clq *= self.smooth_array
+        np.random.seed()
+        assert np.allclose(clq, self.noise_cl)
+        return hp.sphtfunc.synfast(clq, self.nside, lmax=self.lmax)
+
+    def get_pcl(self, maps_TQU):
+        if self.maskname == "fullsky":
+            cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb = hp.anafast(maps_TQU)
+            return cl_e, cl_b, cl_eb
+        else:
+            # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
+            f_2 = nmt.NmtField(self.mask, maps_TQU[1:])
+            # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
+            # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
+            cl_22 = nmt.compute_coupled_cell(f_2, f_2)
+            pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
+            return pcl_e, pcl_b, pcl_eb
+
+    def get_xi_namaster(self, maps_TQU, sep_in_deg, lmin=0):
+        # pcl2xi should work for several angles at once.
+        pcl_22 = self.get_pcl(maps_TQU)
+        xi_p, xi_m = pcl2xi(pcl_22, sep_in_deg, self.wl, self._exact_lmax, self.lmax, lmin=lmin)
+        return xi_p, xi_m
+
+    def xi_sim(self, j, seps_in_deg, lmin=0):
+        xip, xim = [], []
+
+        if self.ximode == "namaster":
+            for _i in range(self.batchsize):
+                maps_TQU = self.create_maps()
+                maps = self.add_noise(maps_TQU)
+                xi_p, xi_m = self.get_xi_namaster(maps, seps_in_deg, lmin)
+                xip.append(xi_p)
+                xim.append(xi_m)
+
+            np.savez(
+                self.simpath + "/job{:d}.npz".format(j),
+                mode=self.ximode,
+                theta=seps_in_deg,
+                lmin=lmin,
+                xip=np.array(xip),
+                xim=np.array(xim),
+            )
 
 
 def prep_cat_treecorr(nside, mask=None):
@@ -232,51 +194,6 @@ def get_xi_treecorr(maps_TQU, treecorr_seps, cat_angles, mask_treecorr=None):
     xi_m = gg.xim
     angsep = gg.rnom
     return xi_p, xi_m, angsep
-
-
-def get_xi_namaster(maps_TQU, seps_in_deg, mask=None, lmax=None, lmin=[0], norm_lm=True):
-    pcl_22 = get_pcl(maps_TQU, mask)
-    xi_p, xi_m = cl2xi(
-        pcl_22, lmax=lmax, mask=mask, norm_lm=norm_lm
-    )  # as functions of angle [degrees] and minimum multipole moment
-
-    # as xi_p is already a function of t: could implement binned version here
-    # check whether theta is a list of angles or tuples of angles
-    if type(seps_in_deg[0]) is tuple:
-        t = np.empty(len(seps_in_deg), dtype=object)  # make an array of tuples
-        t[:] = seps_in_deg  # put boundary tuples into array in order to make a meshgrid
-        t_grid, l_grid = np.meshgrid(t, lmin)
-        # xip/xim are defined as functions of angle in degrees, so integration bounds should be in degrees
-        # found error: integration needs to be weighted by t.
-        weight = lambda t: t
-        xip_integrand = lambda t_in_deg, lm: xi_p(t_in_deg, lm) * weight(t_in_deg)
-        xim_integrand = lambda t_in_deg, lm: xi_m(t_in_deg, lm) * weight(t_in_deg)
-        xip_binned = lambda th, lm: quad(xip_integrand, th[0], th[1], args=(lm,))[0] / (
-            0.5 * (th[1] ** 2 - th[0] ** 2)
-        )
-        xim_binned = lambda th, lm: quad(xim_integrand, th[0], th[1], args=(lm,))[0] / (
-            0.5 * (th[1] ** 2 - th[0] ** 2)
-        )
-        xi_p_arr = list(map(xip_binned, t_grid.flat, l_grid.flat))
-        xi_m_arr = list(map(xim_binned, t_grid.flat, l_grid.flat))
-    else:
-        t_grid, l_grid = np.meshgrid(seps_in_deg, lmin)
-        xi_p_arr = list(map(xi_p, t_grid.flat, l_grid.flat))
-        xi_m_arr = list(map(xi_m, t_grid.flat, l_grid.flat))
-    # is reshape correct? yes.
-    return np.real(np.array(xi_p_arr).reshape(len(lmin), len(seps_in_deg))), np.real(
-        np.array(xi_m_arr).reshape(len(lmin), len(seps_in_deg))
-    )
-
-
-def set_cl(cl_object, nside):
-    if cl_object is None:
-        lmax = 3 * nside - 1
-        cl_tup = None
-    else:
-        lmax = cl_object.lmax
-        cl_tup = (cl_object.nn, cl_object.ne, cl_object.ee, cl_object.bb)
-    return lmax, cl_tup
 
 
 def xi_sim(
