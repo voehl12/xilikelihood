@@ -39,10 +39,11 @@ class TheoryCl:
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
             if self.smooth_signal == True:
                 smooth_ell = self.lmax
-                self.ee *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
-                self.nn *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
-                self.ne *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
-                self.bb *= wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
+                self.ee *= self.smooth_array
+                self.nn *= self.smooth_array
+                self.ne *= self.smooth_array
+                self.bb *= self.smooth_array
                 self.clname += "_smooth{:d}".format(smooth_ell)
                 print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
 
@@ -74,7 +75,7 @@ class TheoryCl:
 class SphereMask:
     """
     A class used to store and calculate properties of a survey mask on a sphere.
-
+    Maybe split this class into a mask and a field class or have the mask inherit from the field.
     Attributes
     ----------
     mask : array
@@ -146,7 +147,7 @@ class SphereMask:
             raise RuntimeError(
                 "Please specify either a mask path or attributes for a circular mask"
             )
-
+        self.npix = hp.nside2npix(self.nside)
         self.spins = spins
         self.spin0 = None
         self.spin2 = None
@@ -268,7 +269,7 @@ class SphereMask:
     def wl(self):
         self._wl = hp.sphtfunc.alm2cl(self.wlm_lmax)
         return self._wl
-    
+
     @property
     def eff_area(self):
         mask_smooth = hp.sphtfunc.alm2map(self.wlm_lmax, self.nside)
@@ -363,9 +364,12 @@ class SphereMask:
         # with mup.Pool(processes=n_proc) as pool:
         self.wlm
         self.wlm_lmax
-        print("Starting computation of 4D W_llpmmp arrays... ",end='')
-        for i,arg in enumerate(arglist):
-            print("Computing 4D W_llpmmp arrays......{:4.1f}%".format(i/len(arglist) * 100), end='\r')
+        print("Starting computation of 4D W_llpmmp arrays... ", end="")
+        for i, arg in enumerate(arglist):
+            print(
+                "Computing 4D W_llpmmp arrays......{:4.1f}%".format(i / len(arglist) * 100),
+                end="\r",
+            )
             result = self.calc_w_element(*arg)
             self.save_w_element(result)
             # pool.apply_async(self.calc_w_element, args=arg,callback=self.save_w_element)
