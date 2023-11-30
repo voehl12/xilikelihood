@@ -80,7 +80,7 @@ def ang_prefactors(t_in_deg, wl, norm_lmax, out_lmax, kind="p"):
 
 def bin_prefactors(ang_bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
     lower, upper = ang_bin_in_deg
-    lower, upper = np.radians(lower), np.radians(lower)
+    lower, upper = np.radians(lower), np.radians(upper)
     buffer = 0
     norm_l = np.arange(norm_lmax + buffer + 1)
     legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
@@ -105,29 +105,58 @@ def bin_prefactors(ang_bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
     return 2 * np.pi * A_ell[0] / W
 
 
-def pcl2xi(pcl, ang_in_deg, wl, norm_lmax, out_lmax, lmin=0):
-    pcl_e, pcl_b, pcl_eb = pcl
-    l = 2 * np.arange(lmin, out_lmax + 1) + 1
-    if type(ang_in_deg) is tuple:
+def prep_prefactors(angs_in_deg, wl, norm_lmax, out_lmax):
+    prefactors_arr = np.zeros((len(angs_in_deg), 2, out_lmax + 1))
+    if type(angs_in_deg[0]) is tuple:
         prefactors = bin_prefactors
     else:
         prefactors = ang_prefactors
-    p_cl_prefactors_p = prefactors(ang_in_deg, wl, norm_lmax, out_lmax)
-    p_cl_prefactors_m = prefactors(ang_in_deg, wl, norm_lmax, out_lmax, kind="m")
+    for i, ang_in_deg in enumerate(angs_in_deg):
+        prefactors_arr[i, 0] = prefactors(ang_in_deg, wl, norm_lmax, out_lmax)
+        prefactors_arr[i, 1] = prefactors(ang_in_deg, wl, norm_lmax, out_lmax, kind="m")
+
+    return prefactors_arr
+
+
+def pcl2xi(pcl, prefactors, out_lmax, lmin=0):
+    """
+    _summary_
+
+    Parameters
+    ----------
+    pcl : tuple
+        three numpy arrays: (ee,bb,eb)
+    prefactors : np.array
+        array with bin or angle prefactors from prep_prefactors (i.e. an (len(angles),2,out_lmax) array)
+    out_lmax : int
+        lmax to which sum over pcl is taken
+    lmin : int, optional
+        _description_, by default 0
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    pcl_e, pcl_b, pcl_eb = pcl
+    l = 2 * np.arange(lmin, out_lmax + 1) + 1
+    p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
 
     xip = np.sum(
-        p_cl_prefactors_p[lmin : out_lmax + 1]
+        p_cl_prefactors_p[:, lmin : out_lmax + 1]
         * l
-        * (pcl_e[lmin : out_lmax + 1] + pcl_b[lmin : out_lmax + 1])
+        * (pcl_e[lmin : out_lmax + 1] + pcl_b[lmin : out_lmax + 1]),
+        axis=-1,
     )
     xim = np.sum(
-        p_cl_prefactors_m[lmin : out_lmax + 1]
+        p_cl_prefactors_m[:, lmin : out_lmax + 1]
         * l
         * (
             pcl_e[lmin : out_lmax + 1]
             - pcl_b[lmin : out_lmax + 1]
             - 2j * pcl_eb[lmin : out_lmax + 1]
-        )
+        ),
+        axis=-1,
     )
 
     return xip, xim
