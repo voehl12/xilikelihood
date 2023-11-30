@@ -652,7 +652,7 @@ def sim_test():
     from simulate import TwoPointSimulation
 
     new_sim = TwoPointSimulation(
-        [(4, 6)], circmaskattr=(4000, 256), clpath="Cl_3x2pt_kids55.txt", batchsize=30
+        [(4, 6)], circmaskattr=(4000, 256),l_smooth=20, clpath="Cl_3x2pt_kids55.txt", batchsize=10
     )
     jobnumber = 0
     new_sim.xi_sim(jobnumber, plot=True)
