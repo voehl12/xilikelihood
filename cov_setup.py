@@ -100,9 +100,11 @@ class Cov(SphereMask, TheoryCl):
             self.set_covalmpath()
             self.set_noise_sigma()
             if hasattr(self, "cov_alm"):
+                print("Set new noise level, recalculate pseudo alm covariance.")
                 self.cov_alm_xi(exact_lmax=self._exact_lmax, pos_m=True)
 
             if hasattr(self, "cov_xi"):
+                print("Set new noise level, recalculate Gaussian covariance.")
                 self.cov_xi_gaussian()
 
             else:
@@ -173,7 +175,7 @@ class Cov(SphereMask, TheoryCl):
             lmin = 0
 
             if hasattr(self, "_noise_sigma"):
-                theory_cell += helper_funcs.noise_cl(self._noise_sigma, exact_lmax + 1)
+                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl)
 
             if pos_m:
                 n_cov = n_alm * (exact_lmax - lmin + 1) * (exact_lmax + 1)
@@ -242,20 +244,13 @@ class Cov(SphereMask, TheoryCl):
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
         return cov_matrix
 
-    def cov_cl_gaussian(self, apo=False):
+    def cov_cl_gaussian(self):
         cl_e = self.ee.copy()
         noise2 = np.zeros_like(cl_e)
         ell = np.arange(self.lmax + 1)
         if hasattr(self, "_noise_sigma"):
-            apo_width = self.lmax / 3
-            noise_B = noise_E = self._noise_sigma * np.ones_like(cl_e)
-            if apo:
-                noise_B *= stats.norm.pdf(ell, 0, apo_width) / np.max(
-                    stats.norm.pdf(ell, 0, apo_width)
-                )
-                noise_E *= stats.norm.pdf(ell, 0, apo_width) / np.max(
-                    stats.norm.pdf(ell, 0, apo_width)
-                )
+            noise_B = noise_E = self.noise_cl
+
             cl_e += noise_E
             cl2 = np.square(cl_e) + np.square(noise_B)
             noise2 += np.square(noise_E) + np.square(noise_B)
@@ -266,7 +261,7 @@ class Cov(SphereMask, TheoryCl):
         noise_diag = 2 * noise2
         return diag, noise_diag
 
-    def cov_xi_gaussian(self, lmin=0, lmax=None, noise_apo=False):
+    def cov_xi_gaussian(self, lmin=0, lmax=None):
         """
         Calculates covariance of xip correlation function in Gaussian approximation.
 
@@ -289,7 +284,7 @@ class Cov(SphereMask, TheoryCl):
             raise RuntimeError("need to set angular bin for xi covariance.")
         self.wlm_lmax
         fsky = self.eff_area / 41253
-        c_tot, c_sn = self.cov_cl_gaussian(noise_apo)
+        c_tot, c_sn = self.cov_cl_gaussian()
         if lmax is None:
             lmax = self.lmax
         c_tot, c_sn = c_tot[lmin : lmax + 1], c_sn[lmin : lmax + 1]
@@ -311,46 +306,45 @@ class Cov(SphereMask, TheoryCl):
 
             t_norm = 2 / (upper**2 - lower**2)
             # much closer to cl-xi if the normalization in the bin prefactors is taken to lmax! (two orders of magnitude, even with apodized mask)
-            p_cl_prefactors = helper_funcs.bin_prefactors(
-                bin1, self.wl, self._exact_lmax, self.lmax
-            )
+
             integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
             cov_xi = (
                 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * c_tot * l)
             )
             cov_sn = 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * l * c_sn)
             pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
-            cl_mean = (
-                t_norm
-                * norm
-                * np.sum(
-                    integrated_wigners
-                    * l
-                    * (self.ee.copy()[lmin : lmax + 1] + np.ones_like(l) * np.sqrt(c_sn))
-                )
-            )
 
-            mean = np.sum(
-                p_cl_prefactors[lmin : lmax + 1]
-                * l
-                * (self.p_ee.copy()[lmin : lmax + 1] + self.p_bb.copy()[lmin : lmax + 1])
+            cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, self.wl, lmax, lmin)
+            pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
+                (self.p_ee, self.p_bb, self.p_eb),
+                bin1,
+                self.wl,
+                self._exact_lmax,
+                self.lmax,
+                lmin=lmin,
             )
 
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
-        self.xi_pcl = mean
-        self.xi_cl = cl_mean
+        self.xi_pcl = pcl_mean_p
+        self.xi_cl = cl_mean_p
 
     def set_noise_sigma(self):
         if self._sigma_e is not None:
             if isinstance(self._sigma_e, str):
                 self._noise_sigma = helper_funcs.get_noise_cl()
+                self.pixelsigma = helper_funcs.get_noise_pixelsigma(self.nside)
+
             elif isinstance(self._sigma_e, tuple):
                 self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+                self.pixelsigma = helper_funcs.get_noise_pixelsigma(self.nside, self._sigma_e)
             else:
                 raise RuntimeError(
                     "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
                 )
+            self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
+            if self.smooth_signal:
+                self.noise_cl *= self.smooth_array
         else:
             try:
                 del self._noise_sigma
@@ -362,15 +356,13 @@ class Cov(SphereMask, TheoryCl):
         np.savez(self.covalm_path, cov=self.cov_alm)
 
     def check_cov(self):
-        print("Checking for covariance matrix... ",end='')
+        print("Checking for covariance matrix... ", end="")
         if os.path.isfile(self.covalm_path):
             print("Found.")
             return True
         else:
             print("Not found.")
             return False
-
-        
 
     def load_cov(self):
         print("loading covariance matrix.")
@@ -413,6 +405,7 @@ class Cov(SphereMask, TheoryCl):
             pclfile = np.load(pclpath)
             self.p_ee = pclfile["pcl_ee"]
             self.p_bb = pclfile["pcl_bb"]
+            self.p_eb = pclfile["pcl_eb"]
         else:
             m_llp_p, m_llp_m = self.m_llp
             if hasattr(self, "_noise_sigma"):
@@ -421,8 +414,11 @@ class Cov(SphereMask, TheoryCl):
             else:
                 cl_e = self.ee.copy()
                 cl_b = self.bb.copy()
+                cl_eb = cl_be = cl_b
 
             self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
             self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+            self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
+
             print("saving pseudo_cl...")
-            np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb)
+            np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb, pcl_eb=self.p_eb)
