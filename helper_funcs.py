@@ -32,12 +32,12 @@ def get_noise_pixelsigma(nside=256, sigma_e=(0.282842712474619, 1.207829761642))
     return sigma / np.sqrt(n_gal_per_arcmin2 * hp.nside2pixarea(nside, degrees=True) * 3600)
 
 
-def noise_cl(sigma2, len_l):
+def noise_cl_cube(noise_cl):
     # separately for e,b and n?
-    c_all = np.zeros((3, 3, len_l))
+    c_all = np.zeros((3, 3, len(noise_cl)))
     for i in range(3):
-        c_all[i, i] = np.ones(len_l)
-    return sigma2 * c_all
+        c_all[i, i] = noise_cl
+    return c_all
 
 
 def gaussian_cf(t, mu, sigma):
@@ -60,27 +60,27 @@ def skewness(t, cf):
     return (third - 3 * first * sigma2 - first**3) / np.sqrt(sigma2) ** 3
 
 
-def ang_prefactors(t_in_deg, wl, kind="p"):
+def ang_prefactors(t_in_deg, wl, norm_lmax, out_lmax, kind="p"):
     # normalization factor automatically has same l_max as the pseudo-Cl summation
 
     t = np.radians(t_in_deg)
-    norm_l = np.arange(len(wl))
+    norm_l = np.arange(norm_lmax + 1)
     legendres = eval_legendre(norm_l, np.cos(t))
     norm = 1 / np.sum((2 * norm_l + 1) * legendres * wl) / (2 * np.pi)
 
     if kind == "p":
-        wigners = wigner.wigner_dl(norm_l[0], norm_l[-1], 2, 2, t)
+        wigners = wigner.wigner_dl(0, out_lmax, 2, 2, t)
     elif kind == "m":
-        wigners = wigner.wigner_dl(norm_l[0], norm_l[-1], 2, -2, t)
+        wigners = wigner.wigner_dl(0, out_lmax, 2, -2, t)
     else:
         raise RuntimeError("correlation function kind needs to be p or m")
 
     return 2 * np.pi * norm * wigners
 
 
-def bin_prefactors(bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
-    t0, t1 = bin_in_deg
-    t0, t1 = np.radians(t0), np.radians(t1)
+def bin_prefactors(ang_bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
+    lower, upper = ang_bin_in_deg
+    lower, upper = np.radians(lower), np.radians(lower)
     buffer = 0
     norm_l = np.arange(norm_lmax + buffer + 1)
     legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
@@ -99,7 +99,64 @@ def bin_prefactors(bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
 
     integrand = lambda t_in_rad: norm(t_in_rad) * wigners(t_in_rad) * t_in_rad
     # norm * d_l * weights
-    W = 0.5 * (t1**2 - t0**2)  # weights already integrated
-    A_ell = quad_vec(integrand, t0, t1)
+    W = 0.5 * (upper**2 - lower**2)  # weights already integrated
+    A_ell = quad_vec(integrand, lower, upper)
 
     return 2 * np.pi * A_ell[0] / W
+
+
+def pcl2xi(pcl, ang_in_deg, wl, norm_lmax, out_lmax, lmin=0):
+    pcl_e, pcl_b, pcl_eb = pcl
+    l = 2 * np.arange(lmin, out_lmax + 1) + 1
+    if type(ang_in_deg) is tuple:
+        prefactors = bin_prefactors
+    else:
+        prefactors = ang_prefactors
+    p_cl_prefactors_p = prefactors(ang_in_deg, wl, norm_lmax, out_lmax)
+    p_cl_prefactors_m = prefactors(ang_in_deg, wl, norm_lmax, out_lmax, kind="m")
+
+    xip = np.sum(
+        p_cl_prefactors_p[lmin : out_lmax + 1]
+        * l
+        * (pcl_e[lmin : out_lmax + 1] + pcl_b[lmin : out_lmax + 1])
+    )
+    xim = np.sum(
+        p_cl_prefactors_m[lmin : out_lmax + 1]
+        * l
+        * (
+            pcl_e[lmin : out_lmax + 1]
+            - pcl_b[lmin : out_lmax + 1]
+            - 2j * pcl_eb[lmin : out_lmax + 1]
+        )
+    )
+
+    return xip, xim
+
+
+def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
+    cl_e, cl_b = cl
+    l = 2 * np.arange(lmin, out_lmax + 1) + 1
+    wigner_int_p = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
+        lmin, out_lmax, 2, 2, theta_in_rad
+    )
+    wigner_int_m = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
+        lmin, out_lmax, 2, -2, theta_in_rad
+    )
+    norm = 1 / (4 * np.pi)
+    lower, upper = ang_bin_in_deg
+    lower, upper = np.radians(lower), np.radians(lower)
+    t_norm = 2 / (upper**2 - lower**2)
+    integrated_wigners_p = quad_vec(wigner_int_p, lower, upper)[0]
+    integrated_wigners_m = quad_vec(wigner_int_m, lower, upper)[0]
+    xip = (
+        t_norm
+        * norm
+        * np.sum(integrated_wigners_p * l * (cl_e[lmin : out_lmax + 1] + cl_b[lmin : out_lmax + 1]))
+    )
+    xim = (
+        t_norm
+        * norm
+        * np.sum(integrated_wigners_m * l * (cl_e[lmin : out_lmax + 1] - cl_b[lmin : out_lmax + 1]))
+    )
+
+    return xip, xim
