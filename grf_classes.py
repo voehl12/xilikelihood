@@ -267,7 +267,10 @@ class SphereMask:
 
     @property
     def wl(self):
-        self._wl = hp.sphtfunc.alm2cl(self.wlm_lmax)
+        wlm = self.wlm_lmax
+        self._wl = hp.sphtfunc.alm2cl(wlm)
+        mask_smooth = hp.sphtfunc.alm2map(wlm, self.nside)
+        self.smooth_mask = mask_smooth
         return self._wl
 
     @property
