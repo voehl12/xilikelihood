@@ -173,7 +173,7 @@ def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
     )
     norm = 1 / (4 * np.pi)
     lower, upper = ang_bin_in_deg
-    lower, upper = np.radians(lower), np.radians(lower)
+    lower, upper = np.radians(lower), np.radians(upper)
     t_norm = 2 / (upper**2 - lower**2)
     integrated_wigners_p = quad_vec(wigner_int_p, lower, upper)[0]
     integrated_wigners_m = quad_vec(wigner_int_m, lower, upper)[0]
