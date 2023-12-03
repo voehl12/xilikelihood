@@ -22,11 +22,8 @@ def pdf_xi_1D(
         ang = "{:.0f}_{:.0f}".format(angular_bin_in_deg[0][0], angular_bin_in_deg[0][1])
     else:
         raise RuntimeError("Specify angular bin as tuple of two values in degrees.")
-    if cov_object.l_smooth is None:
-        smoothstring = ""
-    else:
-        smoothstring = "_lapodize{:d}".format(cov_object.l_smooth)
-    mname = "m_xi{}_l{:d}_t{}_{}{}.npz".format(kind, exact_lmax, ang, maskname, smoothstring)
+ 
+    mname = "m_xi{}_l{:d}_t{}_{}.npz".format(kind, exact_lmax, ang, maskname)
 
     try:
         cov = cov_object.cov_alm
