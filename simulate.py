@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import healpy as hp
 
@@ -108,6 +110,8 @@ class TwoPointSimulation(Cov):
             return cl_e, cl_b, cl_eb
         else:
             # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
+            if self.smooth_mask is None:
+                raise RuntimeError("mask has not been smoothed yet!")
             f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:])
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
@@ -123,7 +127,12 @@ class TwoPointSimulation(Cov):
 
     def xi_sim(self, j, lmin=0, plot=False,save_pcl=False):
         xip, xim = [], []
-
+        foldername = "/{}_{}_{}".format(self.clname,self.maskname,self.sigmaname)
+        path = self.simpath+foldername
+        if not os.path.isdir(path):
+            command = "mkdir "+path
+            os.system(command)
+        self.simpath = path
         if self.ximode == "namaster":
             prefactors = prep_prefactors(self.seps_in_deg, self.wl, self._exact_lmax, self.lmax)
             for _i in range(self.batchsize):
@@ -141,7 +150,7 @@ class TwoPointSimulation(Cov):
             if plot:
                 plt.figure()
                 plt.hist(xip[:, 0], bins=30)
-                plt.savefig('sim_demo.png')
+                plt.savefig('sim_demo_{:d}.png'.format(j))
             np.savez(
                 self.simpath + "/job{:d}.npz".format(j),
                 mode=self.ximode,
