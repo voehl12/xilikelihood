@@ -462,7 +462,7 @@ def plot_skewness():
     import calc_pdf, grf_classes
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
-
+    import plotting
     fig = plt.figure(figsize=(20, 14))
 
     gs = GridSpec(2, 3)
@@ -471,15 +471,12 @@ def plot_skewness():
         [2],
         circmaskattr=(4000, 256),
         clpath="Cl_3x2pt_kids55.txt",
-        sigma_e="default",
+        sigma_e=None,
         l_smooth=20,
-        smooth_signal=True,
+        smooth_signal=False,
     )
     # set noise apodization
-    # problem when cov is initialized and then set to the same lmax? yes! and only when cov is read from file
-    # matters for variance and skewness, mean is not affected
-    # cov_xi is different for the first and second exact_lmax = 30
-    lmax = [30, 35, 40, 50]
+    lmax = [30, 35, 40]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -527,6 +524,9 @@ def plot_skewness():
         color="black",
         linestyle="dashed",
     )
+    filepath = "/cluster/scratch/veoehl/xi_sims/testrun"
+    sims = plotting.read_sims(filepath,100,(4,6))
+    ax = plotting.plot_hist(ax,sims,'test')
     ax.legend()
     ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
     ax6 = fig.add_subplot(gs[1, 0])
@@ -650,12 +650,15 @@ def sum_partition():
 
 def sim_test():
     from simulate import TwoPointSimulation
+    import numpy as np 
+    import sys
+
+    jobnumber = int(sys.argv[1])
 
     new_sim = TwoPointSimulation(
-        [(4, 6)], circmaskattr=(4000, 256),l_smooth=20, clpath="Cl_3x2pt_kids55.txt", batchsize=10
+        [(4, 6)], circmaskattr=(4000, 256),l_smooth=20, clpath="Cl_3x2pt_kids55.txt", batchsize=10,simpath="/cluster/scratch/veoehl/xisims/"
     )
-    jobnumber = 0
     new_sim.xi_sim(jobnumber, plot=True)
 
 
-sim_test()
+plot_skewness()
