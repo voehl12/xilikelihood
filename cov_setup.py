@@ -308,22 +308,22 @@ class Cov(SphereMask, TheoryCl):
             # much closer to cl-xi if the normalization in the bin prefactors is taken to lmax! (two orders of magnitude, even with apodized mask)
 
             integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
+            # t_norm and integrated wigners could come from cl prefactors helper function
             cov_xi = (
                 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * c_tot * l)
             )
             cov_sn = 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * l * c_sn)
             pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
 
-            cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, self.wl, lmax, lmin)
+            cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, lmax, lmin=lmin)
             pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
                 (self.p_ee, self.p_bb, self.p_eb),
-                bin1,
-                self.wl,
-                self._exact_lmax,
+                helper_funcs.prep_prefactors(self.ang_bins_in_deg,self.wl,self._exact_lmax,self.lmax),
                 self.lmax,
                 lmin=lmin,
             )
-
+            pcl_mean_p, pcl_mean_m = pcl_mean_p[0],pcl_mean_m[0]
+        assert np.allclose(pcl_mean_p,cl_mean_p,rtol=1e-2),(pcl_mean_p,cl_mean_p)
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
         self.xi_pcl = pcl_mean_p
@@ -357,6 +357,7 @@ class Cov(SphereMask, TheoryCl):
 
     def check_cov(self):
         print("Checking for covariance matrix... ", end="")
+        print(self.covalm_path)
         if os.path.isfile(self.covalm_path):
             print("Found.")
             return True
@@ -370,10 +371,7 @@ class Cov(SphereMask, TheoryCl):
         self.cov_alm = covfile["cov"]
 
     def set_char_string(self):
-        if self.l_smooth is None:
-            smoothstring = ""
-        else:
-            smoothstring = "lapodize{:d}".format(self.l_smooth)
+        
         if self._sigma_e is None:
             self.sigmaname = "nonoise"
         else:
@@ -383,13 +381,12 @@ class Cov(SphereMask, TheoryCl):
             else:
                 self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
 
-        charstring = "_l{:d}_n{:d}_{}_{}_{}_{}.npz".format(
+        charstring = "_l{:d}_n{:d}_{}_{}_{}.npz".format(
             self._exact_lmax,
             self.nside,
             self.maskname,
             self.clname,
             self.sigmaname,
-            smoothstring,
         )
         return charstring
 
