@@ -177,9 +177,11 @@ class SphereMask:
         if l_smooth == "auto":
             self.l_smooth_auto = True
             self.l_smooth = self._exact_lmax
+            self.maskname += 'smoothl{}'.format(str(self.l_smooth))
         else:
             self.l_smooth_auto = False
             self.l_smooth = l_smooth
+            self.maskname += 'smoothl{}'.format(str(self.l_smooth))
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
@@ -256,11 +258,11 @@ class SphereMask:
             self._wlm_lmax *= wpm_funcs.smooth_alm(
                 self._wlm_lmax, self.l_smooth, 3 * self.nside - 1
             )
+        
         elif self.l_smooth == "auto":
             self.l_smooth = self._exact_lmax
             self._wlm = hp.sphtfunc.map2alm(self.mask)
             self._wlm *= wpm_funcs.smooth_alm(self._wlm_lmax, self._exact_lmax, 3 * self.nside - 1)
-
         else:
             raise RuntimeError("l_smooth needs to be None or integer")
         return self._wlm_lmax
@@ -271,6 +273,7 @@ class SphereMask:
         self._wl = hp.sphtfunc.alm2cl(wlm)
         mask_smooth = hp.sphtfunc.alm2map(wlm, self.nside)
         self.smooth_mask = mask_smooth
+        
         return self._wl
 
     @property
