@@ -463,6 +463,7 @@ def plot_skewness():
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
     import plotting
+
     fig = plt.figure(figsize=(20, 14))
 
     gs = GridSpec(2, 3)
@@ -525,8 +526,8 @@ def plot_skewness():
         linestyle="dashed",
     )
     filepath = "/cluster/scratch/veoehl/xi_sims/testrun"
-    sims = plotting.read_sims(filepath,100,(4,6))
-    ax = plotting.plot_hist(ax,sims,'test')
+    sims = plotting.read_sims(filepath, 100, (4, 6))
+    ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
     ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
     ax6 = fig.add_subplot(gs[1, 0])
@@ -650,15 +651,68 @@ def sum_partition():
 
 def sim_test():
     from simulate import TwoPointSimulation
-    import numpy as np 
+    import numpy as np
     import sys
 
     jobnumber = int(sys.argv[1])
 
     new_sim = TwoPointSimulation(
-        [(4, 6)], circmaskattr=(4000, 256),l_smooth=20, clpath="Cl_3x2pt_kids55.txt", batchsize=10,simpath="/cluster/scratch/veoehl/xisims/"
+        [(4, 6)],
+        circmaskattr=(4000, 256),
+        l_smooth=20,
+        clpath="Cl_3x2pt_kids55.txt",
+        batchsize=10,
+        simpath="/cluster/scratch/veoehl/xisims/",
     )
     new_sim.xi_sim(jobnumber, plot=True)
+
+
+def sim_ana_comp():
+    from simulate import TwoPointSimulation
+    from cov_setup import Cov
+    import helper_funcs
+
+    new_sim = TwoPointSimulation(
+        [(4, 6)],
+        circmaskattr=(4000, 256),
+        l_smooth=20,
+        clpath="Cl_3x2pt_kids55.txt",
+        batchsize=10,
+        simpath="",
+    )
+    new_sim.wl
+
+    pcl_measured = []
+
+    for i in range(100):
+        maps_TQU = new_sim.create_maps()
+        pcl_22 = new_sim.get_pcl(maps_TQU)
+        pcl_measured.append(pcl_22)
+    pcl_measured = np.array(pcl_measured)
+    new_cov = Cov(
+        30,
+        [2],
+        circmaskattr=(4000, 256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e=None,
+        l_smooth=20,
+        smooth_signal=False,
+    )
+
+    new_cov.cl2pseudocl()
+
+    prefactors = helper_funcs.prep_prefactors([(4, 6)], new_cov.wl, 30, new_cov.lmax)
+    xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, 30)
+    xi_ana = helper_funcs.pcl2xi((new_cov.p_ee, new_cov.p_bb, new_cov.p_eb), prefactors, 30)
+
+    print(xi_sim, xi_ana)
+
+    plt.figure()
+    plt.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
+    plt.plot(new_cov.p_ee, color="C0", linestyle="dotted")
+    plt.plot(np.mean(pcl_measured[:, 1], axis=0), color="C1")
+    plt.plot(new_cov.p_bb, color="C1", linestyle="dotted")
+    plt.show()
 
 
 plot_skewness()
