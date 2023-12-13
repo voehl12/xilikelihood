@@ -316,14 +316,18 @@ class Cov(SphereMask, TheoryCl):
             pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
 
             cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, lmax, lmin=lmin)
+            prefactors = helper_funcs.prep_prefactors(
+                self.ang_bins_in_deg, self.wl, lmax, self.lmax
+            )
+
             pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
                 (self.p_ee, self.p_bb, self.p_eb),
-                helper_funcs.prep_prefactors(self.ang_bins_in_deg,self.wl,self._exact_lmax,self.lmax),
-                self.lmax,
+                prefactors,
+                lmax,
                 lmin=lmin,
             )
-            pcl_mean_p, pcl_mean_m = pcl_mean_p[0],pcl_mean_m[0]
-        assert np.allclose(pcl_mean_p,cl_mean_p,rtol=1e-2),(pcl_mean_p,cl_mean_p)
+            pcl_mean_p, pcl_mean_m = pcl_mean_p[0], pcl_mean_m[0]
+        assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-2), (pcl_mean_p, cl_mean_p, lmin, lmax)
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
         self.xi_pcl = pcl_mean_p
@@ -371,7 +375,6 @@ class Cov(SphereMask, TheoryCl):
         self.cov_alm = covfile["cov"]
 
     def set_char_string(self):
-        
         if self._sigma_e is None:
             self.sigmaname = "nonoise"
         else:
@@ -392,7 +395,8 @@ class Cov(SphereMask, TheoryCl):
 
     def set_covalmpath(self):
         charac = self.set_char_string()
-        covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
+        covname = "covariances/cov_xi" + charac
+        # covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
         self.covalm_path = covname
 
     def cl2pseudocl(self):
@@ -404,6 +408,8 @@ class Cov(SphereMask, TheoryCl):
             self.p_bb = pclfile["pcl_bb"]
             self.p_eb = pclfile["pcl_eb"]
         else:
+            if self.smooth_mask is None:
+                raise RuntimeError("mask has not been smoothed yet!")
             m_llp_p, m_llp_m = self.m_llp
             if hasattr(self, "_noise_sigma"):
                 cl_e = self.ee.copy() + self._noise_sigma * np.ones_like(self.ee)
