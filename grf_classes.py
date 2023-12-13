@@ -160,7 +160,7 @@ class SphereMask:
             self.n_field += 2
         if not self.spin0 and not self.spin2:
             raise RuntimeError("Spin needs to be 0 and/or 2")
-
+        self.lmax = 3 * self.nside - 1
         if exact_lmax is not None:
             self._exact_lmax = exact_lmax
         else:
@@ -177,11 +177,22 @@ class SphereMask:
         if l_smooth == "auto":
             self.l_smooth_auto = True
             self.l_smooth = self._exact_lmax
-            self.maskname += 'smoothl{}'.format(str(self.l_smooth))
+
         else:
             self.l_smooth_auto = False
             self.l_smooth = l_smooth
-            self.maskname += 'smoothl{}'.format(str(self.l_smooth))
+        self.smooth_mask = None
+        self.maskname += "smoothl{}".format(str(self.l_smooth))
+
+    @property
+    def smooth_alm(self):
+        self._smooth_alm = wpm_funcs.smooth_alm(self.l_smooth, self._exact_lmax)
+        return self._smooth_alm
+
+    @property
+    def smooth_alm_lmax(self):
+        self._smooth_alm_lmax = wpm_funcs.smooth_alm(self.l_smooth, self.lmax)
+        return self._smooth_alm_lmax
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
@@ -228,18 +239,11 @@ class SphereMask:
             spin 0 alm of mask in healpix ordering
         """
 
-        if self.l_smooth is None:
-            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
-        elif isinstance(self.l_smooth, int):
-            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
-            self._wlm *= wpm_funcs.smooth_alm(self._wlm, self.l_smooth, self._exact_lmax)
-        elif self.l_smooth == "auto":
+        if self.l_smooth == "auto":
             self.l_smooth = self._exact_lmax
-            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
-            self._wlm *= wpm_funcs.smooth_alm(self._wlm, self._exact_lmax, self._exact_lmax)
-        else:
-            raise RuntimeError("l_smooth needs to be None, integer or auto")
 
+        self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
+        self._wlm *= self.smooth_alm
         return self._wlm
 
     @property
@@ -251,20 +255,13 @@ class SphereMask:
         array
             spin 0 alm of mask in healpix ordering
         """
-        if self.l_smooth is None:
-            self._wlm_lmax = hp.sphtfunc.map2alm(self.mask)
-        elif isinstance(self.l_smooth, int):
-            self._wlm_lmax = hp.sphtfunc.map2alm(self.mask)
-            self._wlm_lmax *= wpm_funcs.smooth_alm(
-                self._wlm_lmax, self.l_smooth, 3 * self.nside - 1
-            )
-        
-        elif self.l_smooth == "auto":
+
+        if self.l_smooth == "auto":
             self.l_smooth = self._exact_lmax
-            self._wlm = hp.sphtfunc.map2alm(self.mask)
-            self._wlm *= wpm_funcs.smooth_alm(self._wlm_lmax, self._exact_lmax, 3 * self.nside - 1)
-        else:
-            raise RuntimeError("l_smooth needs to be None or integer")
+
+        self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
+        self._wlm_lmax *= self.smooth_alm_lmax
+
         return self._wlm_lmax
 
     @property
@@ -273,7 +270,7 @@ class SphereMask:
         self._wl = hp.sphtfunc.alm2cl(wlm)
         mask_smooth = hp.sphtfunc.alm2map(wlm, self.nside)
         self.smooth_mask = mask_smooth
-        
+
         return self._wl
 
     @property
@@ -408,6 +405,6 @@ class SphereMask:
 
     @property
     def m_llp(self):
-        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wlm_lmax, self._exact_lmax)
+        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self._exact_lmax)
         self._m_llp = m_llp_p, m_llp_m
         return self._m_llp
