@@ -2,6 +2,7 @@
 **/plots
 **/__pycache__
 *.pdf
+*.png
 *.obj
 *.txt
 *.npz
