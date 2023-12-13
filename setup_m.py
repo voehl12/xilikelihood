@@ -20,7 +20,7 @@ def mmatrix_xi(t_in_deg, lmax, wl, kind="p", pos_m=True):
         fac_arr = helper_funcs.bin_prefactors(t_in_deg, wl, lmax, lmax, kind)
 
     else:
-        fac_arr = helper_funcs.ang_prefactors(t_in_deg, wl, lmax, kind)
+        fac_arr = helper_funcs.ang_prefactors(t_in_deg, wl, lmax, lmax, kind)
     diag = 2 * np.repeat(fac_arr, len_sub)
     if pos_m == True:
         diag[::len_sub] *= 0.5
@@ -50,6 +50,7 @@ def check_m(name):
     else:
         print("Not found.")
         return False
+
 
 def load_m(name):
     print("Loading M matrix.")
