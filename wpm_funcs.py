@@ -99,9 +99,8 @@ def purified_wigner(l_arr, lp, lpp, purified=True):
         return wigners0 + wigners1 + wigners2
 
 
-def m_llp(wlm, exact_lmax):
+def m_llp(wl, exact_lmax):
     sum_buffer = 0
-    wl = hp.sphtfunc.alm2cl(wlm)
     len_l = len(wl)
     m_3d_pp = np.zeros((len_l, len_l, exact_lmax + sum_buffer + 1))
     m_3d_mm = np.zeros_like(m_3d_pp)
@@ -118,7 +117,7 @@ def m_llp(wlm, exact_lmax):
                 m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
                 m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
 
-    return np.sum(m_3d_pp, axis=2), np.sum(m_3d_mm, axis=2)
+    return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1)
 
 
 def smooth_gauss(l, l_smooth):
@@ -131,8 +130,11 @@ def smooth_cl(l, l_smooth):
     return np.exp(-(l**2) / (2 * sigma2))
 
 
-def smooth_alm(alm, l_smooth, lmax):
+def smooth_alm(l_smooth, lmax):
     l_array = [np.arange(i, lmax + 1) for i in range(lmax + 1)]
     l_array = np.concatenate(l_array, axis=0)
-    smoothing_arr = smooth_gauss(l_array, l_smooth)
-    return alm * smoothing_arr
+    if l_smooth is None:
+        smoothing_arr = np.ones(len(l_array))
+    else:
+        smoothing_arr = smooth_gauss(l_array, l_smooth)
+    return smoothing_arr
