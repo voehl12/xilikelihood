@@ -491,12 +491,12 @@ def plot_skewness():
         means_highell_cl,
     ) = ([], [], [], [], [], [], [], [])
     ax = fig.add_subplot(gs[0, :])
-    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$".format(*angbin[0]))
+    
     color = plt.cm.viridis(np.linspace(0, 1, len(lmax)))
     for i, el in enumerate(lmax):
         new_cov.exact_lmax = el
         new_cov.cl2pseudocl()
-        x, pdf, norm, mean, std, skewness, mean_lowell, mean_highell = calc_pdf.pdf_xi_1D(
+        x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
             angbin, new_cov, steps=4096, savestuff=True
         )
         ax.plot(x, pdf, color=color[i], label=r"$\ell_{{\mathrm{{exact}}}} = {:d}$".format(el))
@@ -505,12 +505,13 @@ def plot_skewness():
         means.append(mean)
         skews.append(skewness.real)
         means_lowell_exact.append(mean_lowell)
-        means_highell.append(mean_highell)
+        means_highell.append(new_cov.xi_pcl)
         means_highell_cl.append(new_cov.xi_cl)
         new_cov.cov_xi_gaussian(lmax=el)
         means_lowell_pcl.append(new_cov.xi_pcl)
         means_lowell_cl.append(new_cov.xi_cl)
     new_cov.cov_xi_gaussian()
+    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$, effective area {:.1f}".format(*angbin[0],new_cov.eff_area))
     ax.plot(
         x,
         stats.norm.pdf(x, new_cov.xi_pcl, np.sqrt(new_cov.cov_xi)),
@@ -556,7 +557,7 @@ def plot_skewness():
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
     ax8.legend()
 
-    plt.savefig("skweness{}.png".format(new_cov.set_char_string()))
+    plt.savefig("skewness{}.png".format(new_cov.set_char_string()))
 
 
 def sum_testing():
@@ -631,19 +632,19 @@ def sum_partition():
     new_cov.cl2pseudocl()
     new_cov.ang_bins_in_deg = [(4, 6)]
     LM = [10, 20, 30, 35, 40, 50]
-    low, high, all = [], [], []
+    low, high, total = [], [], []
     for lmax in LM:
         new_cov.cov_xi_gaussian(lmax=lmax)
         low.append(new_cov.xi_pcl)
         new_cov.cov_xi_gaussian(lmin=lmax)
         high.append(new_cov.xi_pcl)
         new_cov.cov_xi_gaussian()
-        all.append(new_cov.xi_pcl)
+        total.append(new_cov.xi_pcl)
     sumofmeans = [low[i] + high[i] for i in range(len(low))]
     plt.figure()
     plt.plot(LM, low)
     plt.plot(LM, high)
-    plt.plot(LM, all)
+    plt.plot(LM, total)
     plt.plot(LM, sumofmeans)
     plt.show()
     # could the overlap be the problem?
@@ -671,11 +672,12 @@ def sim_ana_comp():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
     import helper_funcs
-
+    mask_smooth_l = 100
+    lmin = 0
     new_sim = TwoPointSimulation(
         [(4, 6)],
         circmaskattr=(4000, 256),
-        l_smooth=20,
+        l_smooth=mask_smooth_l,
         clpath="Cl_3x2pt_kids55.txt",
         batchsize=10,
         simpath="",
@@ -684,35 +686,72 @@ def sim_ana_comp():
 
     pcl_measured = []
 
-    for i in range(100):
+    for i in range(50):
         maps_TQU = new_sim.create_maps()
         pcl_22 = new_sim.get_pcl(maps_TQU)
         pcl_measured.append(pcl_22)
     pcl_measured = np.array(pcl_measured)
-    new_cov = Cov(
-        30,
-        [2],
-        circmaskattr=(4000, 256),
-        clpath="Cl_3x2pt_kids55.txt",
-        sigma_e=None,
-        l_smooth=20,
-        smooth_signal=False,
-    )
+ 
 
-    new_cov.cl2pseudocl()
+    new_sim.cl2pseudocl()
 
-    prefactors = helper_funcs.prep_prefactors([(4, 6)], new_cov.wl, 30, new_cov.lmax)
-    xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, 30)
-    xi_ana = helper_funcs.pcl2xi((new_cov.p_ee, new_cov.p_bb, new_cov.p_eb), prefactors, 30)
+    prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
+    xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
+    xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
+    xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
 
-    print(xi_sim, xi_ana)
+    print(xi_sim, xi_ana,xi_ana_cl)
 
     plt.figure()
     plt.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
-    plt.plot(new_cov.p_ee, color="C0", linestyle="dotted")
+    plt.plot(new_sim.p_ee, color="C0", linestyle="dotted")
     plt.plot(np.mean(pcl_measured[:, 1], axis=0), color="C1")
-    plt.plot(new_cov.p_bb, color="C1", linestyle="dotted")
-    plt.show()
+    plt.plot(new_sim.p_bb, color="C1", linestyle="dotted")
+    plt.savefig('pseudo_cl_comp.png')
 
 
-plot_skewness()
+def lowell_comp():
+    from cov_setup import Cov
+    import calc_pdf, grf_classes
+    from matplotlib.gridspec import GridSpec
+    import scipy.stats as stats
+    import plotting
+
+    fig,ax = plt.subplots()
+    exact_lmax = 30
+    angbin = [(4, 6)]
+    l_smooths = [5,10,15,20,25,None]
+    l_smooths_plot = [5,10,15,20,25,'None']
+    xi_cl,xi_pcl,mean_exact = [],[],[]
+    for l_smooth in l_smooths:
+        new_cov = Cov(
+            exact_lmax,
+            [2],
+            circmaskattr=(4000, 256),
+            clpath="Cl_3x2pt_kids55.txt",
+            sigma_e=None,
+            l_smooth_mask=l_smooth,
+            l_smooth_signal=None,
+        )
+        
+        
+        
+        new_cov.cl2pseudocl()
+        x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
+            angbin, new_cov, steps=4096, savestuff=True, high_ell_extension=False
+        )
+        new_cov.cov_xi_gaussian(lmax=exact_lmax)
+        xi_cl.append(1)
+        xi_pcl.append(new_cov.xi_pcl/new_cov.xi_cl)
+        mean_exact.append(mean/new_cov.xi_cl)
+    
+    ax.plot(l_smooths_plot,xi_cl,label=r'$C_{\ell}$')
+    ax.plot(l_smooths_plot,xi_pcl,label=r'$\tilde{C}_{\ell}$')
+    ax.plot(l_smooths_plot,mean_exact,label=r'mean exact likelihood')
+    ax.set_xlabel(r'Smoothing $\ell$ Mask')
+    ax.set_ylabel(r'$\xi^+$')
+    ax.set_ylim(0.98,1.02)
+    plt.legend()
+    plt.savefig('lowell_meancomparison_masksmooth.png')    
+
+lowell_comp()
