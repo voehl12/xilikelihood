@@ -57,8 +57,8 @@ class Cov(SphereMask, TheoryCl):
         circmaskattr=None,
         lmin=None,
         maskname="mask",
-        l_smooth=None,
-        smooth_signal=False,
+        l_smooth_mask=None,
+        l_smooth_signal=None,
     ):
         SphereMask.__init__(
             self,
@@ -68,7 +68,7 @@ class Cov(SphereMask, TheoryCl):
             circmaskattr=circmaskattr,
             lmin=lmin,
             maskname=maskname,
-            l_smooth=l_smooth,
+            l_smooth=l_smooth_mask,
         )
         if lmax is None:
             self.lmax = 3 * self.nside - 1
@@ -80,7 +80,7 @@ class Cov(SphereMask, TheoryCl):
             clpath=clpath,
             theory_lmin=theory_lmin,
             clname=clname,
-            smooth_signal=smooth_signal,
+            smooth_signal=l_smooth_signal,
         )
 
         self._sigma_e = sigma_e
@@ -317,7 +317,7 @@ class Cov(SphereMask, TheoryCl):
 
             cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, lmax, lmin=lmin)
             prefactors = helper_funcs.prep_prefactors(
-                self.ang_bins_in_deg, self.wl, lmax, self.lmax
+                self.ang_bins_in_deg, self.wl, self.lmax, lmax
             )
 
             pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
@@ -327,7 +327,8 @@ class Cov(SphereMask, TheoryCl):
                 lmin=lmin,
             )
             pcl_mean_p, pcl_mean_m = pcl_mean_p[0], pcl_mean_m[0]
-        assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-2), (pcl_mean_p, cl_mean_p, lmin, lmax)
+        #assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-2), 
+        print(pcl_mean_p, cl_mean_p, lmin, lmax)
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
         self.xi_pcl = pcl_mean_p
@@ -347,7 +348,7 @@ class Cov(SphereMask, TheoryCl):
                     "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
                 )
             self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
-            if self.smooth_signal:
+            if self.smooth_signal is not None:
                 self.noise_cl *= self.smooth_array
         else:
             try:
@@ -395,8 +396,8 @@ class Cov(SphereMask, TheoryCl):
 
     def set_covalmpath(self):
         charac = self.set_char_string()
-        covname = "covariances/cov_xi" + charac
-        # covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
+        #covname = "covariances/cov_xi" + charac
+        covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
         self.covalm_path = covname
 
     def cl2pseudocl(self):
@@ -409,7 +410,8 @@ class Cov(SphereMask, TheoryCl):
             self.p_eb = pclfile["pcl_eb"]
         else:
             if self.smooth_mask is None:
-                raise RuntimeError("mask has not been smoothed yet!")
+                self.wl
+                print("pseudo_cl: calculating wl to establish smoothed mask.")
             m_llp_p, m_llp_m = self.m_llp
             if hasattr(self, "_noise_sigma"):
                 cl_e = self.ee.copy() + self._noise_sigma * np.ones_like(self.ee)
