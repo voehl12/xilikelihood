@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 def pdf_xi_1D(
-    angular_bin_in_deg,
+    ang_bins_in_deg,
     cov_object,
     kind="p",
     steps=2048,
@@ -16,10 +16,10 @@ def pdf_xi_1D(
 ):
     exact_lmax = cov_object.exact_lmax
     maskname = cov_object.maskname
-    cov_object.ang_bins_in_deg = angular_bin_in_deg
+    cov_object.ang_bins_in_deg = ang_bins_in_deg
 
-    if type(angular_bin_in_deg[0]) is tuple:
-        ang = "{:.0f}_{:.0f}".format(angular_bin_in_deg[0][0], angular_bin_in_deg[0][1])
+    if type(ang_bins_in_deg[0]) is tuple:
+        ang = "{:.0f}_{:.0f}".format(ang_bins_in_deg[0][0], ang_bins_in_deg[0][1])
     else:
         raise RuntimeError("Specify angular bin as tuple of two values in degrees.")
  
@@ -29,13 +29,12 @@ def pdf_xi_1D(
         cov = cov_object.cov_alm
     except:
         cov = cov_object.cov_alm_xi(exact_lmax=exact_lmax, pos_m=True)
-
+    
     if setup_m.check_m(mname):
         m = setup_m.load_m(mname)
     else:
-        m = setup_m.mmatrix_xi(
-            angular_bin_in_deg[0], exact_lmax, cov_object.wl, kind=kind, pos_m=True
-        )
+        prefactors = helper_funcs.prep_prefactors(ang_bins_in_deg,cov_object.wl, cov_object.lmax, cov_object.exact_lmax)
+        m = setup_m.mmatrix_xi(prefactors, kind=kind, pos_m=True)
         if savestuff:
             setup_m.save_m(m, mname)
 
@@ -54,7 +53,7 @@ def pdf_xi_1D(
 
     if high_ell_extension:
         cf *= high_ell_gaussian_cf(t, cov_object)
-        mean_highell = cov_object.xi_pcl
+        
 
     skewness = helper_funcs.skewness(t, cf)
 
@@ -67,7 +66,7 @@ def pdf_xi_1D(
     std = second - first**2
     norm = np.trapz(pdf, x=x)
 
-    return x, pdf, norm, mean, std, skewness, mean_lowell_pdf, mean_highell
+    return x, pdf, norm, mean, std, skewness, mean_lowell_pdf
 
 
 def high_ell_gaussian_cf(t_lowell, cov_object):
