@@ -68,7 +68,7 @@ class TwoPointSimulation(Cov):
         else:
             np.random.seed()
             maps = hp.sphtfunc.synfast(
-                (self.nn, self.ne, self.ee, self.bb), self.nside, lmax=self.lmax, verbose=True
+                (self.nn, self.ne, self.ee, self.bb), self.nside, lmax=self.lmax
             )
             return maps
 
@@ -111,7 +111,8 @@ class TwoPointSimulation(Cov):
         else:
             # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
             if self.smooth_mask is None:
-                raise RuntimeError("mask has not been smoothed yet!")
+                self.wl
+                print("get_pcl: calculating wl to establish smoothed mask.")
             f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:])
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
@@ -134,7 +135,7 @@ class TwoPointSimulation(Cov):
             os.system(command)
         self.simpath = path
         if self.ximode == "namaster":
-            prefactors = prep_prefactors(self.seps_in_deg, self.wl, self._exact_lmax, self.lmax)
+            prefactors = prep_prefactors(self.seps_in_deg, self.wl, self.lmax, self.lmax) # exact lmax shoukld not be used here.
             for _i in range(self.batchsize):
                 print(
                     "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
