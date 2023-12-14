@@ -17,7 +17,7 @@ class TheoryCl:
     """
 
     def __init__(
-        self, lmax=30, clpath=None, theory_lmin=2, clname="3x2pt_kids", smooth_signal=False
+        self, lmax=30, clpath=None, theory_lmin=2, clname="3x2pt_kids", smooth_signal=None
     ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
@@ -37,8 +37,8 @@ class TheoryCl:
             self.read_clfile()
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
-            if self.smooth_signal == True:
-                smooth_ell = self.lmax
+            if self.smooth_signal is not None:
+                smooth_ell = self.smooth_signal
                 self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
                 self.ee *= self.smooth_array
                 self.nn *= self.smooth_array
@@ -196,7 +196,7 @@ class SphereMask:
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
-        self.mask = hp.fitsfunc.read_map(self.maskpath, verbose=True)
+        self.mask = hp.fitsfunc.read_map(self.maskpath)
         self.nside = hp.pixelfunc.get_nside(self.mask)
         self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
 
@@ -205,7 +205,7 @@ class SphereMask:
         self.maskpath = "circular_{:d}sqd_nside{:d}.fits".format(self.area, self.nside)
         self.maskname = "circ{:d}".format(self.area)
         if os.path.isfile(self.maskpath):
-            self.mask = hp.fitsfunc.read_map(self.maskpath, verbose=True)
+            self.mask = hp.fitsfunc.read_map(self.maskpath)
             assert np.allclose(
                 self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask), rtol=0.1
             ), (self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask))
@@ -405,6 +405,6 @@ class SphereMask:
 
     @property
     def m_llp(self):
-        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self._exact_lmax)
+        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
         self._m_llp = m_llp_p, m_llp_m
         return self._m_llp
