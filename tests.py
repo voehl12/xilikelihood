@@ -473,8 +473,8 @@ def plot_skewness():
         circmaskattr=(4000, 256),
         clpath="Cl_3x2pt_kids55.txt",
         sigma_e=None,
-        l_smooth=20,
-        smooth_signal=False,
+        l_smooth_mask=30,
+        l_smooth_signal=100,
     )
     # set noise apodization
     lmax = [30, 35, 40]
@@ -526,7 +526,7 @@ def plot_skewness():
         color="black",
         linestyle="dashed",
     )
-    filepath = "/cluster/scratch/veoehl/xi_sims/testrun"
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_circ4000smoothl30_nonoise"
     sims = plotting.read_sims(filepath, 100, (4, 6))
     ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
@@ -720,9 +720,22 @@ def lowell_comp():
     fig,ax = plt.subplots()
     exact_lmax = 30
     angbin = [(4, 6)]
-    l_smooths = [5,10,15,20,25,None]
-    l_smooths_plot = [5,10,15,20,25,'None']
-    xi_cl,xi_pcl,mean_exact = [],[],[]
+    l_smooths = [5,10,15,20,25,50,100,200,500,None]
+    l_smooths_plot = [5,10,15,20,25,50,100,200,500,'None']
+    xi_cl,xi_pcl,mean_exact,close_ells = [],[],[],[]
+    ref_cov = new_cov = Cov(
+            exact_lmax,
+            [2],
+            circmaskattr=(4000, 256),
+            clpath="Cl_3x2pt_kids55.txt",
+            sigma_e=None,
+            l_smooth_mask=None,
+            l_smooth_signal=None,
+        )
+    ref_cov.cl2pseudocl()
+    ref_cov.ang_bins_in_deg = angbin
+    ref_cov.cov_xi_gaussian(lmax = exact_lmax)
+    ref_xi = ref_cov.xi_cl
     for l_smooth in l_smooths:
         new_cov = Cov(
             exact_lmax,
@@ -742,16 +755,20 @@ def lowell_comp():
         )
         new_cov.cov_xi_gaussian(lmax=exact_lmax)
         xi_cl.append(1)
+
+        if np.fabs(new_cov.xi_cl - ref_xi)/np.fabs(ref_xi) <= 0.05:
+            close_ells.append(l_smooth)
         xi_pcl.append(new_cov.xi_pcl/new_cov.xi_cl)
         mean_exact.append(mean/new_cov.xi_cl)
-    
+    print(ref_xi)
     ax.plot(l_smooths_plot,xi_cl,label=r'$C_{\ell}$')
     ax.plot(l_smooths_plot,xi_pcl,label=r'$\tilde{C}_{\ell}$')
     ax.plot(l_smooths_plot,mean_exact,label=r'mean exact likelihood')
+    print(close_ells[0])
     ax.set_xlabel(r'Smoothing $\ell$ Mask')
-    ax.set_ylabel(r'$\xi^+$')
-    ax.set_ylim(0.98,1.02)
+    ax.set_ylabel(r'$\xi^+$/$\xi^+_{C_{\ell}}$')
+    ax.set_ylim(0.98,1.06)
     plt.legend()
     plt.savefig('lowell_meancomparison_masksmooth.png')    
 
-lowell_comp()
+plot_skewness()
