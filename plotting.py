@@ -1,17 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 
 def read_sims(filepath,njobs,angbin):
     allxi=[]
     for i in range(1,njobs+1):
-        print(i)
-        xifile = np.load(filepath+"/job{:d}.npz".format(i))
-        angs = xifile["theta"]
-        angind = np.where(angs == angbin)
-        print(angind)
-        xip = xifile["xip"][:,angind[0][0]]
-        allxi.append(xip)
+        if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
+            xifile = np.load(filepath+"/job{:d}.npz".format(i))
+            angs = xifile["theta"]
+            angind = np.where(angs == angbin)
+            xip = xifile["xip"][:,angind[0][0]]
+            allxi.append(xip)
+        else:
+            print('Missing job number {:d}.'.format(i))
     allxi = np.array(allxi)
     allxi = allxi.flatten()
     return allxi
