@@ -31,8 +31,8 @@ class TwoPointSimulation(Cov):
         circmaskattr=None,
         lmin=None,
         maskname="mask",
-        l_smooth=None,
-        smooth_signal=False,
+        l_smooth_mask=None,
+        l_smooth_signal=None,
     ):
         super().__init__(
             exact_lmax,
@@ -46,8 +46,8 @@ class TwoPointSimulation(Cov):
             circmaskattr,
             lmin,
             maskname,
-            l_smooth,
-            smooth_signal,
+            l_smooth_mask,
+            l_smooth_signal,
         )
 
         self.ximode = ximode
