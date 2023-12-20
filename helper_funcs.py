@@ -33,7 +33,7 @@ def get_noise_pixelsigma(nside=256, sigma_e=(0.282842712474619, 1.207829761642))
 
 
 def noise_cl_cube(noise_cl):
-    # separately for e,b and n?
+    # TODO: separately for e,b and n?
     c_all = np.zeros((3, 3, len(noise_cl)))
     for i in range(3):
         c_all[i, i] = noise_cl
@@ -85,6 +85,7 @@ def bin_prefactors(ang_bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
     norm_l = np.arange(norm_lmax + buffer + 1)
     legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
     # TODO: check whether this sum needs to be done after the integration as well (even possible?)
+    # -> sum is the same, the 1/ x is a problem when lots of the wl are zero, so it's actually better to do it this way, the order does not seem to matter in this case.
     norm = (
         lambda t_in_rad: 1
         / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * wl[: norm_lmax + buffer + 1])
