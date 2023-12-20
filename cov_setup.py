@@ -175,7 +175,7 @@ class Cov(SphereMask, TheoryCl):
             lmin = 0
 
             if hasattr(self, "_noise_sigma"):
-                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl)
+                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl[:self.exact_lmax+1])
 
             if pos_m:
                 n_cov = n_alm * (exact_lmax - lmin + 1) * (exact_lmax + 1)
@@ -316,6 +316,7 @@ class Cov(SphereMask, TheoryCl):
             pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
 
             cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, lmax, lmin=lmin)
+            cl_mean_p += pure_noise_mean
             prefactors = helper_funcs.prep_prefactors(
                 self.ang_bins_in_deg, self.wl, self.lmax, lmax
             )
@@ -414,12 +415,13 @@ class Cov(SphereMask, TheoryCl):
                 print("pseudo_cl: calculating wl to establish smoothed mask.")
             m_llp_p, m_llp_m = self.m_llp
             if hasattr(self, "_noise_sigma"):
-                cl_e = self.ee.copy() + self._noise_sigma * np.ones_like(self.ee)
-                cl_b = self.bb.copy() + self._noise_sigma * np.ones_like(self.bb)
+                cl_e = self.ee.copy() + self.noise_cl
+                cl_b = self.bb.copy() + self.noise_cl
+                
             else:
                 cl_e = self.ee.copy()
                 cl_b = self.bb.copy()
-                cl_eb = cl_be = cl_b
+            cl_eb = cl_be = cl_b
 
             self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
             self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
