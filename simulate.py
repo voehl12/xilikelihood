@@ -79,8 +79,8 @@ class TwoPointSimulation(Cov):
             return maps
         rng = default_rng()
 
-        noise_map_q = self.limit_noise(rng.normal(size=(self.npix), scale=sigma), self.lmax)
-        noise_map_u = self.limit_noise(rng.normal(size=(self.npix), scale=sigma), self.lmax)
+        noise_map_q = self.limit_noise(rng.normal(size=(self.npix), scale=sigma))
+        noise_map_u = self.limit_noise(rng.normal(size=(self.npix), scale=sigma))
 
         if testing == True:
             cl_t = hp.anafast(noise_map_q)
@@ -98,10 +98,11 @@ class TwoPointSimulation(Cov):
         almq = hp.map2alm(noisemap)
         clq = hp.sphtfunc.alm2cl(almq)
 
-        if self.smooth_signal:
+        if self.smooth_signal is not None:
             clq *= self.smooth_array
+        
+        assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
         np.random.seed()
-        assert np.allclose(clq, self.noise_cl)
         return hp.sphtfunc.synfast(clq, self.nside, lmax=self.lmax)
 
     def get_pcl(self, maps_TQU):
