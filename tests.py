@@ -470,14 +470,14 @@ def plot_skewness():
     new_cov = Cov(
         30,
         [2],
-        circmaskattr=(4000, 256),
+        circmaskattr=(1000, 256),
         clpath="Cl_3x2pt_kids55.txt",
         sigma_e=None,
         l_smooth_mask=30,
         l_smooth_signal=100,
     )
     # set noise apodization
-    lmax = [30, 35, 40]
+    lmax = [10,20,30, 35, 40]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -526,7 +526,7 @@ def plot_skewness():
         color="black",
         linestyle="dashed",
     )
-    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_circ4000smoothl30_nonoise"
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_circ1000smoothl30_nonoise"
     sims = plotting.read_sims(filepath, 100, (4, 6))
     ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
@@ -541,7 +541,7 @@ def plot_skewness():
     ax7.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax7.set_ylabel(r"$\sigma / \sigma_{\mathrm{Gauss}}$")
     ax8 = fig.add_subplot(gs[1, 2])
-    ax8.plot(lmax, means / new_cov.xi_pcl, label="convolution")
+    
     # ax8.plot(lmax, means_lowell / new_cov.xi_pcl, label="low ell")
     # ax8.plot(lmax, means_highell / new_cov.xi_pcl, label="high ell")
     sum_of_means = [means_lowell_exact[i] + means_highell[i] for i in range(len(means))]
@@ -551,7 +551,8 @@ def plot_skewness():
     ax8.plot(lmax, mean_pcl_exact_comp, label="low ell comparison, pcl to exact")
     ax8.plot(lmax, mean_pcl_cl_comp, label="low ell comparison, pcl to cl")
     ax8.plot(lmax, mean_pcl_cl_highell_comp, label="high ell comparison, pcl to cl")
-    ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means")
+    ax8.plot(lmax, means / new_cov.xi_pcl, label="convolution",color='C3')
+    ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means",color='C3',linestyle='dashed')
     ax8.axhline(1, color="black", linestyle="dotted")
     ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
@@ -657,14 +658,8 @@ def sim_test():
 
     jobnumber = int(sys.argv[1])
 
-    new_sim = TwoPointSimulation(
-        [(4, 6)],
-        circmaskattr=(4000, 256),
-        l_smooth=20,
-        clpath="Cl_3x2pt_kids55.txt",
-        batchsize=10,
-        simpath="/cluster/scratch/veoehl/xisims/",
-    )
+    new_sim = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(4000, 256),l_smooth_mask=30,l_smooth_signal=100, clpath="Cl_3x2pt_kids55.txt", batchsize=1,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e='default' )
+
     new_sim.xi_sim(jobnumber, plot=True)
 
 
@@ -728,7 +723,7 @@ def lowell_comp():
             [2],
             circmaskattr=(4000, 256),
             clpath="Cl_3x2pt_kids55.txt",
-            sigma_e=None,
+            sigma_e='default',
             l_smooth_mask=None,
             l_smooth_signal=None,
         )
@@ -742,9 +737,9 @@ def lowell_comp():
             [2],
             circmaskattr=(4000, 256),
             clpath="Cl_3x2pt_kids55.txt",
-            sigma_e=None,
-            l_smooth_mask=l_smooth,
-            l_smooth_signal=None,
+            sigma_e='default',
+            l_smooth_mask=20,
+            l_smooth_signal=l_smooth,
         )
         
         
@@ -765,10 +760,30 @@ def lowell_comp():
     ax.plot(l_smooths_plot,xi_pcl,label=r'$\tilde{C}_{\ell}$')
     ax.plot(l_smooths_plot,mean_exact,label=r'mean exact likelihood')
     print(close_ells[0])
-    ax.set_xlabel(r'Smoothing $\ell$ Mask')
+    ax.set_xlabel(r'Smoothing $\ell$ Signal')
     ax.set_ylabel(r'$\xi^+$/$\xi^+_{C_{\ell}}$')
-    ax.set_ylim(0.98,1.06)
+    ax.set_ylim(0.98,1.02)
     plt.legend()
-    plt.savefig('lowell_meancomparison_masksmooth.png')    
+    plt.savefig('lowell_meancomparison_signalsmooth_noise.png')    
 
-plot_skewness()
+def norm_testing():
+    from scipy.special import eval_legendre
+    from scipy.integrate import quad_vec, quad
+    from grf_classes import SphereMask
+    norm_lmax = 767
+    lower,upper = np.radians(4),np.radians(6)
+    norm_l = np.arange(norm_lmax + 1)
+    new_mask = SphereMask(spins=[2],circmaskattr=(1000,256),l_smooth=30)
+    legendres = lambda t_in_rad: eval_legendre(norm_l, np.cos(t_in_rad))
+    # TODO: check whether this sum needs to be done after the integration as well (even possible?)
+    norm_summed = lambda t_in_rad: 1 / np.sum((2 * norm_l + 1) * legendres(t_in_rad) * new_mask.wl[: norm_lmax + 1]) / (2 * np.pi)
+    
+
+    norm_array = lambda t_in_rad: 1 / ((2 * norm_l + 1) * legendres(t_in_rad) * new_mask.wl[: norm_lmax + 1]) / (2 * np.pi)
+
+    norm1 = quad(norm_summed,lower,upper)[0]
+    norm2 = np.sum(quad_vec(norm_array,lower,upper)[0])
+
+    print(norm1,norm2)
+
+norm_testing()
