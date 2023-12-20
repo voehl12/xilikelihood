@@ -32,6 +32,7 @@ class TheoryCl:
         self.ee = None
         self.ne = None
         self.bb = None
+        self.eb = None
 
         if self.clpath is not None:
             self.read_clfile()
@@ -66,6 +67,7 @@ class TheoryCl:
         self.ne = spectra[1]
         self.nn = spectra[2]
         self.bb = np.zeros_like(self.ee)
+        self.eb = np.zeros_like(self.ee)
 
     def set_cl_zero(self):
         self.clname = "none"
