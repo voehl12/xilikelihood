@@ -470,8 +470,9 @@ def plot_skewness():
     new_cov = Cov(
         30,
         [2],
-        circmaskattr=(1000, 256),
+        maskpath='singlet_lowres.fits',
         clpath="Cl_3x2pt_kids55.txt",
+        maskname='KiDS1000',
         sigma_e=None,
         l_smooth_mask=30,
         l_smooth_signal=100,
@@ -526,7 +527,7 @@ def plot_skewness():
         color="black",
         linestyle="dashed",
     )
-    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_circ1000smoothl30_nonoise"
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_KiDS1000smoothl30_nonoise"
     sims = plotting.read_sims(filepath, 100, (4, 6))
     ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
@@ -658,7 +659,7 @@ def sim_test():
 
     jobnumber = int(sys.argv[1])
 
-    new_sim = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(4000, 256),l_smooth_mask=30,l_smooth_signal=100, clpath="Cl_3x2pt_kids55.txt", batchsize=1,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e='default' )
+    new_sim = TwoPointSimulation([(4, 6),(7,10)], maskpath='singlet_lowres.fits',maskname='KiDS1000',l_smooth_mask=30,l_smooth_signal=100, clpath="Cl_3x2pt_kids55.txt", batchsize=1,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e=None )
 
     new_sim.xi_sim(jobnumber, plot=True)
 
@@ -712,34 +713,34 @@ def lowell_comp():
     import scipy.stats as stats
     import plotting
 
-    fig,ax = plt.subplots()
-    exact_lmax = 30
+    fig1,ax1 = plt.subplots()
+    l_exacts = [5,10,15,20]
     angbin = [(4, 6)]
-    l_smooths = [5,10,15,20,25,50,100,200,500,None]
-    l_smooths_plot = [5,10,15,20,25,50,100,200,500,'None']
+    l_smooths = [None]
+    l_smooths_plot = ['None']
     xi_cl,xi_pcl,mean_exact,close_ells = [],[],[],[]
     ref_cov = new_cov = Cov(
-            exact_lmax,
+            30,
             [2],
             circmaskattr=(4000, 256),
             clpath="Cl_3x2pt_kids55.txt",
-            sigma_e='default',
+            sigma_e=None,
             l_smooth_mask=None,
             l_smooth_signal=None,
         )
     ref_cov.cl2pseudocl()
     ref_cov.ang_bins_in_deg = angbin
-    ref_cov.cov_xi_gaussian(lmax = exact_lmax)
+    ref_cov.cov_xi_gaussian(lmax = 30)
     ref_xi = ref_cov.xi_cl
-    for l_smooth in l_smooths:
+    for l_exact in l_exacts:
         new_cov = Cov(
-            exact_lmax,
+            l_exact,
             [2],
             circmaskattr=(4000, 256),
             clpath="Cl_3x2pt_kids55.txt",
-            sigma_e='default',
-            l_smooth_mask=20,
-            l_smooth_signal=l_smooth,
+            sigma_e=None,
+            l_smooth_mask=10,
+            l_smooth_signal=None,
         )
         
         
@@ -748,23 +749,33 @@ def lowell_comp():
         x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
             angbin, new_cov, steps=4096, savestuff=True, high_ell_extension=False
         )
-        new_cov.cov_xi_gaussian(lmax=exact_lmax)
+        new_cov.cov_xi_gaussian(lmax=l_exact)
         xi_cl.append(1)
 
-        if np.fabs(new_cov.xi_cl - ref_xi)/np.fabs(ref_xi) <= 0.05:
-            close_ells.append(l_smooth)
-        xi_pcl.append(new_cov.xi_pcl/new_cov.xi_cl)
-        mean_exact.append(mean/new_cov.xi_cl)
+        
+        xi_pcl.append(new_cov.xi_pcl/new_cov.xi_pcl)
+        mean_exact.append(mean/new_cov.xi_pcl)
+    new_cov.cov_xi_gaussian()
+    fig2,ax2 = plt.subplots()
+    ax2.plot(new_cov.ell,new_cov.p_ee,label='pseudo Cl EE')
+    ax2.plot(new_cov.ell,new_cov.p_bb,label='pseudo Cl BB')
+    ax2.plot(new_cov.ell,new_cov.p_ee+new_cov.p_ee,label='sum of pseudo Cl')
+    ax2.plot(np.arange(new_cov._exact_lmax+1),new_cov.check_pcl[:new_cov._exact_lmax+1]+new_cov.check_pcl[new_cov._exact_lmax+1:],label='partial traces of sigma')
+    #ax2.plot(new_cov.ell,new_cov.ee)
+    ax2.set_yscale('log')
+    ax2.legend()
+    fig2.savefig("pcl_vs_cl.png")
+
     print(ref_xi)
-    ax.plot(l_smooths_plot,xi_cl,label=r'$C_{\ell}$')
-    ax.plot(l_smooths_plot,xi_pcl,label=r'$\tilde{C}_{\ell}$')
-    ax.plot(l_smooths_plot,mean_exact,label=r'mean exact likelihood')
-    print(close_ells[0])
-    ax.set_xlabel(r'Smoothing $\ell$ Signal')
-    ax.set_ylabel(r'$\xi^+$/$\xi^+_{C_{\ell}}$')
-    ax.set_ylim(0.98,1.02)
-    plt.legend()
-    plt.savefig('lowell_meancomparison_signalsmooth_noise.png')    
+    ax1.plot(l_exacts,xi_pcl,label=r'pseudo $C_{\ell}$')
+    #ax.plot(l_smooths_plot,xi_pcl,label=r'$\tilde{C}_{\ell}$')
+    ax1.plot(l_exacts,mean_exact,label=r'mean exact likelihood')
+    
+    ax1.set_xlabel(r'exact $\ell$')
+    ax1.set_ylabel(r'$\xi^+$/$\xi^+_{pC_{\ell}}$')
+    #ax.set_ylim(0.98,1.02)
+    ax1.legend()
+    fig1.savefig('lowell_meancomparison_fullm.png')    
 
 def norm_testing():
     from scipy.special import eval_legendre
@@ -786,4 +797,4 @@ def norm_testing():
 
     print(norm1,norm2)
 
-norm_testing()
+lowell_comp()
