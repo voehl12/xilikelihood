@@ -350,7 +350,7 @@ class SphereMask:
 
         arglist = []
         if verbose:
-            print("Preparing list of l, m arguments")
+            print("Preparing list of l, m arguments...")
         for l1, L1 in enumerate(self.L):
             M1_arr = np.arange(-L1, L1 + 1)
             for l2, L2 in enumerate(self.L):
@@ -369,7 +369,7 @@ class SphereMask:
         # with mup.Pool(processes=n_proc) as pool:
         self.wlm
         self.wlm_lmax
-        print("Starting computation of 4D W_llpmmp arrays... ", end="")
+        print("Starting computation of 4D W_llpmmp arrays... ")
         for i, arg in enumerate(arglist):
             print(
                 "Computing 4D W_llpmmp arrays......{:4.1f}%".format(i / len(arglist) * 100),
