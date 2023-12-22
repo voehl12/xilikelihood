@@ -223,6 +223,10 @@ class Cov(SphereMask, TheoryCl):
             assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
             self.cov_alm = cov_matrix
             self.save_cov()
+            len_sub = int(len(np.diag(self.cov_alm)) / (self._exact_lmax+1))
+            print(len_sub)
+            self.check_pcl = np.array([np.sum(np.diag(self.cov_alm)[i*len_sub:(i+1)*len_sub+1]) for i in range(2*(self._exact_lmax+1))])
+            print(self.check_pcl)
             return self.cov_alm
 
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
@@ -329,7 +333,7 @@ class Cov(SphereMask, TheoryCl):
             )
             pcl_mean_p, pcl_mean_m = pcl_mean_p[0], pcl_mean_m[0]
         #assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-2), 
-        print(pcl_mean_p, cl_mean_p, lmin, lmax)
+        print("lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(lmin,lmax,pcl_mean_p, cl_mean_p))
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
         self.xi_pcl = pcl_mean_p
