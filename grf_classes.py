@@ -281,10 +281,12 @@ class SphereMask:
         self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._eff_area
 
-    def initiate_w_arrs(self):
-        self.L = np.arange(self._exact_lmax + 1)
-        print("4D W_llpmmp will be calculated for lmax = {:d}".format(self._exact_lmax))
-        self.M = np.arange(-self._exact_lmax, self._exact_lmax + 1)
+    def initiate_w_arrs(self,cov_ell_buffer):
+     
+        buffer = cov_ell_buffer
+        self.L = np.arange(self._exact_lmax + buffer + 1)
+        print("4D W_llpmmp will be calculated for lmax = {:d} + {:d}".format(self._exact_lmax,buffer))
+        self.M = np.arange(-self._exact_lmax - buffer, self._exact_lmax + buffer + 1)
         Nl = len(self.L)
         Nm = len(self.M)
         if self.spin0:
@@ -301,8 +303,8 @@ class SphereMask:
         l1_ind = np.argmin(np.fabs(L1 - self.L))
         l2_ind = np.argmin(np.fabs(L2 - self.L))
         inds = (l1_ind, m1_ind, l2_ind, m2_ind)
-        self.buffer_lmax = self._exact_lmax + 0
-
+        self.buffer_lmax = self._exact_lmax # buffer in these sums does not change anything
+        
         if self.spin0 is None:
             w0 = 0
         else:
@@ -343,10 +345,10 @@ class SphereMask:
             inds = (slice(0, 2), *inds)
             self.wpm_arr[inds] = [wp, wm]
 
-    @property
-    def w_arr(self, verbose=True):
+    
+    def w_arr(self, cov_ell_buffer=0,verbose=True):
         if self.w0_arr is None and self.wpm_arr is None:
-            self.initiate_w_arrs()
+            self.initiate_w_arrs(cov_ell_buffer)
 
         arglist = []
         if verbose:
