@@ -467,18 +467,9 @@ def plot_skewness():
     fig = plt.figure(figsize=(20, 14))
 
     gs = GridSpec(2, 3)
-    new_cov = Cov(
-        30,
-        [2],
-        maskpath='singlet_lowres.fits',
-        clpath="Cl_3x2pt_kids55.txt",
-        maskname='KiDS1000',
-        sigma_e=None,
-        l_smooth_mask=30,
-        l_smooth_signal=100,
-    )
+    
     # set noise apodization
-    lmax = [10,20,30, 35, 40]
+    lmax = [10,20,30,40]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -495,7 +486,16 @@ def plot_skewness():
     
     color = plt.cm.viridis(np.linspace(0, 1, len(lmax)))
     for i, el in enumerate(lmax):
-        new_cov.exact_lmax = el
+        new_cov = Cov(
+        el,
+        [2],
+        circmaskattr=(1000,256),
+        clpath="Cl_3x2pt_kids55.txt",
+        sigma_e=None,
+        l_smooth_mask=30,
+        l_smooth_signal=None,
+        cov_ell_buffer=10,
+    )
         new_cov.cl2pseudocl()
         x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
             angbin, new_cov, steps=4096, savestuff=True
@@ -527,8 +527,8 @@ def plot_skewness():
         color="black",
         linestyle="dashed",
     )
-    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_smooth100_KiDS1000smoothl30_nonoise"
-    sims = plotting.read_sims(filepath, 100, (4, 6))
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ1000smoothl30_nonoise"
+    sims = plotting.read_sims(filepath, 1000, (4, 6))
     ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
     ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
@@ -550,13 +550,14 @@ def plot_skewness():
     mean_pcl_cl_comp = [means_lowell_pcl[i] / means_lowell_cl[i] for i in range(len(means))]
     mean_pcl_cl_highell_comp = [means_highell[i] / means_highell_cl[i] for i in range(len(means))]
     ax8.plot(lmax, mean_pcl_exact_comp, label="low ell comparison, pcl to exact")
-    ax8.plot(lmax, mean_pcl_cl_comp, label="low ell comparison, pcl to cl")
-    ax8.plot(lmax, mean_pcl_cl_highell_comp, label="high ell comparison, pcl to cl")
+    #ax8.plot(lmax, mean_pcl_cl_comp, label="low ell comparison, pcl to cl")
+    #ax8.plot(lmax, mean_pcl_cl_highell_comp, label="high ell comparison, pcl to cl")
     ax8.plot(lmax, means / new_cov.xi_pcl, label="convolution",color='C3')
     ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means",color='C3',linestyle='dashed')
     ax8.axhline(1, color="black", linestyle="dotted")
     ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
+    #ax8.set_ylim(0.99,1.02)
     ax8.legend()
 
     plt.savefig("skewness{}.png".format(new_cov.set_char_string()))
@@ -714,7 +715,7 @@ def lowell_comp():
     import plotting
 
     fig1,ax1 = plt.subplots()
-    l_exacts = [5,10,15,20]
+    l_exacts = [10,20,30]
     angbin = [(4, 6)]
     l_smooths = [None]
     l_smooths_plot = ['None']
@@ -736,11 +737,12 @@ def lowell_comp():
         new_cov = Cov(
             l_exact,
             [2],
-            circmaskattr=(4000, 256),
+            circmaskattr=(1000, 256),
             clpath="Cl_3x2pt_kids55.txt",
-            sigma_e=None,
-            l_smooth_mask=10,
+            sigma_e='default',
+            l_smooth_mask=30,
             l_smooth_signal=None,
+            cov_ell_buffer=10,
         )
         
         
@@ -756,14 +758,29 @@ def lowell_comp():
         xi_pcl.append(new_cov.xi_pcl/new_cov.xi_pcl)
         mean_exact.append(mean/new_cov.xi_pcl)
     new_cov.cov_xi_gaussian()
-    fig2,ax2 = plt.subplots()
-    ax2.plot(new_cov.ell,new_cov.p_ee,label='pseudo Cl EE')
-    ax2.plot(new_cov.ell,new_cov.p_bb,label='pseudo Cl BB')
-    ax2.plot(new_cov.ell,new_cov.p_ee+new_cov.p_ee,label='sum of pseudo Cl')
-    ax2.plot(np.arange(new_cov._exact_lmax+1),new_cov.check_pcl[:new_cov._exact_lmax+1]+new_cov.check_pcl[new_cov._exact_lmax+1:],label='partial traces of sigma')
-    #ax2.plot(new_cov.ell,new_cov.ee)
-    ax2.set_yscale('log')
-    ax2.legend()
+    diag_alm = np.diag(new_cov.cov_alm)
+    fig3,ax3 = plt.subplots()
+    ax3.plot(np.diag(new_cov.cov_alm))
+    fig3.savefig('palm_cov.png')
+    len_sub = 2*new_cov._exact_lmax+1
+    reps = int(len(diag_alm) / (len_sub))
+    print(reps)
+    print(len(diag_alm[1*len_sub:(1+1)*len_sub]))
+    check_pcl = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
+    #check_pcl = np.array([np.sum(2*diag_alm[(new_cov._exact_lmax+1) + i*len_sub:(new_cov._exact_lmax+1) +(i*len_sub+1+new_cov._exact_lmax)]) + diag_alm[new_cov._exact_lmax + i*len_sub] for i in range(reps)])
+    fig2,(ax21,ax22) = plt.subplots(2)
+    # need to check this again with pos_m=True but add factors 2 that usually come from m matrix. 
+    ell_short = 2 * new_cov.ell + 1
+    ax21.plot(new_cov.ell,new_cov.p_ee * ell_short,label='pseudo Cl EE')
+    ax21.plot(new_cov.ell,new_cov.p_bb * ell_short,label='pseudo Cl BB')
+    ax21.plot(np.arange(new_cov._exact_lmax+1),check_pcl[:new_cov._exact_lmax+1]+check_pcl[new_cov._exact_lmax+1:2*(new_cov._exact_lmax+1)],label='partial traces of sigma,EE')
+    ax21.plot(np.arange(new_cov._exact_lmax+1),check_pcl[2*(new_cov._exact_lmax+1):3*(new_cov._exact_lmax+1)]+check_pcl[3*(new_cov._exact_lmax+1):4*(new_cov._exact_lmax+1)],label='partial traces of sigma,BB')
+    ax22.plot(np.arange(new_cov._exact_lmax+1),(new_cov.p_ee * ell_short)[:new_cov._exact_lmax+1] / (check_pcl[:new_cov._exact_lmax+1]+check_pcl[new_cov._exact_lmax+1:2*(new_cov._exact_lmax+1)]))
+    ax22.plot(np.arange(new_cov._exact_lmax+1),(new_cov.p_bb * ell_short)[:new_cov._exact_lmax+1] / (check_pcl[2*(new_cov._exact_lmax+1):3*(new_cov._exact_lmax+1)]+check_pcl[3*(new_cov._exact_lmax+1):4*(new_cov._exact_lmax+1)]))
+    ax21.set_yscale('log')
+    ax21.set_xlim(0,31)
+    ax21.legend()
+    #ax22.set_ylim(0.98,1.02)
     fig2.savefig("pcl_vs_cl.png")
 
     print(ref_xi)
@@ -773,7 +790,7 @@ def lowell_comp():
     
     ax1.set_xlabel(r'exact $\ell$')
     ax1.set_ylabel(r'$\xi^+$/$\xi^+_{pC_{\ell}}$')
-    #ax.set_ylim(0.98,1.02)
+    
     ax1.legend()
     fig1.savefig('lowell_meancomparison_fullm.png')    
 
@@ -796,5 +813,4 @@ def norm_testing():
     norm2 = np.sum(quad_vec(norm_array,lower,upper)[0])
 
     print(norm1,norm2)
-
 lowell_comp()
