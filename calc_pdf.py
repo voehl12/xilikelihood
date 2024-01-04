@@ -25,10 +25,8 @@ def pdf_xi_1D(
  
     mname = "m_xi{}_l{:d}_t{}_{}.npz".format(kind, exact_lmax, ang, maskname)
 
-    try:
-        cov = cov_object.cov_alm
-    except:
-        cov = cov_object.cov_alm_xi(exact_lmax=exact_lmax, pos_m=True)
+
+    cov = cov_object.cov_alm_xi(exact_lmax=exact_lmax, pos_m=True)
     
     if setup_m.check_m(mname):
         m = setup_m.load_m(mname)
