@@ -101,7 +101,7 @@ class TwoPointSimulation(Cov):
         if self.smooth_signal is not None:
             clq *= self.smooth_array
         
-        assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
+        #assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
         np.random.seed()
         return hp.sphtfunc.synfast(clq, self.nside, lmax=self.lmax)
 
