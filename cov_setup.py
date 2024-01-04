@@ -230,10 +230,17 @@ class Cov(SphereMask, TheoryCl):
             cov_matrix = np.where(np.isnan(cov_matrix), cov_matrix.T, cov_matrix)
             assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
             diag_alm = np.diag(cov_matrix)
-            len_sub = 2*exact_lmax+1
-            reps = int(len(diag_alm) / (len_sub))
-            ell_short = 2 * self.ell + 1
-            check_pcl_sub = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
+            if pos_m == False:
+                len_sub = 2*exact_lmax+1
+                reps = int(len(diag_alm) / (len_sub))
+                ell_short = 2 * self.ell + 1
+                check_pcl_sub = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
+            else:
+                len_sub = exact_lmax+1
+                reps = int(len(diag_alm) / (len_sub))
+                ell_short = 2 * self.ell + 1
+                check_pcl_sub = np.array([np.sum(2*diag_alm[(exact_lmax+1) + i*len_sub:(exact_lmax+1) +(i*len_sub+1+exact_lmax)]) + diag_alm[exact_lmax + i*len_sub] for i in range(reps)])
+            
             check_pcl = np.zeros((2,exact_lmax+1))
             check_pcl[0], check_pcl[1] = check_pcl_sub[:exact_lmax+1]+check_pcl_sub[exact_lmax+1:2*(exact_lmax+1)], check_pcl_sub[2*(exact_lmax+1):3*(exact_lmax+1)]+check_pcl_sub[3*(exact_lmax+1):4*(exact_lmax+1)]
             pcl = np.zeros_like(check_pcl)
@@ -256,9 +263,16 @@ class Cov(SphereMask, TheoryCl):
                     cov_part = cov_calc.cov_4D(
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
                     )
-                    len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-2*buffer)
+                    if pos_m == False:
+                        len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-2*buffer)
+                    
+                        cov_2D = np.reshape(cov_part[:-buffer,buffer:-buffer,:-buffer,buffer:-buffer], (len_2D, len_2D))
+                    else:
+                        #TODO: buffer ell functionality does not work yet if pos_m = True. 
+                        len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-buffer)
+                    
+                        cov_2D = np.reshape(cov_part[:-buffer,:-buffer,:-buffer,:-buffer], (len_2D, len_2D))
 
-                    cov_2D = np.reshape(cov_part[:-buffer,buffer:-buffer,:-buffer,buffer:-buffer], (len_2D, len_2D))
                     pos_y = (len_2D * i, len_2D * (i + 1))
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
