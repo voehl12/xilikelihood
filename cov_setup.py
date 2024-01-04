@@ -59,6 +59,7 @@ class Cov(SphereMask, TheoryCl):
         maskname="mask",
         l_smooth_mask=None,
         l_smooth_signal=None,
+        cov_ell_buffer=0,
     ):
         SphereMask.__init__(
             self,
@@ -86,6 +87,7 @@ class Cov(SphereMask, TheoryCl):
         self._sigma_e = sigma_e
         self.set_noise_sigma()
         self.ang_bins_in_deg = None
+        self.cov_ell_buffer = cov_ell_buffer
 
         self.set_covalmpath()
 
@@ -117,6 +119,7 @@ class Cov(SphereMask, TheoryCl):
     @exact_lmax.setter
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
+            print("Warning: Resetting exact lmax within a covariance instance is not supported at the moment (concerning recalculation of dependent quantities)")
             self._exact_lmax = new_lmax
             if self.l_smooth_auto:
                 self.l_smooth = new_lmax
@@ -159,11 +162,14 @@ class Cov(SphereMask, TheoryCl):
         NotImplementedError
             if all m covariance (including negative) calculation is attempted for fullsky version
         """
+        
+        buffer = self.cov_ell_buffer
+        
         if exact_lmax is None:
             exact_lmax = self._exact_lmax
         elif exact_lmax != self._exact_lmax:
             self.exact_lmax = exact_lmax
-        theory_cell = self.cell_cube(exact_lmax)
+        theory_cell = self.cell_cube(exact_lmax + buffer)
 
         if self.check_cov():
             self.load_cov()
@@ -175,12 +181,14 @@ class Cov(SphereMask, TheoryCl):
             lmin = 0
 
             if hasattr(self, "_noise_sigma"):
-                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl[:self.exact_lmax+1])
+                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl[:self.exact_lmax+1+buffer])
 
             if pos_m:
+               
                 n_cov = n_alm * (exact_lmax - lmin + 1) * (exact_lmax + 1)
             else:
-                n_cov = n_alm * (exact_lmax - lmin + 1) * (2 * exact_lmax + 1)
+                
+                n_cov = n_alm * (exact_lmax - lmin + 1) * (2 * (exact_lmax) + 1)
 
             if self.maskname == "fullsky":
                 if pos_m == False:
@@ -194,12 +202,12 @@ class Cov(SphereMask, TheoryCl):
                         t = int(np.floor(i / 2))  # same c_l for Re and Im
                         len_sub = exact_lmax + 1
                         cell_ranges = [
-                            np.repeat(theory_cell[t, t, i], i + 1) for i in range(exact_lmax + 1)
+                            np.repeat(theory_cell[t, t, i], i + 1) for i in range(len_sub)
                         ]
                         full_ranges = [
                             np.append(
                                 cell_ranges[i],
-                                np.zeros(exact_lmax + 1 - len(cell_ranges[i])),
+                                np.zeros(len_sub - len(cell_ranges[i])),
                             )
                             for i in range(len(cell_ranges))
                         ]
@@ -221,16 +229,24 @@ class Cov(SphereMask, TheoryCl):
 
             cov_matrix = np.where(np.isnan(cov_matrix), cov_matrix.T, cov_matrix)
             assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
+            diag_alm = np.diag(cov_matrix)
+            len_sub = 2*exact_lmax+1
+            reps = int(len(diag_alm) / (len_sub))
+            ell_short = 2 * self.ell + 1
+            check_pcl_sub = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
+            check_pcl = np.zeros((2,exact_lmax+1))
+            check_pcl[0], check_pcl[1] = check_pcl_sub[:exact_lmax+1]+check_pcl_sub[exact_lmax+1:2*(exact_lmax+1)], check_pcl_sub[2*(exact_lmax+1):3*(exact_lmax+1)]+check_pcl_sub[3*(exact_lmax+1):4*(exact_lmax+1)]
+            pcl = np.zeros_like(check_pcl)
+            pcl[0], pcl[1] = (self.p_ee * ell_short)[:exact_lmax+1], (self.p_bb * ell_short)[:exact_lmax+1]
+            
+            assert np.allclose(pcl,check_pcl), "Covariance diagonal does not agree with pseudo C_ell"
             self.cov_alm = cov_matrix
             self.save_cov()
-            len_sub = int(len(np.diag(self.cov_alm)) / (self._exact_lmax+1))
-            print(len_sub)
-            self.check_pcl = np.array([np.sum(np.diag(self.cov_alm)[i*len_sub:(i+1)*len_sub+1]) for i in range(2*(self._exact_lmax+1))])
-            print(self.check_pcl)
             return self.cov_alm
 
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
-        w_arr = self.w_arr
+        buffer = self.cov_ell_buffer
+        w_arr = self.w_arr(cov_ell_buffer=buffer)
         cov_matrix = np.full((n_cov, n_cov), np.nan)
         for i in alm_inds:
             for j in alm_inds:
@@ -238,11 +254,11 @@ class Cov(SphereMask, TheoryCl):
                     continue
                 else:
                     cov_part = cov_calc.cov_4D(
-                        i, j, w_arr, self._exact_lmax, lmin, theory_cell, pos_m=pos_m
+                        i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
                     )
-                    len_2D = cov_part.shape[0] * cov_part.shape[1]
+                    len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-2*buffer)
 
-                    cov_2D = np.reshape(cov_part, (len_2D, len_2D))
+                    cov_2D = np.reshape(cov_part[:-buffer,buffer:-buffer,:-buffer,buffer:-buffer], (len_2D, len_2D))
                     pos_y = (len_2D * i, len_2D * (i + 1))
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
