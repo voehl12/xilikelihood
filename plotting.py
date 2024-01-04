@@ -28,10 +28,10 @@ def plot_hist(ax,sims, name, color='C0', linecolor='C3', exact_pdf=None, label=F
 
     if label:
         n, bins, patches = ax.hist(
-            sims, bins=100, density=True, facecolor=color, alpha=0.5, label=name, color=color
+            sims, bins=500, density=True, facecolor=color, alpha=0.5, label=name, color=color
         )
     else:
-        n, bins, patches = ax.hist(sims, bins=100, density=True, facecolor=color, alpha=0.5)
+        n, bins, patches = ax.hist(sims, bins=500, density=True, facecolor=color, alpha=0.5)
 
     if exact_pdf is not None:
         x, pdf = exact_pdf
