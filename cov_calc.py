@@ -89,7 +89,7 @@ def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
     # stack parts of w-matrices in the right order:
     wlm = w_stack(I,w_arr) # i,l,m,lpp,mpp
     wlpmp = w_stack(J,w_arr) # j,lp,mp,lpp,mppp
-    mid_ind = int((wlm.shape[2]-1) / 2)
+    
     # create "Kronecker" delta matrix for covariance structure of alm with m with same modulus but different sign (also accounting for mpp = mppp = 0)
     len_m = np.shape(w_arr)[4]
     delta = delta_mppmppp(J,len_m) # j,mpp,mppp (only need to specify one permuation, as the equality of Re/Im of alm to correlate is already enforced by the C_l that are set to zero otherwise)
@@ -100,7 +100,7 @@ def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
 
     
     # multiply and sum over lpp, mpp, mppp. Factor 0.5 is because cov(alm,alm) = 0.5 Cl for most cases (others are modified by delta_mppmppp).
-    if l_out:
+    if l_out is not None:
         wl = wlm[:,l_out-lmin,:,:,:] # i,m,lpp,mpp
         wlp = wlpmp[:,l_out-lmin,:,:,:] # j, mp, lpp, mppp
         cov_l = 0.5 * einsum('ijb,imbc,jabd,jcd->ma',c_lpp,wl,wlp,delta)
@@ -109,8 +109,8 @@ def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
         # only need m >= 0 elements, maybe already enforce this here, save resources
         #assert np.allclose(wlm[:,:,mid_ind:,:,:],wlm[:,:,:mid_ind+1,:,:])
         #assert np.allclose(wlpmp[:,:,mid_ind:,:,:],wlpmp[:,:,:mid_ind+1,:,:])
-        if pos_m:
-
+        if pos_m == True:
+            mid_ind = int((wlm.shape[2]-1) / 2)
             wlm = wlm[:,:,mid_ind:,:,:]
             wlpmp = wlpmp[:,:,mid_ind:,:,:]
         step1 = einsum('ilmbc,ijb->lmbcj',wlm,c_lpp)
