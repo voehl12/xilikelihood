@@ -347,6 +347,10 @@ class SphereMask:
 
     
     def w_arr(self, cov_ell_buffer=0,verbose=True):
+        self.set_wpmpath(cov_ell_buffer)
+        if self.check_w_arr():
+            self.load_w_arr()
+            return self._w_arr
         if self.w0_arr is None and self.wpm_arr is None:
             self.initiate_w_arrs(cov_ell_buffer)
 
@@ -354,6 +358,7 @@ class SphereMask:
         if verbose:
             print("Preparing list of l, m arguments...")
         for l1, L1 in enumerate(self.L):
+            #TODO: implement pos_m stuff here, so m1 is only calculated for positive m. Check, whether positive m also suffice for m2.
             M1_arr = np.arange(-L1, L1 + 1)
             for l2, L2 in enumerate(self.L):
                 M2_arr = np.arange(-L2, L2 + 1)
@@ -390,6 +395,7 @@ class SphereMask:
                 None  # could also delete these attributes from the instance itself to make space
             )
             self.wpm_arr = None
+            self.save_w_arr()
             return self._w_arr
 
         elif self.spin0:
@@ -399,12 +405,14 @@ class SphereMask:
                 None  # could also delete these attributes from the instance itself to make space
             )
             self.wpm_arr = None
+            self.save_w_arr()
             return self._w_arr
 
         elif self.spin2:
             self._w_arr = self.wpm_arr
             self.w0_arr = None
             self.wpm_arr = None
+            self.save_w_arr()
             return self._w_arr
 
     @property
@@ -412,3 +420,38 @@ class SphereMask:
         m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
         self._m_llp = m_llp_p, m_llp_m
         return self._m_llp
+
+    def save_w_arr(self):
+        print("Saving Wpm0 arrays.")
+        np.savez(self.wpm_path, wpm0=self._w_arr)
+
+    def check_w_arr(self):
+        print("Checking for Wpm0 arrays... ", end="")
+        print(self.wpm_path)
+        if os.path.isfile(self.wpm_path):
+            print("Found.")
+            return True
+        else:
+            print("Not found.")
+            return False
+
+    def load_w_arr(self):
+        print("Loading Wpm0 arrays.")
+        wpmfile = np.load(self.wpm_path)
+        self._w_arr = wpmfile["wpm0"]
+
+    def set_wpm_string(self,cov_ell_buffer):
+        
+        charstring = "_l{:d}_n{:d}_{}.npz".format(
+            self._exact_lmax + cov_ell_buffer,
+            self.nside,
+            self.maskname,
+            
+        )
+        return charstring
+
+    def set_wpmpath(self,cov_ell_buffer):
+        charac = self.set_wpm_string(cov_ell_buffer)
+        #covname = "covariances/cov_xi" + charac
+        wpm_name = "/cluster/scratch/veoehl/wpm_arrays/wpm" + charac
+        self.wpm_path = wpm_name
