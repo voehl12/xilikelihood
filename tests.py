@@ -464,12 +464,16 @@ def plot_skewness():
     import scipy.stats as stats
     import plotting
 
-    fig = plt.figure(figsize=(20, 14))
-
+    fig = plt.figure(figsize=(22, 14))
     gs = GridSpec(2, 3)
     
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ1000smoothl30_nonoise"
+    sims = plotting.read_sims(filepath, 1000, (4, 6))
+    mean_measured, std_measured, skew_measured = np.mean(sims), np.std(sims),stats.skew(sims)
+    print(std_measured)
+
     # set noise apodization
-    lmax = [10,20,30,40]
+    lmax = [10,20,30,40,50]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -512,33 +516,36 @@ def plot_skewness():
         means_lowell_pcl.append(new_cov.xi_pcl)
         means_lowell_cl.append(new_cov.xi_cl)
     new_cov.cov_xi_gaussian()
-    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$, effective area {:.1f}".format(*angbin[0],new_cov.eff_area))
+    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$, $A_{{\mathrm{{eff}}}} = {:.1f} \mathrm{{sqd}}$".format(*angbin[0],new_cov.eff_area))
     ax.plot(
         x,
         stats.norm.pdf(x, new_cov.xi_pcl, np.sqrt(new_cov.cov_xi)),
-        label="Gaussian approximation, Pseudo Cl",
+        label="Gaussian approximation, mean from Pseudo Cl",
         color="black",
         linestyle="dotted",
     )
     ax.plot(
         x,
         stats.norm.pdf(x, new_cov.xi_cl, np.sqrt(new_cov.cov_xi)),
-        label="Gaussian approximation",
+        label="Gaussian approximation, mean from Cl",
         color="black",
         linestyle="dashed",
     )
-    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ1000smoothl30_nonoise"
-    sims = plotting.read_sims(filepath, 1000, (4, 6))
+    
     ax = plotting.plot_hist(ax, sims, "test")
     ax.legend()
     ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
     ax6 = fig.add_subplot(gs[1, 0])
     ax6.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax6.set_ylabel(r"Skewness")
-    ax6.plot(lmax, skews)
+    ax6.plot(lmax, skews,label='predicted')
+    ax6.axhline(skew_measured,color='C0',linestyle='dotted',label='measured')
+    ax6.legend()
     ax7 = fig.add_subplot(gs[1, 1])
-    ax7.plot(lmax, stds / new_cov.cov_xi)
+    ax7.plot(lmax, stds / new_cov.cov_xi,label='predicted')
+    ax7.axhline(std_measured**2 / new_cov.cov_xi,color='C0',linestyle='dotted',label='measured')
     ax7.axhline(1, color="black", linestyle="dotted")
+    ax7.legend()
     ax7.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax7.set_ylabel(r"$\sigma / \sigma_{\mathrm{Gauss}}$")
     ax8 = fig.add_subplot(gs[1, 2])
@@ -555,6 +562,7 @@ def plot_skewness():
     ax8.plot(lmax, means / new_cov.xi_pcl, label="convolution",color='C3')
     ax8.plot(lmax, sum_of_means / new_cov.xi_pcl, label="sum of means",color='C3',linestyle='dashed')
     ax8.axhline(1, color="black", linestyle="dotted")
+    ax8.axhline(mean_measured/ new_cov.xi_pcl,color='C0',linestyle='dotted',label='measured')
     ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
     ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
     #ax8.set_ylim(0.99,1.02)
@@ -769,6 +777,7 @@ def lowell_comp():
     check_pcl = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
     #check_pcl = np.array([np.sum(2*diag_alm[(new_cov._exact_lmax+1) + i*len_sub:(new_cov._exact_lmax+1) +(i*len_sub+1+new_cov._exact_lmax)]) + diag_alm[new_cov._exact_lmax + i*len_sub] for i in range(reps)])
     fig2,(ax21,ax22) = plt.subplots(2)
+    # TODO: implement this to work with pos_m=True covariance matrices as already done in assert statement in cov_setup.
     # need to check this again with pos_m=True but add factors 2 that usually come from m matrix. 
     ell_short = 2 * new_cov.ell + 1
     ax21.plot(new_cov.ell,new_cov.p_ee * ell_short,label='pseudo Cl EE')
@@ -813,4 +822,4 @@ def norm_testing():
     norm2 = np.sum(quad_vec(norm_array,lower,upper)[0])
 
     print(norm1,norm2)
-lowell_comp()
+plot_skewness()
