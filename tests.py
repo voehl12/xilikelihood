@@ -568,7 +568,7 @@ def plot_skewness():
     #ax8.set_ylim(0.99,1.02)
     ax8.legend()
 
-    plt.savefig("skewness{}.png".format(new_cov.set_char_string()))
+    plt.savefig("skewness{}.png".format(new_cov.set_char_string()[4:-4]))
 
 
 def sum_testing():
