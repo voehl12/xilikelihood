@@ -822,4 +822,65 @@ def norm_testing():
     norm2 = np.sum(quad_vec(norm_array,lower,upper)[0])
 
     print(norm1,norm2)
-plot_skewness()
+
+
+def plot_full_likelihood():
+    from cov_setup import Cov
+    import calc_pdf, grf_classes
+    from matplotlib.gridspec import GridSpec
+    import scipy.stats as stats
+    import plotting
+
+    fig = plt.figure(figsize=(8, 6))
+    
+    
+    filepath = "/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ1000smoothl30_nonoise"
+    sims = plotting.read_sims(filepath, 1000, (4, 6))
+    mean_measured, std_measured, skew_measured = np.mean(sims), np.std(sims),stats.skew(sims)
+    
+    # set noise apodization
+    lmax = 50
+    angbin = [(4, 6)]
+    lims = -1.5e-6, 2.0e-6
+    
+    ax = fig.add_subplot()
+    
+     
+    new_cov = Cov(
+    lmax,
+    [2],
+    circmaskattr=(1000,256),
+    clpath="Cl_3x2pt_kids55.txt",
+    sigma_e=None,
+    l_smooth_mask=30,
+    l_smooth_signal=None,
+    cov_ell_buffer=10,
+)
+    new_cov.cl2pseudocl()
+    x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
+        angbin, new_cov, steps=4096, savestuff=True
+    )
+    ax.plot(x, pdf, color='C3', label=r"Prediction, $\ell_{{\mathrm{{exact}}}} = {:d}$".format(lmax))
+    ax.set_xlim(lims)
+    
+       
+    new_cov.cov_xi_gaussian()
+    ax.set_title(r"$\Delta \theta = {:.1f}^{{\circ}} - {:.1f}^{{\circ}}$, $A_{{\mathrm{{eff}}}} = {:.1f} \ \mathrm{{sqd}}$".format(*angbin[0],new_cov.eff_area))
+    ax.plot(
+        x,
+        stats.norm.pdf(x, new_cov.xi_pcl, np.sqrt(new_cov.cov_xi)),
+        label=r"Gaussian approximation",
+        color="black",
+        linestyle="dashed",
+    )
+
+    
+    ax = plotting.plot_hist(ax, sims, r"Measured",label=True)
+    ax.legend()
+    ax.set_xlabel(r"$\xi^+ (\Delta \theta)$")
+    
+    
+
+    plt.savefig("full_likelihood_vs_measured.pdf".format(new_cov.set_char_string()[4:-4]))
+
+plot_full_likelihood()
