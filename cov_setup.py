@@ -135,7 +135,7 @@ class Cov(SphereMask, TheoryCl):
         c_all[2, 2] = self.nn.copy()[: exact_lmax + 1]
         return c_all
 
-    def cov_alm_xi(self, exact_lmax=None, pos_m=False):
+    def cov_alm_xi(self, exact_lmax=None, pos_m=True):
         """
         calculates covariance of pseudo-alm needed for the correlation function xi
 
@@ -244,13 +244,14 @@ class Cov(SphereMask, TheoryCl):
             check_pcl[0], check_pcl[1] = check_pcl_sub[:exact_lmax+1]+check_pcl_sub[exact_lmax+1:2*(exact_lmax+1)], check_pcl_sub[2*(exact_lmax+1):3*(exact_lmax+1)]+check_pcl_sub[3*(exact_lmax+1):4*(exact_lmax+1)]
             pcl = np.zeros_like(check_pcl)
             twoell= 2 * self.ell + 1
+            self.cl2pseudocl()
             pcl[0], pcl[1] = (self.p_ee * twoell)[:exact_lmax+1], (self.p_bb * twoell)[:exact_lmax+1]
             
             assert np.allclose(pcl,check_pcl), "Covariance diagonal does not agree with pseudo C_ell"
             self.cov_alm = cov_matrix
             self.save_cov()
             return self.cov_alm
-
+    
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
         buffer = self.cov_ell_buffer
         w_arr = self.w_arr(cov_ell_buffer=buffer)
