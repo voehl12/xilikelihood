@@ -33,12 +33,22 @@ def mmatrix_xi(prefactors, bin_n=0,kind="p", pos_m=False):
     m = np.diag(np.tile(diag, n_field * 2))
     return m
 
-def m_xi_cross(prefactors, bin_n=(0,0),kind=("p","p"), pos_m=True):
+def m_xi_cross(prefactors, combs =([1,1],[0,1]),bin_n=(0,0),kind=("p","p"), pos_m=True):
+    m = []
     n_m = len(prefactors)
     
     # function to create two (or more) m matrices to crosscorrelate different redshift bins (i.e. different sets of pseudo alms). first m only selects first half of covariance matrix, second, the second ect.
     # prefactors is tuple of prefactors, so is kinds and bin_n 
-    pass
+    # combs: bin combinations according to the ordering of the covariance matrix
+    for i in range(n_m):
+        sub_m = mmatrix_xi(prefactors[i],bin_n[i],kind[i],pos_m)
+        len_sub_m = len(sub_m)
+        m_i = np.zeros((len_sub_m*n_m,len_sub_m*n_m))
+        comb = combs[i]
+        m_i[comb[0]*len_sub_m:(comb[0]+1)*len_sub_m,comb[1]*len_sub_m:(comb[1]+1)*len_sub_m] = sub_m
+        m.append(m_i)
+    
+    return np.array(m)
 
 def mmatrix_pcl():
     # add zeros depending on overall lmax so can be used for inter l cross correlations as well
