@@ -1,7 +1,8 @@
-import setup_cov, setup_m, helper_funcs
+import setup_m, helper_funcs
 from cov_setup import Cov
 import numpy as np
 from scipy.interpolate import UnivariateSpline
+from scipy.linalg import block_diag
 import matplotlib.pyplot as plt
 
 
@@ -67,6 +68,30 @@ def pdf_xi_1D(
     return x, pdf, norm, mean, std, skewness, mean_lowell_pdf
 
 
+def cov_xi_nD(cov_objects):
+    n = len(cov_objects)
+    sidelen_almcov = int(0.5 * (-1 + np.sqrt(1 + 8*n)))
+    covs = []
+    # diagonal:
+    for i,cov_object in enumerate(cov_objects[:sidelen_almcov]):
+        sub_cov = cov_object.cov_alm_xi()
+        len_sub = len(sub_cov)
+        covs.append(sub_cov)
+    covs = tuple(covs)
+    cov = block_diag(*covs)
+    # off-diagonal:
+    c = sidelen_almcov
+    for i in range(sidelen_almcov):
+        for j in range(sidelen_almcov):
+            if i < j:
+                cov_object = cov_objects[c]
+                sub_cov = cov_object.cov_alm_xi()
+                cov[i*len_sub:(i+1)*len_sub,j*len_sub:(j+1)*len_sub] = sub_cov
+                cov[j*len_sub:(j+1)*len_sub,i*len_sub:(i+1)*len_sub] = sub_cov
+                c += 1
+    assert np.allclose(cov, cov.T), "Covariance matrix not symmetric"
+    return cov
+
 def high_ell_gaussian_cf(t_lowell, cov_object):
     cov_object.cov_xi_gaussian(lmin=cov_object.exact_lmax + 1)
     xip_max = max(
@@ -113,6 +138,12 @@ def calc_quadcf_1D(val_max, steps, cov, m):
     cf = np.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=1)
 
     return t, cf
+
+def get_cf_nD(tset,mset,cov):
+    # tset and mset can have any length, such that this cf element can be calculated for any number of dimensions
+    big_m = np.einsum('i,ijk -> jk',tset,mset)
+    evals = np.linalg.eigvals(big_m @ cov)
+    return tset,np.prod((1 - 2j * evals) ** -0.5)
 
 
 def cf_to_pdf_1d(t, cf):
