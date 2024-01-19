@@ -1,57 +1,33 @@
 def test_palm_matching():
     import cov_calc
-
     palm_kinds = ["ReE", "ImE", "ReB", "ImB"]
-    print(cov_calc.match_alm_inds(palm_kinds))
-    assert cov_calc.match_alm_inds(palm_kinds) == [0, 1, 2, 3], "Function no work"
+    assert cov_calc.match_alm_inds(palm_kinds) == [0, 1, 2, 3]
 
 
 def test_cl_class():
-    from scipy.special import j0
-    import scipy.integrate as integrate
     import grf_classes
-    import matplotlib.pyplot as plt
-
-    new_cl = grf_classes.TheoryCl(30, path="Cl_3x2pt_kids55.txt")
-
-    assert np.allclose(new_cl.ee, np.zeros(31)), "Something wrong with zero Cl assignment"
+    new_cl = grf_classes.TheoryCl(30)
+    assert np.allclose(new_cl.ee, np.zeros(31))
 
 
 def test_cov_xi():
     import cov_setup
-    import matplotlib.pyplot as plt
-
     covs = np.load("../corrfunc_distr/cov_xip_l10_n256_circ1000.npz")
     cov_xip = covs["cov"]
     circ_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=(1000, 256))
-
     test_cov = circ_cov.cov_alm_xi(pos_m=True)
-    assert np.allclose(cov_xip, test_cov), "covariance calculation wrong"
+    assert np.allclose(cov_xip, test_cov)
+
     nomask_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=("fullsky", 256))
     nomask_cov_array = nomask_cov.cov_alm_xi(pos_m=True)
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
     assert np.array_equal(nomask_cov_array, diag_arr)
+
     nomask_cov.maskname = "disguised_fullsky"
     nomask_cov.set_covalmpath()
     nomask_bruteforce_cov = nomask_cov.cov_alm_xi(pos_m=True)
-    assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array)), (
-        nomask_bruteforce_cov - nomask_cov_array
-    )[
-        np.argwhere(
-            np.invert(
-                (
-                    np.isclose(
-                        nomask_bruteforce_cov - nomask_cov,
-                        np.zeros_like(nomask_cov),
-                        atol=1e-10,
-                    )
-                )
-            )
-        )
-    ]
-
-    # next: constant C_l, pure noise implementation
+    assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array)), 
 
 
 def test_analytic_pcl():
