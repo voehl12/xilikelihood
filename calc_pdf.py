@@ -42,7 +42,11 @@ def pdf_xi_1D(
     t, cf = calc_quadcf_1D(xip_max, steps, cov, m)
 
     x_low, pdf_low = cf_to_pdf_1d(t, cf)
-    mean_lowell_cf = helper_funcs.nth_moment(1, t, cf)
+    mean_trace = np.trace(m@cov)
+    mean_lowell_cf, var_lowell = helper_funcs.nth_moment(2, t, cf)
+    var_trace = np.trace(m @ cov @ m @ cov)
+    assert np.allclose(mean_trace,mean_lowell_cf)
+    assert np.allclose(var_trace,var_lowell)
     mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
 
     assert np.allclose(mean_lowell_cf, mean_lowell_pdf, rtol=1e-5), (
@@ -63,6 +67,8 @@ def pdf_xi_1D(
     assert np.allclose(mean, first, rtol=1e-5), (mean, first)
 
     std = second - first**2
+    
+    
     norm = np.trapz(pdf, x=x)
 
     return x, pdf, norm, mean, std, skewness, mean_lowell_pdf
@@ -175,3 +181,51 @@ def cf_to_pdf_1d(t, cf):
     )  # I have found this tends to be more numerically stable
 
     return (np.array(x), np.array(pdf))
+
+def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
+    """
+    Converts an n-dimensional joint characteristic function to the corresponding joint probability density function.
+
+    Arguments:
+
+        cf_grid : n-dimensional grid of the characteristic function
+
+        t0 : length-n vector of t0 values for each dimension
+
+        dt : length-n vector of dt values for each dimension
+    """
+
+    # 1. Use an n-dimensional FFT to obtain the FFT grid
+    if verbose:
+        print('Performing FFT')
+    fft_grid = np.fft.fftshift(np.fft.fftn(cf_grid))
+
+    # 2. Obtain the range of each dimension of x and use this to form a grid of x
+    if verbose:
+        print('Forming x grid')
+
+    # Form the x range in each dimension
+    x_ranges = []
+    n_dim = fft_grid.ndim
+    grid_shape = fft_grid.shape
+    for dim in range(n_dim):
+        x_ranges.append(np.fft.fftshift(np.fft.fftfreq(grid_shape[dim])) * 2 * np.pi / dt[dim])
+
+    # Form the grid
+    x_grid = np.stack(np.meshgrid(*x_ranges, indexing='ij'), axis=-1)
+
+    # 3. Use the grid of x to calculate the x-dependent phase factor and multiply this by the FFT grid
+    if verbose:
+        print('Applying phase factor')
+    t0_dot_x = np.tensordot(t0, x_grid, axes=[0, n_dim])
+    phase_factor_grid = np.exp(-1j * t0_dot_x)
+
+    fft_grid_with_phase_factor = phase_factor_grid * fft_grid
+
+    # 4. Uniformly multiply the entire grid by the normalisation factor and take the absolute value
+    if verbose:
+        print('Applying normalisation factor')
+    norm_factor = np.prod(dt) / ((2 * np.pi) ** n_dim)
+    pdf_grid = np.abs(fft_grid_with_phase_factor * norm_factor)
+
+    return (x_grid, pdf_grid)
