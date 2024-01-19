@@ -473,7 +473,7 @@ def plot_skewness():
     print(std_measured)
 
     # set noise apodization
-    lmax = [10,20,30,40,50]
+    lmax = [10,20,30]
     angbin = [(4, 6)]
     lims = -2e-6, 3e-6
     (
@@ -494,15 +494,16 @@ def plot_skewness():
         el,
         [2],
         circmaskattr=(1000,256),
-        clpath="Cl_3x2pt_kids55.txt",
-        sigma_e=None,
+        clpath="Cl_3x2pt_kids53.txt",
+        clname='3x2pt_kids_53',
+        sigma_e='default',
         l_smooth_mask=30,
         l_smooth_signal=None,
         cov_ell_buffer=10,
     )
         new_cov.cl2pseudocl()
         x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
-            angbin, new_cov, steps=4096, savestuff=True
+            angbin, new_cov, steps=2048, savestuff=True
         )
         ax.plot(x, pdf, color=color[i], label=r"$\ell_{{\mathrm{{exact}}}} = {:d}$".format(el))
         ax.set_xlim(lims)
@@ -883,4 +884,80 @@ def plot_full_likelihood():
 
     plt.savefig("full_likelihood_vs_measured.pdf".format(new_cov.set_char_string()[4:-4]))
 
-plot_full_likelihood()
+def high_low_s8():
+    from cov_setup import Cov
+    import calc_pdf
+    from simulate import TwoPointSimulation   
+    import scipy.stats as stats
+    
+    cl_paths = [("Cl_3x2pt_kids55_lows8.txt",'S8p6'),("Cl_3x2pt_kids55_s8p7.txt",'S8p7'),("Cl_3x2pt_kids55_s8p75.txt",'S8p75'),("Cl_3x2pt_kids55_s8p8.txt","S8p8"),("Cl_3x2pt_kids55_s8p85.txt",'S8p85'),("Cl_3x2pt_kids55_s8p9.txt",'S8p9'),("Cl_3x2pt_kids55_highs8.txt",'S81')]
+    s8 = [0.6,0.7,0.75,0.8,0.85,0.9,1.0]
+    likelihood = []
+    likelihood_gauss = []
+    fig = plt.figure(figsize=(10, 6))
+    measured_cl = cl_paths[3]
+    lims = -1e-6, 1.5e-6
+    angbin = [(4, 6)]
+    measurement = TwoPointSimulation(angbin,circmaskattr=(1000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/2ptlikelihood",sigma_e=None )
+    jobnumber = 1
+    measurement.xi_sim(jobnumber)
+    xi_measured = np.load(measurement.simpath + "/job{:d}.npz".format(jobnumber))
+    xip_measured = xi_measured['xip'][0,0]     
+    print(xip_measured)
+    ax = fig.add_subplot(121)
+
+    lag = 10
+    colors = plt.cm.viridis(np.linspace(0, 1, len(cl_paths)))
+    for i,cl in enumerate(cl_paths):
+        color = colors[i]
+        cov_s8 = Cov(
+        30,
+        [2],
+        circmaskattr=(1000,256),
+        clpath=cl[0],
+        clname = cl[1],
+        sigma_e=None,
+        l_smooth_mask=30,
+        l_smooth_signal=None,
+        cov_ell_buffer=10,
+        )
+    
+        cov_s8.cl2pseudocl()
+        x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
+        angbin, cov_s8, steps=4096, savestuff=True)
+        meas_ind = np.argmin(np.fabs(x-xip_measured))
+        s8_likelihood = pdf[meas_ind]
+        likelihood.append(s8_likelihood)
+        ax.plot(x, pdf, color=color, label=cl[1])
+        ax.axvline(mean,color=color)
+
+        cov_s8.cov_xi_gaussian()
+    
+        ax.plot(
+            x,
+            stats.norm.pdf(x, cov_s8.xi_pcl, np.sqrt(cov_s8.cov_xi)),
+            color=color,
+            linestyle="dotted",
+        )
+        likelihood_gauss.append(stats.norm.pdf(x[meas_ind], cov_s8.xi_pcl, np.sqrt(cov_s8.cov_xi)))
+    
+    ax.set_xlim(lims)
+    ax.axvline(xip_measured,color='C3',label='measured')
+    ax.set_xlabel(r'$\xi^+$')
+    ax.legend()
+    ax2 = fig.add_subplot(122)
+    ax2.plot(s8,likelihood,label='exact likelihood')
+    ax2.plot(s8,likelihood_gauss,label='Gaussian likelihood')
+    ax2.set_xlabel(r'S8')
+    ax2.legend()
+    plt.savefig('varied_s8.png')
+         
+              
+
+high_low_s8()
+    
+   
+
+
+
+    
