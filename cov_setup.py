@@ -281,6 +281,7 @@ class Cov(SphereMask, TheoryCl):
 
     def cov_cl_gaussian(self):
         cl_e = self.ee.copy()
+        cl_b = self.bb.copy()
         noise2 = np.zeros_like(cl_e)
         ell = np.arange(self.lmax + 1)
         if hasattr(self, "_noise_sigma"):
