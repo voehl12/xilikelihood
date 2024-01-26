@@ -4,6 +4,8 @@ import numpy as np
 from scipy.interpolate import UnivariateSpline
 from scipy.linalg import block_diag
 import matplotlib.pyplot as plt
+from scipy.integrate import quad_vec
+import wigner
 
 
 def pdf_xi_1D(
@@ -44,7 +46,7 @@ def pdf_xi_1D(
     x_low, pdf_low = cf_to_pdf_1d(t, cf)
     mean_trace = np.trace(m@cov)
     mean_lowell_cf, var_lowell = helper_funcs.nth_moment(2, t, cf)
-    var_trace = np.trace(m @ cov @ m @ cov)
+    var_trace = 2 * np.trace(m @ cov @ m @ cov)
     assert np.allclose(mean_trace,mean_lowell_cf)
     assert np.allclose(var_trace,var_lowell)
     mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
@@ -73,6 +75,155 @@ def pdf_xi_1D(
 
     return x, pdf, norm, mean, std, skewness, mean_lowell_pdf
 
+def cov_cl_gaussian(cov_object):
+    #TODO: design to take two cov_objects and give (mixed) sum of Cl^2
+    cl_e = cov_object.ee.copy()
+    cl_b = cov_object.bb.copy()
+    noise2 = np.zeros_like(cl_e)
+    ell = np.arange(cov_object.lmax + 1)
+    if hasattr(cov_object, "_noise_sigma"):
+        noise_B = noise_E = cov_object.noise_cl
+
+        cl_e += noise_E
+        cl_b += noise_B
+        noise2 += np.square(noise_E) + np.square(noise_B)
+    
+    cl2 = np.square(cl_e) + np.square(cl_b)
+
+    diag = 2 * cl2
+    noise_diag = 2 * noise2
+    return diag, noise_diag
+
+def get_noisy_cl(cov_objects):
+    cl_es,cl_bs = [],[]
+    for cov_object in cov_objects:
+        cl_e = cov_object.ee.copy()
+        cl_b = cov_object.bb.copy()
+        if hasattr(cov_object, "_noise_sigma"):
+            noise_B = noise_E = cov_object.noise_cl
+
+            cl_e += noise_E
+            cl_b += noise_B
+        cl_es.append(cl_e)
+        cl_bs.append(cl_b)
+    return tuple(cl_es),tuple(cl_bs)
+        
+
+
+def cov_cl_gaussian_mixed(mixed_cov_objects):
+    cl_es, cl_bs = get_noisy_cl(mixed_cov_objects) # should return all cle and clb needed with noise added
+    one_ee, two_ee, three_ee, four_ee = cl_es
+    one_bb, two_bb, three_bb, four_bb = cl_bs
+    cl2 = one_ee * two_ee + three_ee * four_ee + one_ee * two_bb + three_ee * four_bb + one_bb * two_ee + three_bb * four_ee + one_bb * two_bb + three_bb * four_bb
+    return cl2
+
+def get_cov_triang(cov_objects):
+    #order of cov_objects: as in GLASS gaussian fields creation
+    n = len(cov_objects)
+    sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8*n)))
+    rowlengths = np.arange(1,sidelen_xicov+1)
+    cov_triang = np.zeros((rowlengths[-1],rowlengths[-1]))
+    cov_triang = [cov_objects[np.sum(rowlengths[:i]):np.sum(rowlengths[:i+1])] for i in range(rowlengths[-1])]
+    # for i in range(rowlengths[-1]):
+    #    cov_triang[i,:rowlengths[i]] = cov_objects[np.sum(rowlengths[:i]):np.sum(rowlengths[:i+1])]
+    return cov_triang
+
+def get_cov_pos(comb):
+    column = comb[1]-comb[0]
+    row = comb[0]
+    return (row,column)
+
+
+def cov_cl_nD(cov_objects, xicombs=((1,1),(1,0))):
+    #xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell
+    n = len(cov_objects)
+    sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8*n)))
+    
+    cov_triang = get_cov_triang(cov_objects)
+    
+    variances = []
+    cov = np.zeros((2,2,cov_objects[0].lmax+1))
+    # diagonal:
+    for i in range(sidelen_xicov):
+        inds = get_cov_pos(xicombs[i])
+        cov_obj = cov_triang[inds[0]][inds[1]]
+        var,noise = cov_cl_gaussian(cov_obj)
+        cov[i,i] = var
+    
+    # off-diagonal:
+    print(cov)
+    for i in range(sidelen_xicov):
+        for j in range(sidelen_xicov):
+            if i < j:
+                (k,l), (m,n) = xicombs[i], xicombs[j]
+                # which cl are going to be involved with such a combination? 
+                mix = [(k,m),(l,n),(k,n),(l,m)]
+                mix_cov_objects = [cov_triang[get_cov_pos(comb)[0]][get_cov_pos(comb)[1]] for comb in mix]
+                              
+                sub_cov = cov_cl_gaussian_mixed(tuple(mix_cov_objects))
+                cov[i,j] = sub_cov
+                cov[j,i] = sub_cov
+               
+    assert np.allclose(cov[:,:,0], cov[:,:,0].T), "Covariance matrix not symmetric"
+    return cov
+
+
+def get_int_lims(bin_in_deg):
+    binmin_in_deg,binmax_in_deg = bin_in_deg[0], bin_in_deg[1]
+    upper = np.radians(binmax_in_deg)
+    lower = np.radians(binmin_in_deg)
+    return lower,upper
+
+def get_integrated_wigners(lmin,lmax,bin_in_deg):
+    wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(lmin, lmax, 2, 2, theta_in_rad)
+    lower,upper = get_int_lims(bin_in_deg)
+    t_norm = 2 / (upper**2 - lower**2)
+    integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
+
+    return integrated_wigners, t_norm
+
+
+def cov_xi_gaussian_nD(cov_objects,xi_combs,angbins_in_deg, lmin=0, lmax=None):
+   
+    # cov_objects order like in GLASS. assume mask and lmax is the same as for cov_object[0] for all
+
+    # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
+    assert len(xi_combs) == len(angbins_in_deg)
+    cov_cl2 = cov_cl_nD(cov_objects,xi_combs)
+    if lmax is None:
+        lmax = cov_objects[0].lmax
+    print(lmax)
+    prefactors = helper_funcs.prep_prefactors(angbins_in_deg, cov_objects[0].wl, cov_objects[0].lmax, lmax)
+    fsky = cov_objects[0].eff_area / 41253 # assume that all fields have at least similar enough fsky
+    c_tot = cov_cl2[:,:,lmin : lmax + 1] / fsky
+    l = 2 * np.arange(lmin, lmax + 1) + 1
+    
+    norm = 1 / (4 * np.pi)
+    xi_cov = np.full(cov_cl2.shape[:2],np.nan)
+    means = []
+    for i in range(len(cov_cl2)):
+        for j in range(len(cov_cl2)):
+            if i <= j:
+             
+                wigners1, t_norm1 = get_integrated_wigners(lmin,lmax,angbins_in_deg[i])
+                wigners2, t_norm2 = get_integrated_wigners(lmin,lmax,angbins_in_deg[j])
+                xi_cov[i,j] = t_norm1*t_norm2 * norm**2 * np.sum(wigners1*wigners2 * c_tot[i,j] * l)
+       
+                if i == j:
+                    autocomb = xi_combs[i]
+                    auto_cov_object = get_cov_triang(cov_objects)[get_cov_pos(autocomb)[0]][get_cov_pos(autocomb)[1]]
+                    auto_cov_object.cl2pseudocl()
+                    pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi((auto_cov_object.p_ee, auto_cov_object.p_bb, auto_cov_object.p_eb),prefactors,lmax,lmin=lmin)
+                    cl_mean_p, cl_mean_m = helper_funcs.cl2xi((auto_cov_object.ee, auto_cov_object.bb), angbins_in_deg[i], lmax, lmin=lmin)
+                    #assert np.allclose(pcl_mean_p[0], cl_mean_p, rtol=1e-2), (pcl_mean_p[0], cl_mean_p)
+                    print("lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(lmin,lmax,pcl_mean_p[0], cl_mean_p))
+                    means.append(pcl_mean_p[0])
+
+    xi_cov = np.where(np.isnan(xi_cov), xi_cov.T, xi_cov)
+    # check for positive semi-definiteness
+    assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
+
+    return np.array(means), xi_cov
 
 def cov_xi_nD(cov_objects):
     n = len(cov_objects)
@@ -98,8 +249,11 @@ def cov_xi_nD(cov_objects):
     assert np.allclose(cov, cov.T), "Covariance matrix not symmetric"
     return cov
 
+
+
 def high_ell_gaussian_cf(t_lowell, cov_object):
-    cov_object.cov_xi_gaussian(lmin=cov_object.exact_lmax + 1)
+    #TODO: make nD
+    cov = cov_xi_gaussian(cov_object,lmin=cov_object.exact_lmax + 1)
     xip_max = max(
         np.fabs(cov_object.xi_pcl - 500 * np.sqrt(cov_object.cov_xi)),
         np.fabs(cov_object.xi_pcl + 500 * np.sqrt(cov_object.cov_xi)),
@@ -118,6 +272,17 @@ def high_ell_gaussian_cf(t_lowell, cov_object):
         t_lowell
     ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)
     return interp_to_lowell
+
+def high_ell_gaussian_cf_nD(t_sets,mu, cov):
+    #TODO: make nD
+    print(mu,cov)
+    
+    gauss_cf = helper_funcs.gaussian_cf_nD(t_sets,mu,cov)
+    
+
+    return gauss_cf
+
+
 
 
 def pdf_pcl():
