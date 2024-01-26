@@ -6,18 +6,19 @@ import helper_funcs
 import os.path
 
 
-def mmatrix_xi(prefactors, bin_n=0,kind="p", pos_m=False):
+def mmatrix_xi(prefactors, kind="p", pos_m=False):
     
     # TODO: implement xi_minus (need to add minus sign to B mode pseudo alms)
+    # take out bin_n and pass only one angular bin prefactors (more is never needed anyway)
     n_field = 2  # for xi+, there need to be two fields.
-    lmax = len(prefactors[0,0]) - 1 
+    lmax = len(prefactors[0]) - 1 
  
 
     # diag = fac(l0) * len(sub), fac(l1) * len(sub), ...
     if kind == 'p':
-        fac_arr = prefactors[bin_n,0]
+        fac_arr = prefactors[0]
     elif kind == 'm':
-        fac_arr = prefactors[bin_n,1]
+        fac_arr = prefactors[1]
     
     if pos_m == True:
         len_sub = lmax + 1
@@ -33,7 +34,7 @@ def mmatrix_xi(prefactors, bin_n=0,kind="p", pos_m=False):
     m = np.diag(np.tile(diag, n_field * 2))
     return m
 
-def m_xi_cross(prefactors, combs =([1,1],[0,1]),bin_n=(0,0),kind=("p","p"), pos_m=True):
+def m_xi_cross(prefactors, combs =((1,1),(0,1)),kind=("p","p"), pos_m=True):
     m = []
     n_m = len(prefactors)
     
@@ -41,7 +42,7 @@ def m_xi_cross(prefactors, combs =([1,1],[0,1]),bin_n=(0,0),kind=("p","p"), pos_
     # prefactors is tuple of prefactors, so is kinds and bin_n 
     # combs: bin combinations according to the ordering of the covariance matrix
     for i in range(n_m):
-        sub_m = mmatrix_xi(prefactors[i],bin_n[i],kind[i],pos_m)
+        sub_m = mmatrix_xi(prefactors[i],kind[i],pos_m)
         len_sub_m = len(sub_m)
         m_i = np.zeros((len_sub_m*n_m,len_sub_m*n_m))
         comb = combs[i]
