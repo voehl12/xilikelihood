@@ -954,8 +954,65 @@ def high_low_s8():
          
               
 
-high_low_s8()
+def test_ndcf():
+    import calc_pdf
+    from scipy.stats import multivariate_normal
+    mu =  np.array([1, 2])
+    #mu =  np.array([-8.99339e-07, -6.22804e-07])
+    #cov = np.array([[8.06611494e-14, 9.25908846e-14],[9.25908846e-14, 3.96556510e-14]])
+    cov = np.array([[3, 1],[0.5, 6]])
+    print(np.linalg.eigvals(cov))
+    var = multivariate_normal(mean=mu, cov=cov)
     
+    xip_max1 = np.max(np.array([np.fabs(mu[0] - 500 * np.sqrt(np.diag(cov)[0])),np.fabs(mu[0] + 500 * np.sqrt(np.diag(cov)[0]))]))
+    xip_max2 = np.max(np.array([np.fabs(mu[1] - 500 * np.sqrt(np.diag(cov)[1])),np.fabs(mu[1] + 500 * np.sqrt(np.diag(cov)[1]))]))
+    dt_xip1 = 0.45 * 2 * np.pi / xip_max1
+    dt_xip2 = 0.45 * 2 * np.pi / xip_max2
+    steps = 2048
+    t01 = -0.5 * dt_xip1 * (steps - 1)
+    t02 = -0.5 * dt_xip2 * (steps - 1)
+    t1 = np.linspace(t01, -t01, steps - 1)
+    t2 = np.linspace(t02, -t02, steps - 1)
+    t_inds = np.arange(len(t1))
+    t0_2 = np.array([t01,t02])
+    dt_2 = np.array([dt_xip1,dt_xip2])
+    t_sets = np.stack(np.meshgrid(t1,t2),-1).reshape(-1,2)
+    ind_sets = np.stack(np.meshgrid(t_inds,t_inds),-1).reshape(-1,2)    
+    vals = calc_pdf.high_ell_gaussian_cf_nD(t_sets,mu,cov)
+
+    cf_grid = np.full((steps-1,steps-1),np.nan,dtype=complex)
+    for j,idx in enumerate(ind_sets):
+     
+        cf_grid[tuple(idx)] = vals[j]
+
+    x_grid, pdf_grid = calc_pdf.cf_to_pdf_nd(cf_grid, t0_2, dt_2, verbose=True)
+
+    fig, ((ax1,ax2),(ax3,ax4)) = plt.subplots(2,2,figsize=(14,6))
+    x, y = np.meshgrid(x_grid[:,0,0], x_grid[:,1,0])
+
+    pos = np.dstack((x,y))
+
+
+    k = ax2.pcolormesh(x_grid[:,0,0],x_grid[:,1,0], var.pdf(pos),vmin=0)
+    h = ax1.pcolormesh(x_grid[:,0,0],x_grid[:,1,0],pdf_grid,vmin=0)
+    l = ax4.pcolormesh(x_grid[:,0,0],x_grid[:,1,0], var.pdf(pos)-pdf_grid)
+    ax3.pcolormesh(t1,t2, cf_grid.real)
+    fig.colorbar(h, ax=ax1)
+    fig.colorbar(k, ax=ax2)
+    fig.colorbar(l, ax=ax4)
+    lims = (-10,10)
+    ax1.set_xlim(lims)
+    ax1.set_ylim(lims)
+    ax2.set_xlim(lims)
+    ax2.set_ylim(lims)
+    #ax3.set_xlim(-2e-6,0)
+    #ax3.set_ylim(-1.5e-6,0)
+    ax4.set_xlim(lims)
+    ax4.set_ylim(lims)
+    plt.savefig('2dgaussian')
+
+test_ndcf()
+
    
 
 
