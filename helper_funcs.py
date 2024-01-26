@@ -23,12 +23,13 @@ def get_noise_xi_cov(
 
 
 def get_noise_cl(sigma_e=(0.282842712474619, 1.207829761642)):
+    # TODO: should be extended to mixed redshift bin C_ell with different shape noise parameters.
     sigma, n_gal_per_arcmin2 = sigma_e
     return (sigma) ** 2 / (n_gal_per_arcmin2 * 3600 * 41253 / (4 * np.pi))
 
 
 def get_noise_pixelsigma(nside=256, sigma_e=(0.282842712474619, 1.207829761642)):
-    sigma, n_gal_per_arcmin2 = sigma_e
+    sigma, n_gal_per_arcmin2 = sigma_e 
     return sigma / np.sqrt(n_gal_per_arcmin2 * hp.nside2pixarea(nside, degrees=True) * 3600)
 
 
@@ -42,6 +43,12 @@ def noise_cl_cube(noise_cl):
 
 def gaussian_cf(t, mu, sigma):
     return np.exp(1j * t * mu - 0.5 * sigma**2 * t**2)
+
+def gaussian_cf_nD(t_sets, mu, cov):
+    tmu = np.dot(t_sets, mu)
+    cov_t = np.einsum('ij,kj->ki',cov,t_sets)
+    tct = np.einsum('ki,ki->k',t_sets,cov_t)
+    return np.exp(1j * tmu - 0.5 * tct)
 
 
 def nth_moment(n, t, cf):
