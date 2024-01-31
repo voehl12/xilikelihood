@@ -11,6 +11,8 @@ from numpy.random import default_rng
 from helper_funcs import get_noise_cl, pcl2xi, prep_prefactors
 from cov_setup import Cov
 
+import glass.fields
+import time
 
 class TwoPointSimulation(Cov):
     # inherits theory c_ell and mask stuff, use properties to set up simulations (not for single simulation)
@@ -26,7 +28,7 @@ class TwoPointSimulation(Cov):
         sigma_e=None,
         clpath=None,
         theory_lmin=2,
-        clname="3x2pt_kids_55",
+        clname="test_cl",
         maskpath=None,
         circmaskattr=None,
         lmin=None,
@@ -127,7 +129,7 @@ class TwoPointSimulation(Cov):
         xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
         return xi_p, xi_m
 
-    def xi_sim(self, j, lmin=0, plot=False,save_pcl=False):
+    def xi_sim_1D(self, j, lmin=0, plot=False,save_pcl=False):
         xip, xim = [], []
         foldername = "/{}_{}_{}".format(self.clname,self.maskname,self.sigmaname)
         path = self.simpath+foldername
@@ -162,6 +164,144 @@ class TwoPointSimulation(Cov):
                 xim=np.array(xim),
             )
 
+def create_maps_nD(gls=[],nside=256):
+    """
+    Create Gaussian random maps from C_l
+    C_l need to be list of cl-arrays in order:  11,22,12,33,32,31,... for cross-correlations
+    cl arrays are with order TT, TE, EE, *BB
+    """
+    if len(gls) == 0:
+        npix = hp.nside2npix(nside)
+        zeromaps = np.zeros((3, npix))
+        return zeromaps
+    else:
+        fields = glass.fields.generate_gaussian(gls, nside=nside)
+        field_list = []
+        while True:
+            try:
+                mapsTQU = next(fields)
+                field_list.append(mapsTQU)
+            except StopIteration:
+                break
+        
+        return np.array(field_list)
+
+def limit_noise(noisemap,nside):
+    almq = hp.map2alm(noisemap)
+    clq = hp.sphtfunc.alm2cl(almq)
+
+    #assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
+    np.random.seed()
+    return hp.sphtfunc.synfast(clq, nside)
+
+
+
+def add_noise_nD(maps_TQU_list,nside,sigmas=None):
+    if sigmas is None:
+        return maps_TQU_list
+    else:
+        assert len(sigmas) == len(maps_TQU_list), (sigmas,maps_TQU_list)
+        size = len(maps_TQU_list[0,0])
+    
+        
+
+        for i,maps_TQU in enumerate(maps_TQU_list):
+            rng = default_rng()
+
+            noise_map_q = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside)
+            noise_map_u = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside)
+            maps_TQU[1] += noise_map_q
+            maps_TQU[2] += noise_map_u
+
+        return maps_TQU_list
+
+
+def get_pcl_nD(maps_TQU_list,smooth_masks,fullsky=False):
+    n_field = len(maps_TQU_list)
+    n_corr = int(n_field * ((n_field - 1) / 2 + 1))
+    if fullsky:
+        cl_s = []
+        for i,field_i in enumerate(maps_TQU_list):
+            for j,field_j in reversed(list(enumerate(maps_TQU_list[:i+1]))):
+                # cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb order of cl_s
+                cl_s.append(hp.anafast(field_i,field_j))
+        cl_s = np.array(cl_s)[:,[1,2,4]]
+        return cl_s # cl_e, cl_b, cl_eb
+    else:
+        pcl_s = []
+        for i,field_i in enumerate(maps_TQU_list):
+            for j,field_j in reversed(list(enumerate(maps_TQU_list[:i+1]))):
+                f_i = nmt.NmtField(smooth_masks[i], field_i[1:].copy())
+                f_j = nmt.NmtField(smooth_masks[j], field_j[1:].copy())
+                cl_22 = nmt.compute_coupled_cell(f_i, f_j)
+                pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
+                pcl_s.append([pcl_e, pcl_b, pcl_eb])
+        
+        return np.array(pcl_s)
+
+def get_xi_namaster_nD(maps_TQU_list,smooth_masks, prefactors, lmax,lmin=0):
+    # pcl2xi should work for several angles at once.
+    pcl_ij = get_pcl_nD(maps_TQU_list,smooth_masks)
+    n_corr = len(pcl_ij)
+    xi_all = np.zeros((n_corr,2,len(prefactors)))
+    for i,pcl in enumerate(pcl_ij):
+        xi_all[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
+    return xi_all
+
+def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,ximode='namaster',batchsize=1,simpath="simulations/"):
+    xis = []
+    gls = np.array([cov.ee for cov in covs])
+    
+    nsides = [int(cov.nside) for cov in covs]
+    areas = [cov.eff_area for cov in covs]
+    smooth_masks = [cov.smooth_mask for cov in covs if hasattr(cov, 'smooth_mask')]
+    
+    noises = [cov.pixelsigma for cov in covs if hasattr(cov,'pixelsigma')] # should return noise for auto-cl in right order
+    assert np.all(np.array(nsides)-nsides[0] == 0),nsides
+    assert np.all(np.isclose(areas, areas[0])),areas
+    nside = nsides[0]
+
+    foldername = "/croco_{}_{}_{}".format(covs[0].clname,covs[0].maskname,covs[0].sigmaname)
+    path = simpath+foldername
+    if not os.path.isdir(path):
+        command = "mkdir "+path
+        os.system(command)
+    simpath = path
+
+
+    if ximode == "namaster":
+        if lmax is None:
+            lmax = covs[0].lmax
+        prefactors = prep_prefactors(seps_in_deg, covs[0].wl, covs[0].lmax, lmax) 
+        times = []
+        for _i in range(batchsize):
+            tic = time.perf_counter()
+            print(
+                "Simulating xip and xim......{:4.1f}%".format(_i / batchsize * 100),
+                end="\r",
+            )
+            maps_TQU_list = create_maps_nD(gls,nside)
+            maps = add_noise_nD(maps_TQU_list,noises)
+            xi_all = get_xi_namaster_nD(maps, smooth_masks,prefactors, lmax,lmin)
+            xis.append(xi_all)
+            toc = time.perf_counter()
+            times.append(toc-tic)
+        print(times,np.mean(times))
+        xis = np.array(xis)
+        
+        if plot:
+            plt.figure()
+            plt.hist(xis[:, 1,0,1], bins=10)
+            plt.savefig('sim_demo_{:d}.png'.format(j))
+        np.savez(
+            simpath + "/job{:d}.npz".format(j),
+            mode=ximode,
+            theta=seps_in_deg,
+            lmin=lmin,
+            lmax=lmax,
+            xip=np.array(xis[:,:,0,:]),
+            xim=np.array(xis[:,:,1,:]),
+        )
 
 def prep_cat_treecorr(nside, mask=None):
     """takes healpy mask, returns mask needed for treecorr simulation"""
