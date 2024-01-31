@@ -669,30 +669,33 @@ def sim_test():
 
     jobnumber = int(sys.argv[1])
 
-    new_sim = TwoPointSimulation([(4, 6),(7,10)], maskpath='singlet_lowres.fits',maskname='KiDS1000',l_smooth_mask=30,l_smooth_signal=100, clpath="Cl_3x2pt_kids55.txt", batchsize=1,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e=None )
+    new_sim = TwoPointSimulation([(4, 6),(7,10)], maskpath='singlet_lowres.fits',maskname='KiDS1000',l_smooth_mask=30, clpath="Cl_3x2pt_kids55.txt", batchsize=1,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e=None )
 
-    new_sim.xi_sim(jobnumber, plot=True)
+    new_sim.xi_sim_1D(jobnumber, plot=True)
 
 
 def sim_ana_comp():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
     import helper_funcs
-    mask_smooth_l = 100
+    mask_smooth_l = 30
     lmin = 0
     new_sim = TwoPointSimulation(
         [(4, 6)],
-        circmaskattr=(4000, 256),
-        l_smooth=mask_smooth_l,
+        circmaskattr=(1000, 256),
+        l_smooth_mask=mask_smooth_l,
         clpath="Cl_3x2pt_kids55.txt",
+        clname='3x2pt_kids_55',
         batchsize=10,
+        sigma_e='default',
         simpath="",
     )
     new_sim.wl
 
     pcl_measured = []
 
-    for i in range(50):
+    for i in range(20):
+        print(i)
         maps_TQU = new_sim.create_maps()
         pcl_22 = new_sim.get_pcl(maps_TQU)
         pcl_measured.append(pcl_22)
@@ -701,12 +704,12 @@ def sim_ana_comp():
 
     new_sim.cl2pseudocl()
 
-    prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
-    xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
-    xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
-    xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
+    #prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
+    #xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
+    #xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
+    #xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
 
-    print(xi_sim, xi_ana,xi_ana_cl)
+    #print(xi_sim, xi_ana,xi_ana_cl)
 
     plt.figure()
     plt.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
@@ -1011,10 +1014,160 @@ def test_ndcf():
     ax4.set_ylim(lims)
     plt.savefig('2dgaussian')
 
-test_ndcf()
+def plot_pcl_vs_cl():
+    from cov_setup import Cov
+    def plot_clvpcl(fig, axes,cov,name,linestyle,color):
+        ax1 = axes[0]
+        ax2 = axes[1]
+        if name == '1000 sqd':
+            ax1.plot(cov.ell,cov.ee/np.cumsum(cov.ee)[-1],label=r'$C_{\ell}^E$',color='C0')
+        ax1.plot(cov.ell,(cov.p_ee+cov.p_bb)/np.cumsum(cov.p_ee+cov.p_bb)[-1],label=r'$\tilde{{C}}_{{\ell}}^E + \tilde{{C}}_{{\ell}}^B$, {}'.format(name),color=color)
+        #ax1.plot(new_cov.ell,new_cov.p_bb/np.max(new_cov.p_ee+new_cov.p_bb),label=r'$\tilde{C}_{\ell}^B$')
+        ax2.plot(cov.ell,((cov.ee/np.cumsum(cov.ee)[-1]/((cov.p_ee+cov.p_bb)/np.cumsum(cov.p_ee+cov.p_bb)[-1]))-1),label=name,color=color)
+        ax2.plot(cov.ell,-((cov.ee/np.cumsum(cov.ee)[-1]/((cov.p_ee+cov.p_bb)/np.cumsum(cov.p_ee+cov.p_bb)[-1]))-1),linestyle='dotted',color=color)
+        #ax2.axhline(0,color='black',linestyle='dotted')
+        ax1.legend()
+        ax2.legend()
+        ax1.set_xlabel(r'$\ell$')
+        ax2.set_xlabel(r'$\ell$')
+        ax2.set_ylabel(r'rel. difference')
+        #ax1.set_yscale('log')
+        ax2.set_yscale('log')
+        ax1.set_xlim(2,80)
+        ax2.set_xlim(2,80)
+        ax1.set_ylim(2e-3,1.5e-2)
+        #ax2.set_ylim(-5e-3,4e-2)
+        return fig, (ax1,ax2)
+
+    cov_kids = Cov(
+            30,
+            [2],
+            maskpath='singlet_lowres.fits',
+            clpath="Cl_3x2pt_kids55.txt",
+            sigma_e=None,
+            l_smooth_mask=30,
+            l_smooth_signal=None,
+            cov_ell_buffer=10,
+        )
+    cov_1000 = Cov(
+            30,
+            [2],
+            circmaskattr=(1000,256),
+            clpath="Cl_3x2pt_kids55.txt",
+            sigma_e=None,
+            l_smooth_mask=30,
+            l_smooth_signal=None,
+            cov_ell_buffer=10,
+        )
+    cov_10000 = Cov(
+            30,
+            [2],
+            circmaskattr=(10000,256),
+            clpath="Cl_3x2pt_kids55.txt",
+            sigma_e=None,
+            l_smooth_mask=30,
+            l_smooth_signal=None,
+            cov_ell_buffer=10,
+        )
+    
+    
+    
+    cov_1000.cl2pseudocl()
+    cov_10000.cl2pseudocl()
+    cov_kids.cl2pseudocl()
+    color = plt.cm.inferno(np.linspace(0.5, 0.8, 3))
+    fig, (ax1,ax2) = plt.subplots(2,figsize=(10,7))
+    
+    fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_1000, '1000 sqd','solid',color[0])
+    fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_10000, '10000 sqd','dashed',color[1])
+    fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_kids, 'KiDS','dotted',color[2])
+    plt.savefig('pcl_cl_comparison.png')
 
    
+def test_glass():
+    from simulate import TwoPointSimulation
+    from simulate import get_xi_namaster_nD, get_pcl_nD, add_noise_nD
+    import glass.fields
+    import healpy as hp
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import time
+    import helper_funcs
+    import healpy as hp
+
+    cl_55 = "Cl_3x2pt_kids55.txt"
+    cl_53 = "Cl_3x2pt_kids53.txt"
+    cl_33 = "Cl_3x2pt_kids33.txt"
+    cl_paths = (cl_33,cl_55,cl_53)
+    cl_names = ('3x2pt_kids_33','3x2pt_kids_55','3x2pt_kids_53')
+    batchsize = 20
+    angs_in_deg = [(4,6)]
+    sim_33 = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(1000, 256),l_smooth_mask=30, clpath=cl_paths[0], clname=cl_names[0], batchsize=1000,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e='default')
+    
+    sim_53 = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(1000, 256),l_smooth_mask=30,clpath=cl_paths[2], clname=cl_names[2], batchsize=1000,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e=None)
+    sim_55 = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(1000, 256),l_smooth_mask=30,clpath=cl_paths[1], clname=cl_names[1], batchsize=1000,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e='default')
+    sim_33.cl2pseudocl()
+    sim_55.cl2pseudocl()
+    sim_53.cl2pseudocl()
+    sims = [sim_33,sim_55,sim_53]
+    areas = [sim_33.eff_area, sim_55.eff_area]
+
+    print(areas)
+    prefactors = helper_funcs.prep_prefactors(angs_in_deg, sim_33.wl, sim_33.lmax, 30)
+    gls = [sim_33.ee,sim_55.ee,sim_53.ee]
+    fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(20,6))
+    all_cl = []
+    all_xis = []
+    pcls = []
+    tic = time.perf_counter()
+    for j in range(batchsize):
+        print(j)
+        tictic = time.perf_counter()
+        fields = glass.fields.generate_gaussian(gls, nside=sim_33.nside)
 
 
+        field_list = []
+        while True:
+            try:
+                mapsTQU = next(fields)
+                field_list.append(mapsTQU)
+            except StopIteration:
+                break
+        field_list = np.array(field_list)
+        toctoc = time.perf_counter()
+        print(toctoc-tictic)
+        cl = [hp.anafast(field) for field in field_list]
+        cl_mix = hp.anafast(field_list[0],field_list[1])
+        cl.append(cl_mix)
+        all_cl.append(cl)
+        
+        field_list = add_noise_nD(field_list,256,sigmas=[sim_33.pixelsigma,sim_55.pixelsigma])
+        
+        pcl = get_pcl_nD(field_list,[sim_33.smooth_mask,sim_55.smooth_mask],fullsky=False)
+        pcls.append(pcl)
+        
+        xis = get_xi_namaster_nD(field_list,[sim_33.smooth_mask,sim_55.smooth_mask], prefactors, 30,lmin=0)
+        all_xis.append(xis)
+    toc = time.perf_counter()
+    print(toc-tic)
+    all_cl = np.array(all_cl)
+    cl = np.mean(all_cl,axis=0)
+    pcl = np.mean(np.array(pcls),axis=0)
+    for i in range(3):    
+        ax1.plot(sim_33.ell,cl[i,1],color='C{:d}'.format(i),linestyle='dotted',label='Cl measured')
+        ax1.plot(sim_33.ell,gls[i],color='C{:d}'.format(i),label='input Cl')
+        ax2.plot(sim_33.ell,pcl[i,0],color='C{:d}'.format(i),linestyle='dashed',label='pclE measured')
+        #ax.plot(sim_33.ell,pcl33_e,color='black',linestyle='dashed',label='pclE measured 1D')
+        ax2.plot(sim_33.ell,sims[i].p_ee,color='C{:d}'.format(i),label='pclE predicted')
+        ax2.plot(sim_33.ell,pcl[i,1],color='C{:d}'.format(i+3),linestyle='dashed',label='pclB measured')
+        ax2.plot(sim_33.ell,sims[i].p_bb,color='C{:d}'.format(i+3),label='pclB predicted')
+    all_xis = np.array(all_xis)
+    ax3.hist(all_xis[:,1,0,0],10)
+    print(np.mean(all_xis[:,1,0,0]))
+    ax2.legend()
+    ax1.legend()
+    #ax.set_yscale('log')
+    plt.savefig('testfield_glass.png')
 
+test_glass()
     
