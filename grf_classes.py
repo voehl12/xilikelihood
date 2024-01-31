@@ -17,7 +17,7 @@ class TheoryCl:
     """
 
     def __init__(
-        self, lmax=30, clpath=None, theory_lmin=2, clname="3x2pt_kids", smooth_signal=None
+        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None
     ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
@@ -278,6 +278,7 @@ class SphereMask:
     @property
     def eff_area(self):
         mask_smooth = hp.sphtfunc.alm2map(self.wlm_lmax, self.nside)
+        self.smooth_mask = mask_smooth
         self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._eff_area
 
