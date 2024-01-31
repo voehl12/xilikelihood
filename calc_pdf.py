@@ -114,7 +114,8 @@ def cov_cl_gaussian_mixed(mixed_cov_objects):
     cl_es, cl_bs = get_noisy_cl(mixed_cov_objects) # should return all cle and clb needed with noise added
     one_ee, two_ee, three_ee, four_ee = cl_es
     one_bb, two_bb, three_bb, four_bb = cl_bs
-    cl2 = one_ee * two_ee + three_ee * four_ee + one_ee * two_bb + three_ee * four_bb + one_bb * two_ee + three_bb * four_ee + one_bb * two_bb + three_bb * four_bb
+    #cl2 = one_ee * two_ee + three_ee * four_ee + one_ee * two_bb + three_ee * four_bb + one_bb * two_ee + three_bb * four_ee + one_bb * two_bb + three_bb * four_bb
+    cl2 = one_ee * two_ee + three_ee * four_ee + one_bb * two_bb + three_bb * four_bb
     return cl2
 
 def get_cov_triang(cov_objects):
@@ -122,7 +123,6 @@ def get_cov_triang(cov_objects):
     n = len(cov_objects)
     sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8*n)))
     rowlengths = np.arange(1,sidelen_xicov+1)
-    cov_triang = np.zeros((rowlengths[-1],rowlengths[-1]))
     cov_triang = [cov_objects[np.sum(rowlengths[:i]):np.sum(rowlengths[:i+1])] for i in range(rowlengths[-1])]
     # for i in range(rowlengths[-1]):
     #    cov_triang[i,:rowlengths[i]] = cov_objects[np.sum(rowlengths[:i]):np.sum(rowlengths[:i+1])]
@@ -135,14 +135,14 @@ def get_cov_pos(comb):
 
 
 def cov_cl_nD(cov_objects, xicombs=((1,1),(1,0))):
-    #xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell
+    #xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell, cross-corr always with the larger number first
     n = len(cov_objects)
     sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8*n)))
     
     cov_triang = get_cov_triang(cov_objects)
     
     variances = []
-    cov = np.zeros((2,2,cov_objects[0].lmax+1))
+    cov = np.zeros((sidelen_xicov,sidelen_xicov,cov_objects[0].lmax+1))
     # diagonal:
     for i in range(sidelen_xicov):
         inds = get_cov_pos(xicombs[i])
@@ -179,8 +179,8 @@ def get_integrated_wigners(lmin,lmax,bin_in_deg):
     lower,upper = get_int_lims(bin_in_deg)
     t_norm = 2 / (upper**2 - lower**2)
     integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
-
-    return integrated_wigners, t_norm
+    norm = 1 / (4 * np.pi)
+    return norm * integrated_wigners * t_norm
 
 
 def cov_xi_gaussian_nD(cov_objects,xi_combs,angbins_in_deg, lmin=0, lmax=None):
@@ -193,21 +193,23 @@ def cov_xi_gaussian_nD(cov_objects,xi_combs,angbins_in_deg, lmin=0, lmax=None):
     if lmax is None:
         lmax = cov_objects[0].lmax
     print(lmax)
+    areas = [cov.eff_area for cov in cov_objects]
+    assert np.all(np.isclose(areas, areas[0])),areas
     prefactors = helper_funcs.prep_prefactors(angbins_in_deg, cov_objects[0].wl, cov_objects[0].lmax, lmax)
-    fsky = cov_objects[0].eff_area / 41253 # assume that all fields have at least similar enough fsky
+    fsky = areas[0] / 41253 # assume that all fields have at least similar enough fsky
     c_tot = cov_cl2[:,:,lmin : lmax + 1] / fsky
     l = 2 * np.arange(lmin, lmax + 1) + 1
     
-    norm = 1 / (4 * np.pi)
+    
     xi_cov = np.full(cov_cl2.shape[:2],np.nan)
     means = []
     for i in range(len(cov_cl2)):
         for j in range(len(cov_cl2)):
             if i <= j:
              
-                wigners1, t_norm1 = get_integrated_wigners(lmin,lmax,angbins_in_deg[i])
-                wigners2, t_norm2 = get_integrated_wigners(lmin,lmax,angbins_in_deg[j])
-                xi_cov[i,j] = t_norm1*t_norm2 * norm**2 * np.sum(wigners1*wigners2 * c_tot[i,j] * l)
+                wigners1 = get_integrated_wigners(lmin,lmax,angbins_in_deg[i])
+                wigners2 = get_integrated_wigners(lmin,lmax,angbins_in_deg[j])
+                xi_cov[i,j] = np.sum(wigners1*wigners2 * c_tot[i,j] * l)
        
                 if i == j:
                     autocomb = xi_combs[i]
@@ -220,7 +222,7 @@ def cov_xi_gaussian_nD(cov_objects,xi_combs,angbins_in_deg, lmin=0, lmax=None):
                     means.append(pcl_mean_p[0])
 
     xi_cov = np.where(np.isnan(xi_cov), xi_cov.T, xi_cov)
-    # check for positive semi-definiteness
+    assert np.all(np.linalg.eigvals(xi_cov) >= 0)
     assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
 
     return np.array(means), xi_cov
