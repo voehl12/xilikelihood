@@ -5,6 +5,7 @@ import os
 
 def read_sims(filepath,njobs,angbin,kind="xip"):
     allxi=[]
+    missing = []
     for i in range(1,njobs+1):
         if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
             xifile = np.load(filepath+"/job{:d}.npz".format(i))
@@ -14,9 +15,35 @@ def read_sims(filepath,njobs,angbin,kind="xip"):
             allxi.append(xip)
         else:
             print('Missing job number {:d}.'.format(i))
+            missing.append(i)
     allxi = np.array(allxi)
     allxi = allxi.flatten()
     return allxi
+
+def read_sims_nd(filepath,corr_num,angbin,njobs,lmax,kind='xip'):
+    allxi1,allxi2=[],[]
+    missing = []
+    for i in range(njobs):
+        if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
+            xifile = np.load(filepath+"/job{:d}.npz".format(i))
+            assert lmax == int(xifile['lmax'])
+            angs = xifile["theta"]
+            angind = np.where(angs == angbin)
+            xip1,xip2 = xifile[kind][:,corr_num[0],angind[0][0]], xifile[kind][:,corr_num[1],angind[0][0]]
+            allxi1.append(xip1)
+            allxi2.append(xip2)
+        else:
+            print('Missing job number {:d}.'.format(i))
+            missing.append(i+1)
+    allxi1 = np.concatenate(allxi1, axis=0)
+    allxi2 = np.concatenate(allxi2, axis=0)
+    
+    missing_string = ','.join([str(x+1) for x in missing])
+    print(missing_string)
+    print(len(missing))
+    return allxi1,allxi2
+
+
 
 
 
