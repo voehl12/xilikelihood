@@ -11,6 +11,9 @@ from numpy.random import default_rng
 from helper_funcs import get_noise_cl, pcl2xi, prep_prefactors
 from cov_setup import Cov
 
+from typing import (Any, Union, Tuple, Generator, Optional, Sequence, Callable,
+                    Iterable)
+
 import glass.fields
 import time
 
@@ -116,7 +119,7 @@ class TwoPointSimulation(Cov):
             if self.smooth_mask is None:
                 self.wl
                 print("get_pcl: calculating wl to establish smoothed mask.")
-            f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:])
+            f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:].copy())
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
             cl_22 = nmt.compute_coupled_cell(f_2, f_2)
@@ -164,7 +167,7 @@ class TwoPointSimulation(Cov):
                 xim=np.array(xim),
             )
 
-def create_maps_nD(gls=[],nside=256):
+def create_maps_nD(gls=[],nside=256,lmax=None):
     """
     Create Gaussian random maps from C_l
     C_l need to be list of cl-arrays in order:  11,22,12,33,32,31,... for cross-correlations
@@ -186,17 +189,17 @@ def create_maps_nD(gls=[],nside=256):
         
         return np.array(field_list)
 
-def limit_noise(noisemap,nside):
+def limit_noise(noisemap,nside : int,lmax : Optional[int]=None):
     almq = hp.map2alm(noisemap)
     clq = hp.sphtfunc.alm2cl(almq)
 
     #assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
     np.random.seed()
-    return hp.sphtfunc.synfast(clq, nside)
+    return hp.sphtfunc.synfast(clq, nside,lmax=lmax)
 
 
 
-def add_noise_nD(maps_TQU_list,nside,sigmas=None):
+def add_noise_nD(maps_TQU_list,nside : int,sigmas=None,lmax=None):
     if sigmas is None:
         return maps_TQU_list
     else:
@@ -208,8 +211,8 @@ def add_noise_nD(maps_TQU_list,nside,sigmas=None):
         for i,maps_TQU in enumerate(maps_TQU_list):
             rng = default_rng()
 
-            noise_map_q = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside)
-            noise_map_u = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside)
+            noise_map_q = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside,lmax)
+            noise_map_u = limit_noise(rng.normal(size=size, scale=sigmas[i]),nside,lmax)
             maps_TQU[1] += noise_map_q
             maps_TQU[2] += noise_map_u
 
@@ -281,8 +284,8 @@ def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,x
                 end="\r",
             )
             maps_TQU_list = create_maps_nD(gls,nside)
-            maps = add_noise_nD(maps_TQU_list,noises)
-            xi_all = get_xi_namaster_nD(maps, smooth_masks,prefactors, lmax,lmin)
+            maps = add_noise_nD(maps_TQU_list,nside,sigmas=noises)
+            xi_all = get_xi_namaster_nD(maps, smooth_masks,prefactors, lmax,lmin=0)
             xis.append(xi_all)
             toc = time.perf_counter()
             times.append(toc-tic)
@@ -291,7 +294,7 @@ def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,x
         
         if plot:
             plt.figure()
-            plt.hist(xis[:, 1,0,1], bins=10)
+            plt.hist(xis[:, 1,0,1], bins=30)
             plt.savefig('sim_demo_{:d}.png'.format(j))
         np.savez(
             simpath + "/job{:d}.npz".format(j),
