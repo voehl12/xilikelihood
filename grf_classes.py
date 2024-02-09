@@ -454,5 +454,5 @@ class SphereMask:
     def set_wpmpath(self,cov_ell_buffer):
         charac = self.set_wpm_string(cov_ell_buffer)
         #covname = "covariances/cov_xi" + charac
-        wpm_name = "/cluster/scratch/veoehl/wpm_arrays/wpm" + charac
+        wpm_name = "/cluster/work/refregier/veoehl/wpm_arrays/wpm" + charac
         self.wpm_path = wpm_name
