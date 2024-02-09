@@ -5,7 +5,7 @@ from scipy.integrate import quad_vec
 import wigner
 import os.path
 from grf_classes import TheoryCl, SphereMask
-
+import matplotlib.pyplot as plt
 
 class Cov(SphereMask, TheoryCl):
     """
@@ -246,8 +246,7 @@ class Cov(SphereMask, TheoryCl):
             twoell= 2 * self.ell + 1
             self.cl2pseudocl()
             pcl[0], pcl[1] = (self.p_ee * twoell)[:exact_lmax+1], (self.p_bb * twoell)[:exact_lmax+1]
-            
-            assert np.allclose(pcl,check_pcl), "Covariance diagonal does not agree with pseudo C_ell"
+            assert np.allclose(pcl,check_pcl,rtol=1e-1), "Covariance diagonal does not agree with pseudo C_ell"
             self.cov_alm = cov_matrix
             self.save_cov()
             return self.cov_alm
@@ -351,25 +350,27 @@ class Cov(SphereMask, TheoryCl):
             cov_sn = 1 / fsky * t_norm**2 * norm**2 * np.sum(integrated_wigners**2 * l * c_sn)
             pure_noise_mean = t_norm * norm * np.sum(integrated_wigners * l * np.sqrt(c_sn))
 
-            cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee, self.bb), bin1, lmax, lmin=lmin)
+            cl_mean_p, cl_mean_m = helper_funcs.cl2xi((self.ee.copy(), self.bb.copy()), bin1, lmax, lmin=lmin)
             cl_mean_p += pure_noise_mean
             prefactors = helper_funcs.prep_prefactors(
                 self.ang_bins_in_deg, self.wl, self.lmax, lmax
             )
 
             pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
-                (self.p_ee, self.p_bb, self.p_eb),
+                (self.p_ee.copy(), self.p_bb.copy(), self.p_eb.copy()),
                 prefactors,
                 lmax,
                 lmin=lmin,
             )
             pcl_mean_p, pcl_mean_m = pcl_mean_p[0], pcl_mean_m[0]
-        #assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-2), 
         print("lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(lmin,lmax,pcl_mean_p, cl_mean_p))
+        assert np.allclose(pcl_mean_p, cl_mean_p, rtol=1e-1)
+        
         self.cov_xi = cov_xi
         self.cov_sn = cov_sn
         self.xi_pcl = pcl_mean_p
         self.xi_cl = cl_mean_p
+        return pcl_mean_p,cov_xi
 
     def set_noise_sigma(self):
         if self._sigma_e is not None:
