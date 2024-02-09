@@ -1100,7 +1100,7 @@ def test_glass():
     cl_33 = "Cl_3x2pt_kids33.txt"
     cl_paths = (cl_33,cl_55,cl_53)
     cl_names = ('3x2pt_kids_33','3x2pt_kids_55','3x2pt_kids_53')
-    batchsize = 20
+    batchsize = 50
     angs_in_deg = [(4,6)]
     sim_33 = TwoPointSimulation([(4, 6),(7,10)], circmaskattr=(1000, 256),l_smooth_mask=30, clpath=cl_paths[0], clname=cl_names[0], batchsize=1000,simpath="/cluster/scratch/veoehl/xi_sims",sigma_e='default')
     
@@ -1111,14 +1111,15 @@ def test_glass():
     sim_53.cl2pseudocl()
     sims = [sim_33,sim_55,sim_53]
     areas = [sim_33.eff_area, sim_55.eff_area]
-
+    lmax = 30
+    ell = np.arange(lmax+1)
     print(areas)
-    prefactors = helper_funcs.prep_prefactors(angs_in_deg, sim_33.wl, sim_33.lmax, 30)
-    gls = [sim_33.ee,sim_55.ee,sim_53.ee]
-    fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(20,6))
+    prefactors = helper_funcs.prep_prefactors(angs_in_deg, sim_33.wl, sim_33.lmax, lmax)
+    gls = np.array([sim_33.ee,sim_55.ee,sim_53.ee])
+    fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(18,8))
     all_cl = []
     all_xis = []
-    pcls = []
+    pcls, pcls_1D = [],[]
     tic = time.perf_counter()
     for j in range(batchsize):
         print(j)
@@ -1139,28 +1140,36 @@ def test_glass():
         cl = [hp.anafast(field) for field in field_list]
         cl_mix = hp.anafast(field_list[0],field_list[1])
         cl.append(cl_mix)
-        all_cl.append(cl)
+        cl = np.array(cl)
+        all_cl.append(cl[:,:,:lmax+1])
         
         field_list = add_noise_nD(field_list,256,sigmas=[sim_33.pixelsigma,sim_55.pixelsigma])
-        
+        maps_TQU = sim_55.create_maps()
+        maps_TQU = sim_55.add_noise(maps_TQU)
+        pcl_1D = sim_55.get_pcl(maps_TQU)
+        pcl_1D = np.array(pcl_1D)
+        pcls_1D.append(pcl_1D[:,:lmax+1])
         pcl = get_pcl_nD(field_list,[sim_33.smooth_mask,sim_55.smooth_mask],fullsky=False)
-        pcls.append(pcl)
+        pcl = np.array(pcl)
+        pcls.append(pcl[:,:,:lmax+1])
         
-        xis = get_xi_namaster_nD(field_list,[sim_33.smooth_mask,sim_55.smooth_mask], prefactors, 30,lmin=0)
+        xis = get_xi_namaster_nD(field_list,[sim_33.smooth_mask,sim_55.smooth_mask], prefactors, lmax,lmin=0)
         all_xis.append(xis)
     toc = time.perf_counter()
     print(toc-tic)
     all_cl = np.array(all_cl)
     cl = np.mean(all_cl,axis=0)
     pcl = np.mean(np.array(pcls),axis=0)
+    pcl_1D = np.mean(np.array(pcls_1D),axis=0)
     for i in range(3):    
-        ax1.plot(sim_33.ell,cl[i,1],color='C{:d}'.format(i),linestyle='dotted',label='Cl measured')
-        ax1.plot(sim_33.ell,gls[i],color='C{:d}'.format(i),label='input Cl')
-        ax2.plot(sim_33.ell,pcl[i,0],color='C{:d}'.format(i),linestyle='dashed',label='pclE measured')
+        ax1.plot(ell,cl[i,1],color='C{:d}'.format(i),linestyle='dotted',label='Cl measured')
+        ax1.plot(ell,gls[i,:lmax+1],color='C{:d}'.format(i),label='input Cl')
+        ax2.plot(ell,pcl[i,0],color='C{:d}'.format(i),linestyle='dashed',label='pclE measured')
         #ax.plot(sim_33.ell,pcl33_e,color='black',linestyle='dashed',label='pclE measured 1D')
-        ax2.plot(sim_33.ell,sims[i].p_ee,color='C{:d}'.format(i),label='pclE predicted')
-        ax2.plot(sim_33.ell,pcl[i,1],color='C{:d}'.format(i+3),linestyle='dashed',label='pclB measured')
-        ax2.plot(sim_33.ell,sims[i].p_bb,color='C{:d}'.format(i+3),label='pclB predicted')
+        ax2.plot(ell,sims[i].p_ee[:lmax+1],color='C{:d}'.format(i),label='pclE predicted')
+        ax2.plot(ell,pcl[i,1],color='C{:d}'.format(i+3),linestyle='dashed',label='pclB measured')
+        ax2.plot(ell,sims[i].p_bb[:lmax+1],color='C{:d}'.format(i+3),label='pclB predicted')
+        ax2.plot(ell,pcl_1D[0],color='black',linestyle='dashed')
     all_xis = np.array(all_xis)
     ax3.hist(all_xis[:,1,0,0],10)
     print(np.mean(all_xis[:,1,0,0]))
