@@ -36,7 +36,11 @@ def mmatrix_xi(prefactors, kind="p", pos_m=False):
 
 def m_xi_cross(prefactors, combs =((1,1),(0,1)),kind=("p","p"), pos_m=True):
     m = []
-    n_m = len(prefactors)
+    n_m = len(combs)
+    listlist = [list(set(tuple(combs[t]))) for t in range(len(combs))]
+    allbins = [x for xs in listlist for x in xs]
+   
+    n_bins = max(allbins) + 1
     
     # function to create two (or more) m matrices to crosscorrelate different redshift bins (i.e. different sets of pseudo alms). first m only selects first half of covariance matrix, second, the second ect.
     # prefactors is tuple of prefactors, so is kinds and bin_n 
@@ -44,9 +48,14 @@ def m_xi_cross(prefactors, combs =((1,1),(0,1)),kind=("p","p"), pos_m=True):
     for i in range(n_m):
         sub_m = mmatrix_xi(prefactors[i],kind[i],pos_m)
         len_sub_m = len(sub_m)
-        m_i = np.zeros((len_sub_m*n_m,len_sub_m*n_m))
+        m_i = np.zeros((len_sub_m*n_bins,len_sub_m*n_bins))
+        print(m_i.shape)
         comb = combs[i]
+        print(comb)
         m_i[comb[0]*len_sub_m:(comb[0]+1)*len_sub_m,comb[1]*len_sub_m:(comb[1]+1)*len_sub_m] = sub_m
+        if comb[0] != comb[1]:
+            m_i[comb[1]*len_sub_m:(comb[1]+1)*len_sub_m,comb[0]*len_sub_m:(comb[0]+1)*len_sub_m] = sub_m
+            m_i *= 0.5
         m.append(m_i)
     
     return np.array(m)
