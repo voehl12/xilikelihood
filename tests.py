@@ -677,20 +677,27 @@ def sim_test():
 def sim_ana_comp():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
+    import calc_pdf
     import helper_funcs
+    from plotting import read_pcl_sims
     mask_smooth_l = 30
     lmin = 0
-    new_sim = TwoPointSimulation(
-        [(4, 6)],
-        circmaskattr=(1000, 256),
+    new_sim = Cov(767,[2],
+        maskname='kids_lowres',
+        maskpath='singlet_lowres.fits',
         l_smooth_mask=mask_smooth_l,
         clpath="Cl_3x2pt_kids55.txt",
         clname='3x2pt_kids_55',
-        batchsize=10,
         sigma_e='default',
-        simpath="",
-    )
-    new_sim.wl
+         ) 
+    """   new_sim = Cov(767,[2],
+        circmaskattr=(10000,256),
+        l_smooth_mask=mask_smooth_l,
+        clpath="Cl_3x2pt_kids55.txt",
+        clname='3x2pt_kids_55',
+        sigma_e='default',
+         ) """
+    """new_sim.wl
 
     pcl_measured = []
 
@@ -699,24 +706,36 @@ def sim_ana_comp():
         maps_TQU = new_sim.create_maps()
         pcl_22 = new_sim.get_pcl(maps_TQU)
         pcl_measured.append(pcl_22)
-    pcl_measured = np.array(pcl_measured)
- 
-
+    pcl_measured = np.array(pcl_measured) """
+    path = '/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_kids_lowressmoothl30_noisedefault/'
+    #path = '/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ10000smoothl30_noisedefault/'
+    pcl_measured = read_pcl_sims(path,10)
     new_sim.cl2pseudocl()
-
+    angbins = [(0.23,0.3),(0.3,0.5),(0.5,1),(1,2),(2,3),(2.5,5),(4,6),(6,9)]
+    angs = [np.mean(np.array(tup)) for tup in angbins]
+    prefacs = helper_funcs.prep_prefactors(angbins,new_sim.wl,new_sim.lmax,new_sim.lmax)
+    corr_func = helper_funcs.pcl2xi((new_sim.p_ee,new_sim.p_bb,new_sim.p_eb),prefacs,new_sim.lmax)
     #prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
     #xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
     #xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
     #xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
-
+    covs,means = [],[]
+    for angbin in angbins:
+        mean,cov = calc_pdf.cov_xi_gaussian_nD((new_sim,),((0,0),),(angbin,))
+        covs.append(cov[0,0])
+        means.append(mean[0])
     #print(xi_sim, xi_ana,xi_ana_cl)
-
-    plt.figure()
-    plt.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
-    plt.plot(new_sim.p_ee, color="C0", linestyle="dotted")
-    plt.plot(np.mean(pcl_measured[:, 1], axis=0), color="C1")
-    plt.plot(new_sim.p_bb, color="C1", linestyle="dotted")
-    plt.savefig('pseudo_cl_comp.png')
+    fig, (ax1,ax2,ax3) = plt.subplots(3,1,figsize=(8,12))
+    assert np.allclose(np.array(means),corr_func[0])
+    ax1.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
+    for i in range(len(prefacs)):
+        ax2.plot(prefacs[i,0])
+    
+    ax1.plot(new_sim.p_ee, color="C0", linestyle="dotted")
+    ax1.plot(np.mean(pcl_measured[:, 1], axis=0), color="C1")
+    ax1.plot(new_sim.p_bb, color="C1", linestyle="dotted")
+    ax3.plot(angs,np.fabs(np.array(corr_func[0]))/np.array(covs)) # also plot covariance here to find good signal to noise level
+    fig.savefig('pseudo_cl_comp.png')
 
 
 def lowell_comp():
@@ -899,16 +918,27 @@ def high_low_s8():
     likelihood_gauss = []
     fig = plt.figure(figsize=(10, 6))
     measured_cl = cl_paths[3]
-    lims = -1e-6, 1.5e-6
+    lims = -0.25e-6, 1e-6
     angbin = [(4, 6)]
-    measurement = TwoPointSimulation(angbin,circmaskattr=(1000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/2ptlikelihood",sigma_e=None )
+    measurement = TwoPointSimulation(angbin,circmaskattr=(10000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/2ptlikelihood",sigma_e=None )
     jobnumber = 1
-    measurement.xi_sim(jobnumber)
+    measurement.xi_sim_1D(jobnumber)
     xi_measured = np.load(measurement.simpath + "/job{:d}.npz".format(jobnumber))
     xip_measured = xi_measured['xip'][0,0]     
     print(xip_measured)
     ax = fig.add_subplot(121)
-
+    cov_bestfit = Cov(
+        30,
+        [2],
+        circmaskattr=(10000,256),
+        clpath=measured_cl[0],
+        clname = measured_cl[1],
+        sigma_e=None,
+        l_smooth_mask=30,
+        l_smooth_signal=None,
+        cov_ell_buffer=10,
+        )
+    means_bestfit, covs_bestfit = calc_pdf.cov_xi_gaussian_nD((cov_bestfit,),((0,0),),angbin)
     lag = 10
     colors = plt.cm.viridis(np.linspace(0, 1, len(cl_paths)))
     for i,cl in enumerate(cl_paths):
@@ -916,7 +946,7 @@ def high_low_s8():
         cov_s8 = Cov(
         30,
         [2],
-        circmaskattr=(1000,256),
+        circmaskattr=(10000,256),
         clpath=cl[0],
         clname = cl[1],
         sigma_e=None,
@@ -926,23 +956,26 @@ def high_low_s8():
         )
     
         cov_s8.cl2pseudocl()
-        x, pdf, norm, mean, std, skewness, mean_lowell = calc_pdf.pdf_xi_1D(
-        angbin, cov_s8, steps=4096, savestuff=True)
-        meas_ind = np.argmin(np.fabs(x-xip_measured))
-        s8_likelihood = pdf[meas_ind]
-        likelihood.append(s8_likelihood)
-        ax.plot(x, pdf, color=color, label=cl[1])
-        ax.axvline(mean,color=color)
+        x, pdf, statistics = calc_pdf.pdf_xi_1D(
+        angbin, (cov_s8,), steps=4096, savestuff=True)
 
-        cov_s8.cov_xi_gaussian()
+        meas_ind = np.argmin(np.fabs(x[0]-xip_measured))
+        s8_likelihood = pdf[0][meas_ind]
+        likelihood.append(s8_likelihood)
+        ax.plot(x[0], pdf[0], color=color, label=cl[1])
+        ax.axvline(statistics[0][0],color=color)
+
+        means, covs = calc_pdf.cov_xi_gaussian_nD((cov_s8,),((0,0),),angbin)
     
         ax.plot(
-            x,
-            stats.norm.pdf(x, cov_s8.xi_pcl, np.sqrt(cov_s8.cov_xi)),
+            x[0],
+            stats.norm.pdf(x[0], means[0], np.sqrt(covs_bestfit[0,0])),
             color=color,
             linestyle="dotted",
         )
-        likelihood_gauss.append(stats.norm.pdf(x[meas_ind], cov_s8.xi_pcl, np.sqrt(cov_s8.cov_xi)))
+        likelihood_gauss.append(stats.norm.pdf(x[0][meas_ind], means[0], np.sqrt(covs_bestfit[0,0])))
+        # different bins: check where signal to noise for correlation function is good
+        # get p-values for gaussian vs exact (can also be done for pdfs directly)
     
     ax.set_xlim(lims)
     ax.axvline(xip_measured,color='C3',label='measured')
@@ -951,6 +984,7 @@ def high_low_s8():
     ax2 = fig.add_subplot(122)
     ax2.plot(s8,likelihood,label='exact likelihood')
     ax2.plot(s8,likelihood_gauss,label='Gaussian likelihood')
+    ax2.axvline(s8[3],color='C3')
     ax2.set_xlabel(r'S8')
     ax2.legend()
     plt.savefig('varied_s8.png')
@@ -1178,5 +1212,4 @@ def test_glass():
     #ax.set_yscale('log')
     plt.savefig('testfield_glass.png')
 
-test_glass()
-    
+sim_ana_comp()
