@@ -120,7 +120,9 @@ class TwoPointSimulation(Cov):
                 self.wl
                 print("get_pcl: calculating wl to establish smoothed mask.")
             maps_TQU_masked = self.smooth_mask[None,:]*maps_TQU
-            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(maps_TQU_masked,iter=10,use_weights=True)
+            
+            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(maps_TQU_masked,use_piwel_weights=True)
+            
             #f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:].copy())
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
@@ -128,13 +130,15 @@ class TwoPointSimulation(Cov):
             #pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
             return pcl_e, pcl_b, pcl_eb
 
-    def get_xi_namaster(self, maps_TQU, prefactors, lmin=0):
+    def get_xi_namaster(self, maps_TQU, prefactors, lmin=0,pixwin_p=None):
         # pcl2xi should work for several angles at once.
         pcl_22 = self.get_pcl(maps_TQU)
+        if pixwin_p is not None:
+            pcl_22 = pcl_22 / pixwin_p[None,:]**2
         xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
         return pcl_22,xi_p, xi_m
 
-    def xi_sim_1D(self, j, lmin=0, plot=False,save_pcl=False):
+    def xi_sim_1D(self, j, lmin=0, plot=False,save_pcl=False,pixwin=False):
         xip, xim, pcls = [], [], []
         foldername = "/{}_{}_{}".format(self.clname,self.maskname,self.sigmaname)
         path = self.simpath+foldername
@@ -144,6 +148,11 @@ class TwoPointSimulation(Cov):
         self.simpath = path
         if self.ximode == "namaster":
             prefactors = prep_prefactors(self.seps_in_deg, self.wl, self.lmax, self.lmax) # exact lmax shoukld not be used here.
+            if pixwin:
+                pixwin_t,pixwin_p = hp.pixwin(self.nside,pol=True)
+                pixwin_p[:2] = np.ones(2)
+            else:
+                pixwin_p = None
             for _i in range(self.batchsize):
                 print(
                     "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
@@ -151,7 +160,7 @@ class TwoPointSimulation(Cov):
                 )
                 maps_TQU = self.create_maps()
                 maps = self.add_noise(maps_TQU)
-                pcl,xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin)
+                pcl,xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin,pixwin_p=pixwin_p)
                 xip.append(xi_p)
                 xim.append(xi_m)
                 pcls.append(pcl)
