@@ -1,5 +1,5 @@
 import numpy as np
-from einsumt import einsumt as einsum
+
 
 """I,J : E/B/0, Re/Im of the pseudo alm to be correlated. 0 -> E/Re, 1 -> E/Im, usw.. """
 def match_alm_inds(alm_keys):
@@ -82,6 +82,7 @@ def c_ell_stack(I,J,lmin,lmax,theory_cell):
     return cl_stack
 
 def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
+    from einsumt import einsumt as einsum
     """
     calculate covariances for given combination of pseudo-alm (I,J) for all m, ell, m', ell' at once.
     theory_cell already include noise
@@ -113,6 +114,7 @@ def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
             mid_ind = int((wlm.shape[2]-1) / 2)
             wlm = wlm[:,:,mid_ind:,:,:]
             wlpmp = wlpmp[:,:,mid_ind:,:,:]
+        # really need to reduce all this to the m that are necessary (i.e. not go to m = lmax in the covariance matrix for each ell) possibly by slicing endresult for now?
         step1 = einsum('ilmbc,ijb->lmbcj',wlm,c_lpp)
         step2 = einsum('jcd,jnabd->jcnab',delta,wlpmp)
         cov_lmlpmp = 0.5 * einsum('jcnab,lmbcj->lmna',step2,step1)
