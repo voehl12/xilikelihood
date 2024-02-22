@@ -6,7 +6,7 @@ import configparser
 import calc_pdf
 
 
-def read_sims(filepath,njobs,angbin,kind="xip"):
+def read_xi_sims(filepath,njobs,angbin,kind="xip"):
     allxi=[]
     missing = []
     for i in range(1,njobs+1):
@@ -23,10 +23,28 @@ def read_sims(filepath,njobs,angbin,kind="xip"):
     allxi = allxi.flatten()
     return allxi
 
+def read_pcl_sims(filepath,njobs):
+    allpcl=[]
+    missing = []
+    for i in range(1,njobs+1):
+        print(i)
+        if os.path.isfile(filepath+"/pcljob{:d}.npz".format(i)):
+            pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
+            pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
+            pcl_s = np.swapaxes(pcl_s,0,1)
+            allpcl += list(pcl_s)
+        else:
+            print('Missing job number {:d}.'.format(i))
+            missing.append(i)
+    allpcl = np.array(allpcl)
+    print(allpcl.shape)
+    #allpcl.reshape(allpcl.shape[0]*allpcl.shape[1],3,768)
+    return allpcl
+
 def read_sims_nd(filepath,corr_num,angbin,njobs,lmax,kind='xip'):
     allxi1,allxi2=[],[]
     missing = []
-    for i in range(njobs):
+    for i in range(1,njobs+1):
         if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
             xifile = np.load(filepath+"/job{:d}.npz".format(i))
             assert lmax == int(xifile['lmax'])
@@ -37,11 +55,11 @@ def read_sims_nd(filepath,corr_num,angbin,njobs,lmax,kind='xip'):
             allxi2.append(xip2)
         else:
             print('Missing job number {:d}.'.format(i))
-            missing.append(i+1)
+            missing.append(i)
     allxi1 = np.concatenate(allxi1, axis=0)
     allxi2 = np.concatenate(allxi2, axis=0)
     
-    missing_string = ','.join([str(x+1) for x in missing])
+    missing_string = ','.join([str(x) for x in missing])
     print(missing_string)
     print(len(missing))
     return allxi1,allxi2
@@ -172,7 +190,7 @@ def read_2D_cf(configpath):
     
     print(len(fail_list))
     np.savez('missing_jobs.npz',numbers=np.array(fail_list))
-    return t0_2, dt_2, cf_grid
+    return t0_2, dt_2, t_sets,ind_sets,cf_grid
 
 
 def add_stats(fig,gs,lmax,statistics,stats_measured,mean,cov):
