@@ -257,9 +257,7 @@ class Cov(SphereMask, TheoryCl):
         cov_matrix = np.full((n_cov, n_cov), np.nan)
         for i in alm_inds:
             for j in alm_inds:
-                if i > j:
-                    continue
-                else:
+                if i <= j:
                     cov_part = cov_calc.cov_4D(
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
                     )
@@ -409,7 +407,7 @@ class Cov(SphereMask, TheoryCl):
             return False
 
     def load_cov(self):
-        print("loading covariance matrix.")
+        print("Loading covariance matrix.")
         covfile = np.load(self.covalm_path)
         self.cov_alm = covfile["cov"]
 
@@ -440,7 +438,8 @@ class Cov(SphereMask, TheoryCl):
 
     def cl2pseudocl(self):
         # from namaster scientific documentation paper
-        pclpath = "pcl" + self.set_char_string()[4:]
+        pclpath = "pcl" + self.set_char_string()[5:]
+        print(pclpath)
         if os.path.isfile(pclpath):
             pclfile = np.load(pclpath)
             self.p_ee = pclfile["pcl_ee"]
