@@ -119,21 +119,23 @@ class TwoPointSimulation(Cov):
             if self.smooth_mask is None:
                 self.wl
                 print("get_pcl: calculating wl to establish smoothed mask.")
-            f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:].copy())
+            maps_TQU_masked = self.smooth_mask[None,:]*maps_TQU
+            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(maps_TQU_masked,iter=10,use_weights=True)
+            #f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:].copy())
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
             # cl_02 = nmt.compute_coupled_cell(f_2, f_0)
-            cl_22 = nmt.compute_coupled_cell(f_2, f_2)
-            pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
+            #cl_22 = nmt.compute_coupled_cell(f_2, f_2)
+            #pcl_e, pcl_b, pcl_eb = cl_22[0], cl_22[3], (cl_22[1] + cl_22[2]) / 2
             return pcl_e, pcl_b, pcl_eb
 
     def get_xi_namaster(self, maps_TQU, prefactors, lmin=0):
         # pcl2xi should work for several angles at once.
         pcl_22 = self.get_pcl(maps_TQU)
         xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
-        return xi_p, xi_m
+        return pcl_22,xi_p, xi_m
 
     def xi_sim_1D(self, j, lmin=0, plot=False,save_pcl=False):
-        xip, xim = [], []
+        xip, xim, pcls = [], [], []
         foldername = "/{}_{}_{}".format(self.clname,self.maskname,self.sigmaname)
         path = self.simpath+foldername
         if not os.path.isdir(path):
@@ -149,11 +151,13 @@ class TwoPointSimulation(Cov):
                 )
                 maps_TQU = self.create_maps()
                 maps = self.add_noise(maps_TQU)
-                xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin)
+                pcl,xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin)
                 xip.append(xi_p)
                 xim.append(xi_m)
+                pcls.append(pcl)
             xip = np.array(xip)
             xim = np.array(xim)
+            pcls = np.array(pcls)
             if plot:
                 plt.figure()
                 plt.hist(xip[:, 0], bins=30)
@@ -166,12 +170,21 @@ class TwoPointSimulation(Cov):
                 xip=np.array(xip),
                 xim=np.array(xim),
             )
+            if save_pcl:
+                np.savez(
+                self.simpath + "/pcljob{:d}.npz".format(j),
+                lmin=lmin,
+                lmax=self.lmax,
+                pcl_e=np.array(pcls[:,0]),
+                pcl_b=np.array(pcls[:,1]),
+                pcl_eb=np.array(pcls[:,2])
+            )
 
 def create_maps_nD(gls=[],nside=256,lmax=None):
     """
     Create Gaussian random maps from C_l
     C_l need to be list of cl-arrays in order:  11,22,12,33,32,31,... for cross-correlations
-    cl arrays are with order TT, TE, EE, *BB
+    only E-mode C_ells! (T and B are set to zero within glass)
     """
     if len(gls) == 0:
         npix = hp.nside2npix(nside)
@@ -249,10 +262,10 @@ def get_xi_namaster_nD(maps_TQU_list,smooth_masks, prefactors, lmax,lmin=0):
     xi_all = np.zeros((n_corr,2,len(prefactors)))
     for i,pcl in enumerate(pcl_ij):
         xi_all[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
-    return xi_all
+    return pcl_ij,xi_all
 
 def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,ximode='namaster',batchsize=1,simpath="simulations/"):
-    xis = []
+    xis,pcls = [],[]
     gls = np.array([cov.ee for cov in covs])
     
     nsides = [int(cov.nside) for cov in covs]
@@ -264,7 +277,7 @@ def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,x
     assert np.all(np.isclose(areas, areas[0])),areas
     nside = nsides[0]
 
-    foldername = "/croco_{}_{}_{}".format(covs[0].clname,covs[0].maskname,covs[0].sigmaname)
+    foldername = "/croco_{}_{}_{}_llim_{}".format(covs[0].clname,covs[0].maskname,covs[0].sigmaname,str(lmax))
     path = simpath+foldername
     if not os.path.isdir(path):
         command = "mkdir "+path
@@ -285,13 +298,14 @@ def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,x
             )
             maps_TQU_list = create_maps_nD(gls,nside)
             maps = add_noise_nD(maps_TQU_list,nside,sigmas=noises)
-            xi_all = get_xi_namaster_nD(maps, smooth_masks,prefactors, lmax,lmin=0)
+            pcl_all,xi_all = get_xi_namaster_nD(maps, smooth_masks,prefactors, lmax,lmin=0)
             xis.append(xi_all)
+            pcls.append(pcl_all)
             toc = time.perf_counter()
             times.append(toc-tic)
         print(times,np.mean(times))
         xis = np.array(xis)
-        
+        pcls = np.array(pcls)
         if plot:
             plt.figure()
             plt.hist(xis[:, 1,0,1], bins=30)
@@ -305,6 +319,17 @@ def xi_sim_nD(covs, j, seps_in_deg,lmax=None,lmin=0, plot=False,save_pcl=False,x
             xip=np.array(xis[:,:,0,:]),
             xim=np.array(xis[:,:,1,:]),
         )
+        if save_pcl:
+            np.savez(
+            simpath + "/pcljob{:d}.npz".format(j),
+            
+            lmin=lmin,
+            lmax=lmax,
+            pcl_e=np.array(pcls[:,:,0]),
+            pcl_b=np.array(pcls[:,:,1]),
+            pcl_eb=np.array(pcls[:,:,2])
+        )
+
 
 def prep_cat_treecorr(nside, mask=None):
     """takes healpy mask, returns mask needed for treecorr simulation"""
