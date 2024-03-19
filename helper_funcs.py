@@ -169,6 +169,50 @@ def pcl2xi(pcl, prefactors, out_lmax, lmin=0):
 
     return xip, xim
 
+def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
+    """
+    _summary_
+
+    Parameters
+    ----------
+    pcls : numpy array
+        (3,batchsize,lmax+1)
+    prefactors : np.array
+        array with bin or angle prefactors from prep_prefactors (i.e. an (len(angles),2,out_lmax) array)
+    out_lmax : int
+        lmax to which sum over pcl is taken
+    lmin : int, optional
+        _description_, by default 0
+
+    Returns
+    -------
+    xips,xims: (batchsize,n_angbins) arrays
+    """
+    pcls_e, pcls_b, pcls_eb = pcls
+    if out_lmax is None:
+        out_lmax = len(pcls_e[0]) - 1
+    l = 2 * np.arange(lmin, out_lmax + 1) + 1
+    p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
+
+    xips = np.sum(
+        p_cl_prefactors_p[None,:, lmin : out_lmax + 1]
+        * l
+        * (pcls_e[:,None,lmin : out_lmax + 1] + pcls_b[:,None,lmin : out_lmax + 1]),
+        axis=-1,
+    )
+    xims = np.sum(
+        p_cl_prefactors_m[None,:, lmin : out_lmax + 1]
+        * l
+        * (
+            pcls_e[:,None,lmin : out_lmax + 1]
+            - pcls_b[:,None,lmin : out_lmax + 1]
+            - 2j * pcls_eb[:,None,lmin : out_lmax + 1]
+        ),
+        axis=-1,
+    )
+
+    return xips, xims
+
 
 def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
     cl_e, cl_b = cl
