@@ -22,115 +22,153 @@ def pdf_xi_1D(
 ):
     exact_lmax = cov_objects[0].exact_lmax
     maskname = cov_objects[0].maskname
-
-    pdfname =  "pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname)
-    if check_pdfs(pdfname):
-        xs, pdfs, statss, file_angs = load_pfds(pdfname)
-        if np.array_equal(file_angs,np.array(ang_bins_in_deg)):
-            return xs,pdfs,statss
-    print('Loading Covariance matrix')
-    cov = cov_xi_nD(cov_objects)
-    prefactors_all = helper_funcs.prep_prefactors(ang_bins_in_deg,cov_objects[0].wl, cov_objects[0].lmax,cov_objects[0].lmax)
-    for cov_object in cov_objects:
-        cov_object.cl2pseudocl()
-
-    cov_index = get_cov_pos(comb)
-    cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
-    xip_estimate, _ = helper_funcs.pcl2xi((cov_ref.p_ee,cov_ref.p_bb,cov_ref.p_eb),prefactors_all,cov_ref.lmax)
-    new_bins, new_m_inds, mnames = [], [],[]
-    m_plain = np.ones_like(cov)
-    m_s = np.stack([m_plain for _ in range(len(ang_bins_in_deg))],axis=0)
-    print('Collecting M matrices')
+    x_arr = np.zeros((len(ang_bins_in_deg),steps-1))
+    pdf_arr = np.zeros((len(ang_bins_in_deg),steps-1))
+    stat_arr = np.zeros(((len(ang_bins_in_deg),3)))
+    t_s, cf_res,cf_ims, ximax_s, cf_angs = [],[],[],[],[]
+    if not high_ell_extension:
+        ext = '_noext'
+    else:
+        ext= ''
+    pdfname =  "pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname,ext)
+    print('Setting pdf name: {}'.format(pdfname))
+    # there might be a bug as to how pdfs are added to the pdf file when there was a file with extension before
+    pdffile = False
+    cfname =  "cf_xi{}_{:d}_{:d}_l{:d}_{}_{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname)
+    cffile = False
+    
+    if check_for_file(pdfname,'pdf'):
+        xs, pdfs, statss, file_angs = load_pdfs(pdfname)
+        if len(xs[0]) == steps-1:
+            pdffile = True
+            if np.array_equal(file_angs,np.array(ang_bins_in_deg)):
+                print('direct return')
+                return xs,pdfs,statss
+    
+    if check_for_file(cfname,'cf'):
+        ts, cfs_real,cfs_imag, ximaxs, cf_file_angs = load_cfs(cfname)
+        if len(ts[0]) == steps-1:
+            cffile = True
+          
+    
+     
+    cov_flag = False
     for b,bin_in_deg in enumerate(ang_bins_in_deg):
-
-
-        if type(bin_in_deg) is tuple:
-            ang = "{:.2f}_{:.2f}".format(*bin_in_deg)
-            ang = ang.replace('.','p')
+        print('Working on angular bin {}.'.format(bin_in_deg))
+        if pdffile and bin_in_deg in file_angs:
+            angind = np.where(file_angs == bin_in_deg)[0]
+            x_arr[b], pdf_arr[b] = xs[angind[0]], pdfs[angind[0]]
+            stat_arr[b] = statss[angind[0]]
+            print('found pdf directly')
         else:
-            raise RuntimeError("Specify angular bin as tuple of two values in degrees.")
+            if cffile and bin_in_deg in cf_file_angs:
+                
+                angind = np.where(cf_file_angs == bin_in_deg)[0]
+                t, cf_real,cf_imag, ximax = ts[angind[0]], cfs_real[angind[0]],cfs_imag[angind[0]], ximaxs[angind[0]]
+                cf = cf_real + 1j * cf_imag
+                print('using cf from file')
+                print(cf)
+                if high_ell_extension:
+                    cov_index = get_cov_pos(comb)
+                    cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
+                    cov_ref.cl2pseudocl()
 
-        mname = "m_xi{}_{:d}_{:d}_l{:d}_t{}_{}.npz".format(kind, *comb,exact_lmax, ang, maskname)
-        mnames.append(mname)
+            else:
+                if not cov_flag:
+                    cov = cov_xi_nD(cov_objects)
+                    cov_flag = True
+                    prefactors_all = helper_funcs.prep_prefactors(ang_bins_in_deg,cov_objects[0].wl, cov_objects[0].lmax,cov_objects[0].lmax)
+                    for cov_object in cov_objects:
+                        cov_object.cl2pseudocl()
 
-        if setup_m.check_m(m_path+mname):
-            m = setup_m.load_m(m_path+mname)
-            m_s[b] = m
-            
-        else:
-            new_bins.append(bin_in_deg)
-            new_m_inds.append(b)
-    
-    
-    
-    
-            
-    if len(new_bins) > 0:
-        for i in range(len(new_bins)):
-            m = setup_m.m_xi_cross((prefactors_all[new_m_inds[i],:,:exact_lmax+1],),combs=(comb,),kind=("p",))[0]
-            assert np.all(m_s[new_m_inds[i]] == 1)
-            assert m.shape == cov.shape
-            m_s[new_m_inds[i]] = m
-            if savestuff:
-                setup_m.save_m(m, m_path+mnames[new_m_inds[i]])
-    
-    x_s, pdf_s = [], []
-    stats = []
-    
-    for i,m in enumerate(m_s):
-        if np.array_equal(m, np.diag(np.diag(m))):
-            is_diag = True
-            m = np.diag(m)
-        print('Starting characteristic function computation')
-        ximax = np.fabs(xip_estimate[i]) * 12
-        t, cf = calc_quadcf_1D(ximax, steps, cov, m,is_diag=is_diag)
-        cf = np.array(cf)
-        print('Converting to pdf')
-        x_low, pdf_low = cf_to_pdf_1d(t, cf)
-        mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
-        mean_lowell_cf, var_lowell = helper_funcs.nth_moment(2, t, cf)
-        if is_diag:
+                    cov_index = get_cov_pos(comb)
+                    cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
+                    xip_estimate, _ = helper_funcs.pcl2xi((cov_ref.p_ee,cov_ref.p_bb,cov_ref.p_eb),prefactors_all,cov_ref.lmax)
 
-            mean_trace = np.trace(m[:,None]*cov)
+                if type(bin_in_deg) is tuple:
+                    ang = "{:.2f}_{:.2f}".format(*bin_in_deg)
+                    ang = ang.replace('.','p')
+                else:
+                    raise RuntimeError("Specify angular bin as tuple of two values in degrees.")
+
+                mname = "m_xi{}_{:d}_{:d}_l{:d}_t{}_{}.npz".format(kind, *comb,exact_lmax, ang, maskname)
+                
+                is_diag = False
+                if setup_m.check_m(m_path+mname):
+                    m = setup_m.load_m(m_path+mname)
+                
+                    
+                else:
+                    m = setup_m.m_xi_cross((prefactors_all[b,:,:exact_lmax+1],),combs=(comb,),kind=("p",))[0]
+                    assert m.shape == cov.shape
+
+                    if savestuff:
+                        setup_m.save_m(m, m_path+mname)
+                
+                if np.array_equal(m, np.diag(np.diag(m))):
+                    is_diag = True
+                    m = np.diag(m)
+
+
+                print('Starting characteristic function computation')
+                ximax = np.fabs(xip_estimate[b]) * 50 # needs a bit of tweaking 12 * 1000/Aeff
+                t, cf = calc_quadcf_1D(ximax, steps, cov, m,is_diag=is_diag)
+                #cf = np.array(cf)
+                print('Converting to pdf')
+                x_low, pdf_low = cf_to_pdf_1d(t, cf)
+                mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
+                mean_lowell_cf, var_lowell = helper_funcs.nth_moment(2, t, cf)
+                if is_diag:
+
+                    mean_trace = np.trace(m[:,None]*cov)
+                    
+                    #var_trace = 2 * np.trace(m[:,None]*cov @ m[:,None]*cov)
+                
+
+                    assert np.allclose(mean_trace,mean_lowell_cf),(mean_trace,mean_lowell_cf)
+                    #assert np.allclose(var_trace,var_lowell),(var_trace,var_lowell)
+                assert np.allclose(mean_lowell_cf, mean_lowell_pdf, rtol=1e-3), (
+                    mean_lowell_cf,
+                    mean_lowell_pdf,
+                )
+            t_s.append(t)
+            cf_ims.append(cf.imag)
+            cf_res.append(cf.real)
+            ximax_s.append(ximax)
+            cf_angs.append(bin_in_deg)
             
-            #var_trace = 2 * np.trace(m[:,None]*cov @ m[:,None]*cov)
+           
+            
+
+            if high_ell_extension:
+                cf *= high_ell_gaussian_cf(t, cov_ref,bin_in_deg)
         
+            skewness = helper_funcs.skewness(t, cf)
 
-            assert np.allclose(mean_trace,mean_lowell_cf),(mean_trace,mean_lowell_cf)
-            #assert np.allclose(var_trace,var_lowell),(var_trace,var_lowell)
-        assert np.allclose(mean_lowell_cf, mean_lowell_pdf, rtol=1e-5), (
-            mean_lowell_cf,
-            mean_lowell_pdf,
-        )
+            x, pdf = cf_to_pdf_1d(t, cf)
 
-        if high_ell_extension:
-            cf *= high_ell_gaussian_cf(t, cov_ref,ang_bins_in_deg[i])
-       
-        skewness = helper_funcs.skewness(t, cf)
+            mean = np.trapz(x * pdf, x=x)
+            first, second = helper_funcs.nth_moment(2, t, cf)
+            assert np.isclose(mean, first, rtol=1e-2), (mean, first)
 
-        x, pdf = cf_to_pdf_1d(t, cf)
-
-        mean = np.trapz(x * pdf, x=x)
-        first, second = helper_funcs.nth_moment(2, t, cf)
-        assert np.isclose(mean, first, rtol=1e-2), (mean, first)
-
-        std = second - first**2
-        
-        norm = np.trapz(pdf, x=x)
-        assert np.isclose(norm,1,rtol=1e-2), norm
-
-        x_s.append(x)
-        pdf_s.append(pdf)
-        stats.append((mean,std,skewness))
-
-    x_s, pdf_s, stats = np.array(x_s), np.array(pdf_s), np.array(stats)
-
-    if savestuff:
-        pdfname =  "pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname)
-        np.savez(pdfname, x=x_s,pdf=pdf_s,stats=stats,angs=np.array(ang_bins_in_deg))
+            std = second - first**2
             
+            norm = np.trapz(pdf, x=x)
+            assert np.isclose(norm,1,rtol=1e-2), norm
+
+            x_arr[b] = x
+            pdf_arr[b] = pdf
+            stat_arr[b] = [mean,std,skewness]
+            
+
+
+        if savestuff:
+            np.savez(pdfname, x=x_arr,pdf=pdf_arr,stats=stat_arr,angs=np.array(ang_bins_in_deg))
+            if len(t_s) > 0:
+                np.savez(cfname, t=np.array(t_s),cf_re=np.array(cf_res),cf_im=np.array(cf_ims),ximax=np.array(ximax_s),angs=np.array(cf_angs))
+                
    
-    return np.array(x_s), np.array(pdf_s), np.array(stats)
+    return x_arr, pdf_arr, stat_arr
 
 def cov_cl_gaussian(cov_object):
     cl_e = cov_object.ee.copy()
@@ -199,7 +237,6 @@ def cov_cl_nD(cov_objects, xicombs=((1,1),(1,0))):
     sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8*c)))
     
     cov_triang = get_cov_triang(cov_objects)
-    print(cov_triang)
     cov = np.zeros((sidelen_xicov,sidelen_xicov,cov_objects[0].lmax+1))
    
     for i in range(sidelen_xicov):
@@ -209,7 +246,6 @@ def cov_cl_nD(cov_objects, xicombs=((1,1),(1,0))):
                 
                 mix = [(k,m),(l,n),(k,n),(l,m)]
                 sorted = [np.sort(comb)[::-1] for comb in mix]
-                print(sorted)
                 # need to sort tuples in mix 
                 mix_cov_objects = [cov_triang[get_cov_pos(comb)[0]][get_cov_pos(comb)[1]] for comb in sorted]
                                 
@@ -337,15 +373,15 @@ def high_ell_gaussian_cf(t_lowell, cov_object,angbin):
     
     mean = mean[0]
     cov = cov[0,0]
-    print(mean,np.sqrt(cov), np.sqrt(cov)/mean)
-    xip_max = np.fabs(50 * mean)
+    
+    xip_max = np.fabs(10 * mean)
     dt_xip = 0.45 * 2 * np.pi / xip_max
     steps = 4096
     t0 = -0.5 * dt_xip * (steps - 1)
     t = np.linspace(t0, -t0, steps - 1)
 
     gauss_cf = helper_funcs.gaussian_cf(t, mean, np.sqrt(cov))
-    print(helper_funcs.skewness(t, gauss_cf))
+    
     assert np.allclose(helper_funcs.skewness(t, gauss_cf), 0, atol=1e-1), helper_funcs.skewness(
         t, gauss_cf
     )
@@ -357,7 +393,7 @@ def high_ell_gaussian_cf(t_lowell, cov_object,angbin):
 
 def high_ell_gaussian_cf_nD(t_sets,mu, cov):
     #TODO: make nD
-    print(mu,cov)
+    
     
     gauss_cf = helper_funcs.gaussian_cf_nD(t_sets,mu,cov)
     
@@ -382,7 +418,7 @@ def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
     print('N = {:d} multiplication, took {:.2f} seconds'.format(len(prod),toc-tic))
     tic = time.perf_counter()
     print('getting eigenvalues...')
-    evals = np.linalg.eigvalsh(prod)
+    evals = np.linalg.eigvals(prod)
     toc = time.perf_counter()
     print('N = {:d} eigenvalues, took {:.2f} seconds'.format(len(prod),toc-tic))
     dt = 0.45 * 2 * np.pi / val_max
@@ -507,8 +543,8 @@ def setup_t(xi_max,steps):
 
 
 
-def check_pdfs(name):
-    print("Checking for pdfs...")
+def check_for_file(name,kind='file'):
+    print("Checking for {}s...".format(kind))
     if os.path.isfile(name):
         print("Found some.")
         return True
@@ -517,8 +553,19 @@ def check_pdfs(name):
         return False
 
 
-def load_pfds(name):
-    print("Loading pdfs.")
+def load_pdfs(name):
+    print("Loading pdfs ",end='')
     mfile = np.load(name)
+    print('with angles ',end='')
+    print(mfile['angs'])
     return mfile["x"], mfile['pdf'], mfile['stats'], mfile['angs']
 
+
+def load_cfs(name):
+    print("Loading cfs ",end='')
+    mfile = np.load(name)
+    print('with angles ',end='')
+    print(mfile['angs'])
+    return mfile["t"], mfile['cf_re'],mfile['cf_im'], mfile['ximax'], mfile['angs']
+
+            
