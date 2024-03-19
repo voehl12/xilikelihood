@@ -6,6 +6,8 @@ import wigner
 import os.path
 from grf_classes import TheoryCl, SphereMask
 import matplotlib.pyplot as plt
+from sys import getsizeof
+import gc
 
 class Cov(SphereMask, TheoryCl):
     """
@@ -255,6 +257,7 @@ class Cov(SphereMask, TheoryCl):
         buffer = self.cov_ell_buffer
         w_arr = self.w_arr(cov_ell_buffer=buffer)
         cov_matrix = np.full((n_cov, n_cov), np.nan)
+        print(getsizeof(cov_matrix)/1024**2)
         for i in alm_inds:
             for j in alm_inds:
                 if i <= j:
@@ -274,6 +277,8 @@ class Cov(SphereMask, TheoryCl):
                     pos_y = (len_2D * i, len_2D * (i + 1))
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
+                    del cov_2D
+                    gc.collect()
         return cov_matrix
 
     def cov_cl_gaussian(self):
@@ -438,7 +443,12 @@ class Cov(SphereMask, TheoryCl):
 
     def cl2pseudocl(self):
         # from namaster scientific documentation paper
-        pclpath = "pcl" + self.set_char_string()[5:]
+        pclpath = "pcl" + "_n{:d}_{}_{}_{}.npz".format(
+            self.nside,
+            self.maskname,
+            self.clname,
+            self.sigmaname,
+        )
         print(pclpath)
         if os.path.isfile(pclpath):
             pclfile = np.load(pclpath)
