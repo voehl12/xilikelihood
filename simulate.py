@@ -3,7 +3,7 @@ import os
 import numpy as np
 import healpy as hp
 
-import pymaster as nmt
+#import pymaster as nmt
 import treecorr
 
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ from cov_setup import Cov
 from typing import (Any, Union, Tuple, Generator, Optional, Sequence, Callable,
                     Iterable)
 
-import glass.fields
+#import glass.fields
 import time
 
 class TwoPointSimulation(Cov):
@@ -60,7 +60,7 @@ class TwoPointSimulation(Cov):
         self.simpath = simpath
         self.seps_in_deg = seps_in_deg
 
-    def create_maps(self):
+    def create_maps(self,seed=None):
         """
         Create Gaussian random maps from C_l
         C_l need to be tuple of arrays in order:  TT, TE, EE, *BB
@@ -71,7 +71,7 @@ class TwoPointSimulation(Cov):
             zeromaps = np.zeros((3, npix))
             return zeromaps
         else:
-            np.random.seed()
+            np.random.seed(seed=seed)
             maps = hp.sphtfunc.synfast(
                 (self.nn, self.ne, self.ee, self.bb), self.nside, lmax=self.lmax
             )
@@ -116,12 +116,10 @@ class TwoPointSimulation(Cov):
             return cl_e, cl_b, cl_eb
         else:
             # f_0 = nmt.NmtField(mask, [maps_TQU[0]])
-            if self.smooth_mask is None:
-                self.wl
-                print("get_pcl: calculating wl to establish smoothed mask.")
+            
             maps_TQU_masked = self.smooth_mask[None,:]*maps_TQU
             
-            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(maps_TQU_masked,use_piwel_weights=True)
+            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(maps_TQU_masked,iter=5,use_pixel_weights=True,datapath='/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/')
             
             #f_2 = nmt.NmtField(self.smooth_mask, maps_TQU[1:].copy())
             # cl_00 = nmt.compute_coupled_cell(f_0, f_0)
@@ -140,12 +138,15 @@ class TwoPointSimulation(Cov):
 
     def xi_sim_1D(self, j, lmin=0, plot=False,save_pcl=False,pixwin=False):
         xip, xim, pcls = [], [], []
-        foldername = "/{}_{}_{}".format(self.clname,self.maskname,self.sigmaname)
+        foldername = "/{}_{}_{}_{}".format(self.clname,self.maskname,self.sigmaname,self.ximode)
         path = self.simpath+foldername
         if not os.path.isdir(path):
             command = "mkdir "+path
             os.system(command)
         self.simpath = path
+        if self.smooth_mask is None:
+            self.wl
+            print("simulate: calculating wl to establish smoothed mask.")
         if self.ximode == "namaster":
             prefactors = prep_prefactors(self.seps_in_deg, self.wl, self.lmax, self.lmax) # exact lmax shoukld not be used here.
             if pixwin:
@@ -188,6 +189,59 @@ class TwoPointSimulation(Cov):
                 pcl_b=np.array(pcls[:,1]),
                 pcl_eb=np.array(pcls[:,2])
             )
+            
+        elif self.ximode == 'treecorr':
+         
+            cat_props = prep_cat_treecorr(self.nside, self.smooth_mask)
+            for _i in range(self.batchsize):
+                print(
+                    "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
+                    end="\r",
+                )
+                maps_TQU = self.create_maps()
+                maps = self.add_noise(maps_TQU)
+                xi_p, xi_m, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
+                
+                xip.append(xi_p)
+                xim.append(xi_m)
+            xip = np.array(xip)
+            xim = np.array(xim)
+            if plot:
+                plt.figure()
+                plt.hist(xip[:, 0], bins=10)
+                plt.savefig('sim_demo1_{:d}.png'.format(j))
+                
+            if os.path.isfile(path + "/job{:d}.npz".format(j)):
+                xifile = np.load(path+"/job{:d}.npz".format(j))
+                angs = xifile["theta"]
+                for a,ang in enumerate(angsep):
+                    if ang not in angs:
+                        angsep = np.append(angs,[ang],axis=0)
+                        xip = np.append(xifile['xip'],xip,axis=1)
+                        xim = np.append(xifile['xim'],xim,axis=1)
+                        
+            np.savez(
+                path + "/job{:d}.npz".format(j),
+                mode=self.ximode,
+                theta=angsep,
+                xip=np.array(xip),
+                xim=np.array(xim),
+            )
+
+        elif self.ximode == 'comp':
+            cat_props = prep_cat_treecorr(self.nside, self.smooth_mask)
+            prefactors = prep_prefactors(self.seps_in_deg, self.wl, self.lmax, self.lmax) 
+       
+            maps_TQU = self.create_maps(seed=7)
+            maps = self.add_noise(maps_TQU)
+            xi_p_t, xi_m_t, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
+            pcl,xi_p_n, xi_m_n = self.get_xi_namaster(maps, prefactors, lmin,pixwin_p=None)
+            self.comp = [xi_p_t,xi_p_n]
+
+
+        else:
+            raise RuntimeError('Simulation mode can either be namaster, treecorr or comp')
+
 
 def create_maps_nD(gls=[],nside=256,lmax=None):
     """
@@ -346,13 +400,14 @@ def prep_cat_treecorr(nside, mask=None):
         all_pix = np.arange(hp.nside2npix(nside))
         phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
         treecorr_mask_cat = (None, phi, thet)
+        sum_weights = None
     else:
-        all_pixs = np.arange(len(mask))
-        mask = np.array(1 - mask, dtype=int)
-        masked_pixs = np.ma.array(all_pixs, mask=mask).compressed()
-        phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
-        tqu_mask = np.tile(mask, (3, 1))
-        treecorr_mask_cat = (tqu_mask, phi, thet)
+        all_pix = np.arange(len(mask))
+        #mask = np.array(1 - mask, dtype=int)
+        #masked_pixs = np.ma.array(all_pixs, mask=mask).compressed()
+        #phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
+        phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
+        treecorr_mask_cat = (mask, phi, thet)
     return treecorr_mask_cat
 
 
@@ -366,31 +421,33 @@ def prep_angles_treecorr(seps_in_deg):
     return thetamin, thetamax, bin_size
 
 
-def get_xi_treecorr(maps_TQU, treecorr_seps, cat_angles, mask_treecorr=None):
+def get_xi_treecorr(maps_TQU, ang_bins_in_deg, cat_props):
     """takes maps and mask, returns treecorr correlation function"""
     """need to run cat and angles prep once before simulating"""
-    phi, thet = cat_angles
-    if mask_treecorr is not None:
-        tqu_mask = mask_treecorr
-        masked_TQU = np.ma.array(maps_TQU, mask=tqu_mask)
-        maps_TQU = np.ma.compress_cols(masked_TQU)
-    thetamin, thetamax, bin_size = treecorr_seps
+    mask, phi, thet = cat_props
+    
     cat = treecorr.Catalog(
-        ra=phi, dec=thet, g1=-maps_TQU[1], g2=maps_TQU[2], ra_units="deg", dec_units="deg"
+        ra=phi, dec=thet, g1=-maps_TQU[1], g2=maps_TQU[2], ra_units="deg", dec_units="deg",w=mask
     )
-    gg = treecorr.GGCorrelation(
-        min_sep=thetamin,
-        max_sep=thetamax,
-        bin_size=bin_size,
-        bin_type="Linear",
-        sep_units="deg",
-        bin_slop=0,
-    )
-    gg.process(cat)
-    xi_p = gg.xip
-    xi_m = gg.xim
-    angsep = gg.rnom
-    return xi_p, xi_m, angsep
+
+    xip,xim,angs = [],[],[]
+    for ang_bin in ang_bins_in_deg:
+        thetamin, thetamax = ang_bin
+        
+        gg = treecorr.GGCorrelation(
+            min_sep=thetamin,
+            max_sep=thetamax,
+            nbins = 1,
+            bin_type="Linear",
+            sep_units="deg",
+            bin_slop=0,
+        )
+        gg.process(cat)
+        xip.append(gg.xip)
+        xim.append(gg.xim)
+        angs.append(gg.rnom)
+    cat.clear_cache()
+    return np.array(xip)[:,0], np.array(xim)[:,0],np.array(angs)
 
 
 def xi_sim(
