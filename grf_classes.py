@@ -3,6 +3,7 @@ import healpy as hp
 import wpm_funcs
 import pickle
 import os.path
+from sys import getsizeof
 
 
 def save_maskobject(maskobject, dir=""):
@@ -439,6 +440,7 @@ class SphereMask:
     def load_w_arr(self):
         print("Loading Wpm0 arrays.")
         wpmfile = np.load(self.wpm_path)
+        print("Loaded with size {} mb.".format(getsizeof(wpmfile["wpm0"])/1024**2))
         self._w_arr = wpmfile["wpm0"]
 
     def set_wpm_string(self,cov_ell_buffer):
