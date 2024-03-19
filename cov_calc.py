@@ -1,4 +1,5 @@
 import numpy as np
+import gc
 
 
 """I,J : E/B/0, Re/Im of the pseudo alm to be correlated. 0 -> E/Re, 1 -> E/Im, usw.. """
@@ -83,6 +84,7 @@ def c_ell_stack(I,J,lmin,lmax,theory_cell):
 
 def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
     from einsumt import einsumt as einsum
+    from sys import getsizeof
     """
     calculate covariances for given combination of pseudo-alm (I,J) for all m, ell, m', ell' at once.
     theory_cell already include noise
@@ -114,9 +116,16 @@ def cov_4D(I,J,w_arr,lmax,lmin,theory_cell,l_out=None,pos_m=False):
             mid_ind = int((wlm.shape[2]-1) / 2)
             wlm = wlm[:,:,mid_ind:,:,:]
             wlpmp = wlpmp[:,:,mid_ind:,:,:]
+        print(getsizeof(wlm)/1024**2)
         # really need to reduce all this to the m that are necessary (i.e. not go to m = lmax in the covariance matrix for each ell) possibly by slicing endresult for now?
-        step1 = einsum('ilmbc,ijb->lmbcj',wlm,c_lpp)
-        step2 = einsum('jcd,jnabd->jcnab',delta,wlpmp)
-        cov_lmlpmp = 0.5 * einsum('jcnab,lmbcj->lmna',step2,step1)
+        step1 = np.einsum('ilmbc,ijb->lmbcj',wlm,c_lpp)
+        print(getsizeof(step1)/1024**2)
+        step2 = np.einsum('jcd,jnabd->jcnab',delta,wlpmp)
+        print(getsizeof(step2)/1024**2)
+        cov_lmlpmp = 0.5 * np.einsum('jcnab,lmbcj->lmna',step2,step1)
+        print(getsizeof(cov_lmlpmp)/1024**2)
+        del step1
+        del step2
+        gc.collect()
         #cov_lmlpmp = 0.5 * einsum('ijb,ilmbc,jnabd,jcd->lmna',c_lpp,wlm,wlpmp,delta)
         return cov_lmlpmp
