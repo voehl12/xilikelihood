@@ -4,6 +4,7 @@ import wpm_funcs
 import pickle
 import os.path
 from sys import getsizeof
+import file_handling
 
 
 def save_maskobject(maskobject, dir=""):
@@ -14,11 +15,11 @@ def save_maskobject(maskobject, dir=""):
 
 class TheoryCl:
     """
-    A class to read, store and handle 2D theory power spectra
+    A class to read, create, store and handle 2D theory power spectra
     """
 
     def __init__(
-        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None
+        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None,s8=None
     ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
@@ -27,8 +28,8 @@ class TheoryCl:
         self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
         self.clname = clname
-        self.clpath = clpath
-
+        self.clpath = clpath # if clpath is set, s8 will be ignored.
+        self.s8 = s8 
         self.nn = None
         self.ee = None
         self.ne = None
@@ -39,24 +40,52 @@ class TheoryCl:
             self.read_clfile()
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
-            if self.smooth_signal is not None:
-                smooth_ell = self.smooth_signal
-                self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
-                self.ee *= self.smooth_array
-                self.nn *= self.smooth_array
-                self.ne *= self.smooth_array
-                self.bb *= self.smooth_array
-                self.clname += "_smooth{:d}".format(smooth_ell)
-                print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
+            
+        elif self.s8 is not None:
+            import theory_cl
+            self.clpath, self.clname = theory_cl.clnames(self.s8)
+            if file_handling.check_for_file(self.clpath,kind = 'theory cl'):
+                self.read_clfile()
+                self.load_cl()
+                print("Loaded C_l with lmax = {:d}".format(self.lmax))
+            else:
+                
+                cl = theory_cl.get_cl_s8(self.s8)
+                theory_cl.save_cl(cl,self.clpath)
+                cl = np.array(cl)
+                spectra = np.concatenate(
+            (
+                np.zeros((3, self.theory_lmin)),
+                cl[:, : self.lmax - self.theory_lmin + 1],
+            ),
+            axis=1,
+        )
+
+                self.ee = spectra[0]
+                self.ne = spectra[1]
+                self.nn = spectra[2]
+                self.bb = np.zeros_like(self.ee)
+                self.eb = np.zeros_like(self.ee)
 
         else:
             print("Warning: no theory Cl provided, calculating with Cl=0")
             self.set_cl_zero()
 
+        if self.smooth_signal is not None:
+            smooth_ell = self.smooth_signal
+            self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
+            self.ee *= self.smooth_array
+            self.nn *= self.smooth_array
+            self.ne *= self.smooth_array
+            self.bb *= self.smooth_array
+            self.clname += "_smooth{:d}".format(smooth_ell)
+            print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
+
     def read_clfile(self):
         self.raw_spectra = np.loadtxt(self.clpath)
 
     def load_cl(self):
+        # cl files should also eventually become npz files with ee, ne, nn saved seperately, ell
         spectra = np.concatenate(
             (
                 np.zeros((3, self.theory_lmin)),
