@@ -6,6 +6,7 @@ import wigner
 import os
 import time
 from os import environ
+from file_handling import check_for_file, load_cfs, load_pdfs
 
 
 
@@ -30,7 +31,7 @@ def pdf_xi_1D(
         ext = '_noext'
     else:
         ext= ''
-    pdfname =  "pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname,ext)
+    pdfname =  "pdfs/pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}{}.npz".format(kind, *comb,exact_lmax, maskname,cov_objects[0].clname,ext)
     print('Setting pdf name: {}'.format(pdfname))
     # there might be a bug as to how pdfs are added to the pdf file when there was a file with extension before
     pdffile = False
@@ -67,7 +68,6 @@ def pdf_xi_1D(
                 t, cf_real,cf_imag, ximax = ts[angind[0]], cfs_real[angind[0]],cfs_imag[angind[0]], ximaxs[angind[0]]
                 cf = cf_real + 1j * cf_imag
                 print('using cf from file')
-                print(cf)
                 if high_ell_extension:
                     cov_index = get_cov_pos(comb)
                     cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
@@ -113,6 +113,12 @@ def pdf_xi_1D(
                 print('Starting characteristic function computation')
                 ximax = np.fabs(xip_estimate[b]) * 50 # needs a bit of tweaking 12 * 1000/Aeff
                 t, cf = calc_quadcf_1D(ximax, steps, cov, m,is_diag=is_diag)
+                if cffile:
+                    ts = np.append(ts,[t],axis=0)
+                    cfs_real = np.append(cfs_real,[cf.real],axis=0)
+                    cfs_imag = np.append(cfs_imag,[cf.imag],axis=0)
+                    ximaxs = np.append(ximaxs,[ximax],axis=0)
+                    cf_file_angs = np.append(cf_file_angs,[bin_in_deg],axis=0)
                 #cf = np.array(cf)
                 print('Converting to pdf')
                 x_low, pdf_low = cf_to_pdf_1d(t, cf)
@@ -160,13 +166,25 @@ def pdf_xi_1D(
             pdf_arr[b] = pdf
             stat_arr[b] = [mean,std,skewness]
             
+            if pdffile:
+                file_angs = np.append(file_angs,[bin_in_deg],axis=0)
+                xs = np.append(xs,[x],axis=0)
+                pdfs = np.append(pdfs,[pdf],axis=0)
+                statss = np.append(statss,[np.array([mean,std,skewness])],axis=0)
+                
 
 
         if savestuff:
-            np.savez(pdfname, x=x_arr,pdf=pdf_arr,stats=stat_arr,angs=np.array(ang_bins_in_deg))
-            if len(t_s) > 0:
+            if not pdffile:
+                np.savez(pdfname, x=x_arr,pdf=pdf_arr,stats=stat_arr,angs=np.array(ang_bins_in_deg))
+            else:
+                np.savez(pdfname, x=xs,pdf=pdfs,stats=statss,angs=file_angs)
+            if len(t_s) > 0 and not cffile:
                 np.savez(cfname, t=np.array(t_s),cf_re=np.array(cf_res),cf_im=np.array(cf_ims),ximax=np.array(ximax_s),angs=np.array(cf_angs))
-                
+            else:
+                np.savez(cfname, t=ts,cf_re=cfs_real,cf_im=cfs_imag,ximax=ximaxs,angs=cf_file_angs)
+           
+
    
     return x_arr, pdf_arr, stat_arr
 
@@ -543,29 +561,9 @@ def setup_t(xi_max,steps):
 
 
 
-def check_for_file(name,kind='file'):
-    print("Checking for {}s...".format(kind))
-    if os.path.isfile(name):
-        print("Found some.")
-        return True
-    else:
-        print("None found.")
-        return False
 
 
-def load_pdfs(name):
-    print("Loading pdfs ",end='')
-    mfile = np.load(name)
-    print('with angles ',end='')
-    print(mfile['angs'])
-    return mfile["x"], mfile['pdf'], mfile['stats'], mfile['angs']
 
 
-def load_cfs(name):
-    print("Loading cfs ",end='')
-    mfile = np.load(name)
-    print('with angles ',end='')
-    print(mfile['angs'])
-    return mfile["t"], mfile['cf_re'],mfile['cf_im'], mfile['ximax'], mfile['angs']
 
             
