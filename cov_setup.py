@@ -8,6 +8,7 @@ from grf_classes import TheoryCl, SphereMask
 import matplotlib.pyplot as plt
 from sys import getsizeof
 import gc
+import time
 
 class Cov(SphereMask, TheoryCl):
     """
@@ -55,6 +56,7 @@ class Cov(SphereMask, TheoryCl):
         clpath=None,
         theory_lmin=2,
         clname="3x2pt_kids_55",
+        s8 = None,
         maskpath=None,
         circmaskattr=None,
         lmin=None,
@@ -84,6 +86,7 @@ class Cov(SphereMask, TheoryCl):
             theory_lmin=theory_lmin,
             clname=clname,
             smooth_signal=l_smooth_signal,
+            s8=s8,
         )
 
         self._sigma_e = sigma_e
@@ -143,7 +146,7 @@ class Cov(SphereMask, TheoryCl):
 
         always a covariance of pseudo alms - order and number depends on two point statistics considered
         order of alm follows structure of cov_4D - meaning first sort by E/B Re/Im, then by l and then by m
-        only positive m part of covariance is needed (not so sure about this - current version: testing with all m) - way to only calculate this, just like wlmlpmp are only plugged into the sum for given l as needed
+        only positive m part of covariance is needed (tests say yes, analytically to be confirmed) - way to only calculate this, just like wlmlpmp are only plugged into the sum for given l as needed
         only valid for E/B alms so far.
         could implement limitation of m to current l, would make n_cov smaller overall
 
@@ -214,7 +217,7 @@ class Cov(SphereMask, TheoryCl):
                             for i in range(len(cell_ranges))
                         ]
                         cov_part = 0.5 * np.ndarray.flatten(np.array(full_ranges))
-                        if i % 2 == 0:
+                        if i % 2 == 0: # true if alm part is real
                             cov_part[::len_sub] *= 2
                         else:
                             cov_part[::len_sub] *= 0
@@ -254,10 +257,13 @@ class Cov(SphereMask, TheoryCl):
             return self.cov_alm
     
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
+        tic = time.perf_counter()
         buffer = self.cov_ell_buffer
         w_arr = self.w_arr(cov_ell_buffer=buffer)
         cov_matrix = np.full((n_cov, n_cov), np.nan)
-        print(getsizeof(cov_matrix)/1024**2)
+        print('Beginning to fill covariance matrix with size {} mb.'.format(getsizeof(cov_matrix)/1024**2))
+        numparts =  (len(alm_inds)**2 - len(alm_inds)) / 2 + len(alm_inds)
+        part = 1
         for i in alm_inds:
             for j in alm_inds:
                 if i <= j:
@@ -279,6 +285,10 @@ class Cov(SphereMask, TheoryCl):
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
                     del cov_2D
                     gc.collect()
+                    print('Finished part {:d}/{:d}.'.format(int(part),int(numparts)))
+                    part += 1
+        toc = time.perf_counter()
+        print('Covariance matrix calculation took {:.2f} minutes'.format((toc-tic)/60))
         return cov_matrix
 
     def cov_cl_gaussian(self):
@@ -300,6 +310,8 @@ class Cov(SphereMask, TheoryCl):
         return diag, noise_diag
 
     def cov_xi_gaussian(self, lmin=0, lmax=None):
+        # TODO: this function is deprecated, because it is very specific for just one alm covariance, use cov_xi_gaussian nD in calc_pdf instead
+        raise DeprecationWarning
         """
         Calculates covariance of xip correlation function in Gaussian approximation.
 
@@ -438,12 +450,16 @@ class Cov(SphereMask, TheoryCl):
     def set_covalmpath(self):
         charac = self.set_char_string()
         #covname = "covariances/cov_xi" + charac
-        covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
+        #covname = "/cluster/scratch/veoehl/covariances/cov_xi" + charac
+        covname = "/cluster/work/refregier/veoehl/covariances/cov_xi" + charac
         self.covalm_path = covname
 
     def cl2pseudocl(self):
         # from namaster scientific documentation paper
-        pclpath = "pcl" + "_n{:d}_{}_{}_{}.npz".format(
+        if not os.path.isdir('pcls'):
+            command = "mkdir pcls"
+            os.system(command)
+        pclpath = "pcls/pcl" + "_n{:d}_{}_{}_{}.npz".format(
             self.nside,
             self.maskname,
             self.clname,
