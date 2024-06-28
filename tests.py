@@ -680,6 +680,7 @@ def sim_ana_comp():
     import calc_pdf
     import helper_funcs
     from plotting import read_pcl_sims
+    import healpy as hp
     mask_smooth_l = 30
     lmin = 0
     new_sim = Cov(767,[2],
@@ -711,7 +712,7 @@ def sim_ana_comp():
     #path = '/cluster/scratch/veoehl/xi_sims/3x2pt_kids_55_circ10000smoothl30_noisedefault/'
     pcl_measured = read_pcl_sims(path,10)
     new_sim.cl2pseudocl()
-    angbins = [(0.23,0.3),(0.3,0.5),(0.5,1),(1,2),(2,3),(2.5,5),(4,6),(6,9)]
+    angbins = [(0.23,0.3),(0.3,0.5),(0.6,0.9),(0.75,2),(2,3),(2.5,5),(4,6),(6,9)]
     angs = [np.mean(np.array(tup)) for tup in angbins]
     prefacs = helper_funcs.prep_prefactors(angbins,new_sim.wl,new_sim.lmax,new_sim.lmax)
     corr_func = helper_funcs.pcl2xi((new_sim.p_ee,new_sim.p_bb,new_sim.p_eb),prefacs,new_sim.lmax)
@@ -719,18 +720,20 @@ def sim_ana_comp():
     #xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
     #xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
     #xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
-    covs,means = [],[]
+    covs,means,pclmeans = [],[],[]
     for angbin in angbins:
         mean,cov = calc_pdf.cov_xi_gaussian_nD((new_sim,),((0,0),),(angbin,))
         covs.append(cov[0,0])
         means.append(mean[0])
     #print(xi_sim, xi_ana,xi_ana_cl)
+    #pixweights_t, pixweights_p = hp.pixwin(256,pol=True)
     fig, (ax1,ax2,ax3) = plt.subplots(3,1,figsize=(8,12))
     assert np.allclose(np.array(means),corr_func[0])
     ax1.plot(np.mean(pcl_measured[:, 0], axis=0), color="C0")
     for i in range(len(prefacs)):
-        ax2.plot(prefacs[i,0])
-    
+        pclmeans.append(np.mean(prefacs[i,0]*(2 * np.arange(new_sim.lmax+1) + 1)*((np.mean(pcl_measured[:, 0], axis=0)-new_sim.p_ee)+(np.mean(pcl_measured[:, 0], axis=0)-new_sim.p_ee))))
+    ax2.plot(angs,pclmeans,'.')
+    ax2.set_ylim(-1e-10,1e-10)
     ax1.plot(new_sim.p_ee, color="C0", linestyle="dotted")
     ax1.plot(np.mean(pcl_measured[:, 1], axis=0), color="C1")
     ax1.plot(new_sim.p_bb, color="C1", linestyle="dotted")
@@ -919,7 +922,7 @@ def high_low_s8():
     fig = plt.figure(figsize=(10, 6))
     measured_cl = cl_paths[3]
     lims = -0.25e-6, 1e-6
-    angbin = [(4, 6)]
+    angbin = [(2,3)]
     measurement = TwoPointSimulation(angbin,circmaskattr=(10000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/2ptlikelihood",sigma_e=None )
     jobnumber = 1
     measurement.xi_sim_1D(jobnumber)
@@ -980,14 +983,14 @@ def high_low_s8():
     ax.set_xlim(lims)
     ax.axvline(xip_measured,color='C3',label='measured')
     ax.set_xlabel(r'$\xi^+$')
-    ax.legend()
+    ax.legend(frameon=False)
     ax2 = fig.add_subplot(122)
     ax2.plot(s8,likelihood,label='exact likelihood')
     ax2.plot(s8,likelihood_gauss,label='Gaussian likelihood')
     ax2.axvline(s8[3],color='C3')
     ax2.set_xlabel(r'S8')
-    ax2.legend()
-    plt.savefig('varied_s8.png')
+    ax2.legend(frameon=False)
+    plt.savefig('varied_s8.pdf',bbox_inches='tight')
          
               
 
@@ -1115,7 +1118,7 @@ def plot_pcl_vs_cl():
     fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_1000, '1000 sqd','solid',color[0])
     fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_10000, '10000 sqd','dashed',color[1])
     fig, (ax1,ax2) = plot_clvpcl(fig, (ax1,ax2),cov_kids, 'KiDS','dotted',color[2])
-    plt.savefig('pcl_cl_comparison.png')
+    plt.savefig('pcl_cl_comparison.pdf')
 
    
 def test_glass():
@@ -1212,4 +1215,4 @@ def test_glass():
     #ax.set_yscale('log')
     plt.savefig('testfield_glass.png')
 
-sim_ana_comp()
+high_low_s8()
