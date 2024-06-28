@@ -8,6 +8,71 @@ from helper_funcs import pcls2xis, prep_prefactors
 import traceback
 import matplotlib.colors as colors
 import numpy as np
+import scipy.stats as stats
+
+def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
+    """Produce n bootstrap samples of data of the statistic given by func.
+
+    Arguments
+    ---------
+    data : numpy.ndarray
+        Data to resample.
+    n : int
+        Number of bootstrap trails.
+    axis : int, optional
+        Axis along which to resample. (Default ``0``).
+    func : callable, optional
+        Statistic to calculate. (Default ``numpy.var``).
+    func_kwargs : dict, optional
+        Dictionary with extra arguments for func. (Default ``{"ddof" : 1}``).
+
+    Returns
+    -------
+    samples : numpy.ndarray
+        Bootstrap samples of statistic func on the data.
+    """
+
+    if axis != 0:
+        raise NotImplementedError("Only axis == 0 supported.")
+
+    fiducial_output = func(data, **func_kwargs)
+
+    if isinstance(data, list):
+        assert all([d.shape[1:] == data[0].shape[1:] for d in data])
+
+    samples = np.zeros((n, *fiducial_output.shape),
+                       dtype=fiducial_output.dtype)
+
+    for i in range(n):
+        print(i)
+        if isinstance(data, list):
+            idx = [np.random.choice(d.shape[0], size=d.shape[0], replace=True)
+                   for d in data]
+            samples[i] = func([d[i] for d, i in zip(data, idx)],
+                              **func_kwargs)
+        else:
+            idx = np.random.choice(data.shape[axis], size=data.shape[axis],
+                                   replace=True)
+            samples[i] = func(data[idx], **func_kwargs)
+
+    return samples
+
+def all_stats(sims,myaxis=0):
+    return np.array([np.mean(sims,axis=myaxis), np.std(sims,axis=myaxis),stats.skew(sims,axis=myaxis)])
+
+
+def rem_boundary_ticklabels(axes):
+    
+    for ax in axes:
+        labels_x = ax.get_xticklabels()
+        labels_y = ax.get_yticklabels()
+        plt.setp(labels_x[0], visible=False)    
+        plt.setp(labels_y[-1], visible=False)
+        #ax.set_xticklabels(labels_x)
+        #ax.set_yticklabels(labels_y)
+
+def ticks_inside(ax):
+    ax.tick_params(direction="in")
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     new_cmap = colors.LinearSegmentedColormap.from_list(
@@ -36,24 +101,16 @@ def read_xi_sims(filepath,njobs,angbins,kind="xip",prefactors=None,lmax=None):
         allxi=[]
         missing = []
         for i in range(1,njobs+1):
+            
             if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
                 xifile = np.load(filepath+"/job{:d}.npz".format(i))
                 angs = xifile["theta"]
-                if len(xifile[kind][0]) != len(angs):
-                    print(angbin,angs,filepath[-2:])
-                    angs = np.insert(angs,0,[[0.75],[5]],axis=0)
-                    np.savez(filepath + "/job{:d}.npz".format(i),
-                        mode='treecorr',
-                        theta=angs,
-                        xip=np.array(xifile['xip']),
-                        xim=np.array(xifile['xip']))
-
-                
+                print(angs)
                 if filepath[-2:] == 'rr':
                     angind = np.where(angs == np.mean(angbin))
                 else:
                     angind = np.where(angs == angbin)
-                    
+                print(angind)
                 
                 if lmax is not None or len(angind[0]) == 0:
                     try:
@@ -121,28 +178,51 @@ def read_sims_nd(filepath,corr_num,angbin,njobs,lmax,kind='xip'):
     print(len(missing))
     return allxi1,allxi2
 
-def set_xi_axes_2D(ax,angbin,rs_bins,lims,x=True,y=True):
+def set_xi_axes_2D(ax,angbin,rs_bins,lims,x=True,y=True,binnum=None,islow=False):
+
+    if x:
+        #ax.set_xlabel((r'$\xi^+_{{\mathrm{{S{:d}-S{:d}}}}} ({:3.1f}-{:3.1f} \degree)$'.format(*rs_bins[0],*angbin)))
+        if binnum is not None:
+            if islow:
+                ax.set_xlabel((r'$\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}}$ / $\operatorname{{E}}[\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[0],*rs_bins[0],binnum)))  
+                #ax.set_xlabel((r'$\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}} [\hat{{\xi}}^{{+}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[0],binnum)))   
+            else:
+                ax.set_xlabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}}$ / $\operatorname{{E}}[\hat{{\xi}}^{{+}}_{{\mathrm{{S{:d}-S{:d}}}}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[0],*rs_bins[0],binnum)))   
+                #ax.set_xlabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}} [\hat{{\xi}}^{{+}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[0],binnum)))   
+    if y:    
+        #ax.set_ylabel((r'$\xi^+_{{\mathrm{{S{:d}-S{:d}}}}} ({:3.1f}-{:3.1f} \degree)$'.format(*rs_bins[1],*angbin)))
+        if binnum is not None:
+            if islow:
+                ax.set_ylabel((r'$\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}}$ / $\operatorname{{E}}[\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[1],*rs_bins[1],binnum)))  
+                #ax.set_xlabel((r'$\hat{{\xi}}^{{+,\mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}} [\hat{{\xi}}^{{+}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[1],binnum)))   
+            else:
+                ax.set_ylabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}}$ / $\operatorname{{E}}[\hat{{\xi}}^{{+}}_{{\mathrm{{S{:d}-S{:d}}}}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[1],*rs_bins[1],binnum))) 
+                #ax.set_ylabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}} [\hat{{\xi}}^{{+}}] (\bar{{\theta}}_{:d})$'.format(*rs_bins[1],binnum)))   
+    ax.set_xlim(*lims[0])
+    ax.set_ylim(*lims[1])
     if not x:
         #ax.set_xticklabels([])
         ax.xaxis.tick_top()
     if not y:
         ax.set_yticklabels([])
-    if x:
-        ax.set_xlabel((r'$\xi^+_{{S{:d}-S{:d}}} ({:3.1f}-{:3.1f} \degree)$'.format(*rs_bins[0],*angbin)))
-    if y:    
-        ax.set_ylabel((r'$\xi^+_{{S{:d}-S{:d}}} ({:3.1f}-{:3.1f} \degree)$'.format(*rs_bins[1],*angbin)))
-    ax.set_xlim(*lims[0])
-    ax.set_ylim(*lims[1])
 
-def set_xi_axes_hist(ax,angbin,rs_bin,lims,labels=True):
+def set_xi_axes_hist(ax,angbin,rs_bin,lims,labels=True,binnum=None,islow=False):
 
     if not labels:
         ax.set_xticklabels([])
     elif angbin is None:
-        ax.set_xlabel((r'$\xi^+_{{S{:d}-S{:d}}}$'.format(*rs_bin)))
+        if islow:
+            ax.set_xlabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}}$'.format(*rs_bin)))
+        else:
+            ax.set_xlabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}}$'.format(*rs_bin)))
     else:
-        ax.set_xlabel((r'$\xi^+_{{S{:d}-S{:d}}} ({:3.1f}\degree-{:3.1f} \degree)$'.format(*rs_bin,*angbin)))
-        ax.set_xlabel((r'$\xi^+_{{S{:d}-S{:d}}} (\bar{{\theta}}_2)$'.format(*rs_bin)))
+        ax.set_xlabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}} ({:3.1f}\degree-{:3.1f} \degree)$'.format(*rs_bin,*angbin)))
+        if binnum is not None:
+            if islow:
+                ax.set_xlabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{:d}-S{:d}}}}} (\bar{{\theta}}_{:d})$'.format(*rs_bin,binnum)))
+    
+            else:
+                ax.set_xlabel((r'$\hat{{\xi}}^+_{{\mathrm{{S{:d}-S{:d}}}}} (\bar{{\theta}}_{:d})$'.format(*rs_bin,binnum)))
     
     ax.set_xlim(*lims)
     
@@ -202,8 +282,8 @@ def add_data(fig,ax,filepath,njobs,cl_num,angbin,lmax):
     ax.axvline(np.mean(allxi2),color='C3',linestyle='dashed')
     ax.set_xlim(0,3e-6)
 
-def add_data_1d(ax,sims,color,name,mean=False):
-    ax.hist(sims,512,density=True,alpha=0.6,color=color,label=name)
+def add_data_1d(ax,sims,color,name,mean=False,density=True,range=None,nbins=512):
+    ax.hist(sims,nbins,density=density,alpha=0.6,color=color,label=name,range=range)
     if mean:
         ax.axvline(np.mean(sims),color=color,linestyle='dashed')
 
@@ -272,39 +352,44 @@ def read_2D_cf(configpath):
     return t0_2, dt_2, t_sets,ind_sets,cf_grid
 
 
-def add_stats(fig,gs,lmax,statistics,stats_measured,mean,cov):
-        ax6 = fig.add_subplot(gs[1, 0])
-        ax6.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
-        ax6.set_ylabel(r"Skewness")
-        ax6.plot(lmax, statistics[:,2],label='predicted')
-        ax6.axhline(stats_measured[2],color='C0',linestyle='dotted',label='measured')
-        ax6.legend()
-        ax7 = fig.add_subplot(gs[1, 1])
-        ax7.plot(lmax, statistics[:,1] /cov,label='predicted')
-        ax7.axhline(stats_measured[1]**2 / cov,color='C0',linestyle='dotted',label='measured')
-        ax7.axhline(1, color="black", linestyle="dotted")
-        ax7.legend()
-        ax7.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
-        ax7.set_ylabel(r"$\sigma / \sigma_{\mathrm{Gauss}}$")
-        ax8 = fig.add_subplot(gs[1, 2])
-         
-    
-        ax8.plot(lmax, statistics[:,0] / mean, label="predicted",color='C3')
-       
-        ax8.axhline(1, color="black", linestyle="dotted")
-        ax8.axhline(stats_measured[0]/ mean,color='C0',linestyle='dotted',label='measured')
-        ax8.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
-        ax8.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
-        #ax8.set_ylim(0.99,1.02)
-        ax8.legend()
+def add_stats(axes,lmax,statistics,stats_measured,mean,cov,color='C0',maskname=None,ylabel=True,bootstraps=None):
+    ax1, ax2 = axes[:2]
+        
+    #ax1.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+    ax1.plot(lmax, statistics[:,2],color=color,label=maskname)
+    ax1.axhline(stats_measured[2],color=color,linestyle='dotted')
+    ax1.set_xticklabels([])
+    ax2.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+    if ylabel:
+        ax1.set_ylabel(r"Skewness")
+        ax2.set_ylabel(r"$\sigma / \sigma_{\mathrm{Gauss}}$")
+            
+    ax2.plot(lmax, statistics[:,1] /cov,color=color,label='predicted')
+    ax2.axhline(stats_measured[1]**2 / cov,color=color,linestyle='dotted',label='measured')
 
-def plot_gauss(ax,x,mu,cov,color,label=None):
+    if bootstraps is not None:
+        ax1.fill_between(lmax, stats_measured[2]-bootstraps[2], stats_measured[2]+bootstraps[2], alpha=0.5, facecolor=color)
+        ax2.fill_between(lmax, stats_measured[1]**2 / cov -bootstraps[1]**2 / cov, stats_measured[1]**2 / cov+bootstraps[1]**2 / cov, alpha=0.5, facecolor=color)
+        
+        
+         
+    if len(axes) == 3:
+        ax3 = axes[2]
+        ax3.set_xlabel(r"$\ell_{{\mathrm{{exact}}}}$")
+        ax3.set_ylabel(r"$\mathbb{E}(\xi^+)$ / $\hat{\xi}^+$")
+        ax3.plot(lmax, statistics[:,0] / mean,color=color, label="predicted")
+        ax3.axhline(1, color="black", linestyle="dotted")
+        ax3.axhline(stats_measured[0]/ mean,color=color,linestyle='dotted',label='measured')
+        
+        
+
+def plot_gauss(ax,x,mu,cov,color,label=None,linestyle='dashed'):
     import scipy.stats as stats
     ax.plot(
         x,
         stats.norm.pdf(x, mu, np.sqrt(cov)),
         color=color,
-        linestyle="dashed",label=label,alpha=0.5
+        linestyle=linestyle,label=label,alpha=0.5
     )
 
 
