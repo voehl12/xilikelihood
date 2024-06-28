@@ -19,7 +19,7 @@ class TheoryCl:
     """
 
     def __init__(
-        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None,s8=None
+        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None,s8=None,working_dir=None
     ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
@@ -29,6 +29,9 @@ class TheoryCl:
         self.theory_lmin = theory_lmin
         self.clname = clname
         self.clpath = clpath # if clpath is set, s8 will be ignored.
+        if working_dir is None:
+            working_dir = os.getcwd()
+        self.working_dir=working_dir
         self.s8 = s8 
         self.nn = None
         self.ee = None
@@ -134,6 +137,7 @@ class SphereMask:
         exact_lmax=None,
         maskname="mask",
         l_smooth=None,
+        working_dir=None,
     ) -> None:
         """
 
@@ -179,6 +183,9 @@ class SphereMask:
             raise RuntimeError(
                 "Please specify either a mask path or attributes for a circular mask"
             )
+        if working_dir is None:
+            working_dir = os.getcwd()
+        self.working_dir=working_dir
         self.npix = hp.nside2npix(self.nside)
         self.spins = spins
         self.spin0 = None
@@ -485,5 +492,8 @@ class SphereMask:
     def set_wpmpath(self,cov_ell_buffer):
         charac = self.set_wpm_string(cov_ell_buffer)
         #covname = "covariances/cov_xi" + charac
-        wpm_name = "/cluster/work/refregier/veoehl/wpm_arrays/wpm" + charac
+        if not os.path.isdir(self.working_dir+'/wpm_arrays'):
+            command = "mkdir "+self.working_dir+"/wpm_arrays"
+            os.system(command)
+        wpm_name = self.working_dir+"/wpm_arrays/wpm" + charac
         self.wpm_path = wpm_name
