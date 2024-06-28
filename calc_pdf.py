@@ -7,6 +7,7 @@ import os
 import time
 from os import environ
 from file_handling import check_for_file, load_cfs, load_pdfs
+from unittests import test_cf2pdf
 
 
 
@@ -83,6 +84,7 @@ def pdf_xi_1D(
 
                     cov_index = get_cov_pos(comb)
                     cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
+                    mean, cov_estimate = cov_xi_gaussian_nD([cov_ref],[(0,0)],[bin_in_deg],lmax=cov_ref.exact_lmax)
                     xip_estimate, _ = helper_funcs.pcl2xi((cov_ref.p_ee,cov_ref.p_bb,cov_ref.p_eb),prefactors_all,cov_ref.lmax)
 
                 if type(bin_in_deg) is tuple:
@@ -112,6 +114,7 @@ def pdf_xi_1D(
 
                 print('Starting characteristic function computation')
                 ximax = np.fabs(xip_estimate[b]) * 50 # needs a bit of tweaking 12 * 1000/Aeff
+                ximax = np.fabs(xip_estimate[b]) + 100*np.sqrt(cov_estimate[0,0])
                 t, cf = calc_quadcf_1D(ximax, steps, cov, m,is_diag=is_diag)
                 if cffile:
                     ts = np.append(ts,[t],axis=0)
@@ -174,15 +177,15 @@ def pdf_xi_1D(
                 
 
 
-        if savestuff:
-            if not pdffile:
-                np.savez(pdfname, x=x_arr,pdf=pdf_arr,stats=stat_arr,angs=np.array(ang_bins_in_deg))
-            else:
-                np.savez(pdfname, x=xs,pdf=pdfs,stats=statss,angs=file_angs)
-            if len(t_s) > 0 and not cffile:
-                np.savez(cfname, t=np.array(t_s),cf_re=np.array(cf_res),cf_im=np.array(cf_ims),ximax=np.array(ximax_s),angs=np.array(cf_angs))
-            else:
-                np.savez(cfname, t=ts,cf_re=cfs_real,cf_im=cfs_imag,ximax=ximaxs,angs=cf_file_angs)
+    if savestuff:
+        if not pdffile:
+            np.savez(pdfname, x=x_arr,pdf=pdf_arr,stats=stat_arr,angs=np.array(ang_bins_in_deg))
+        else:
+            np.savez(pdfname, x=xs,pdf=pdfs,stats=statss,angs=file_angs)
+        if len(t_s) > 0 and not cffile:
+            np.savez(cfname, t=np.array(t_s),cf_re=np.array(cf_res),cf_im=np.array(cf_ims),ximax=np.array(ximax_s),angs=np.array(cf_angs))
+        else:
+            np.savez(cfname, t=ts,cf_re=cfs_real,cf_im=cfs_imag,ximax=ximaxs,angs=cf_file_angs)
            
 
    
@@ -306,7 +309,9 @@ def get_integrated_wigners(lmin,lmax,bin_in_deg):
 
 
 def cov_xi_gaussian_nD(cov_objects,xi_combs,angbins_in_deg, lmin=0, lmax=None):
-   
+   #cov_xi_gaussian(lmin=0, noise_apo=False)
+        #Calculates Gaussian (auto) covariance (shot noise and sample variance) of a xi_plus correlation function (so far no cross correlations implemented)
+
     # cov_objects order like in GLASS. assume mask and lmax is the same as for cov_object[0] for all
 
     # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
@@ -381,18 +386,31 @@ def cov_xi_nD(cov_objects):
 
 
 def high_ell_gaussian_cf(t_lowell, cov_object,angbin):
-    #TODO: make nD
+    """
+    calculates the characteristic function for a 1d Gaussian used as high mulitpole moment extension.
 
+    Parameters
+    ----------
+    t_lowell : 1d array
+        Fourier space t grid used for the low multipole moment part
+    cov_object : Cov object
+        covariance object (Cov) used for the low multipole moment part
+    angbin : tuple
+        angular separation bin for the correlation function
+
+    Returns
+    -------
+    1d complex array
+        characteristic function of the Gaussian extension on the same t grid as the low ell part
+    """
     
     mean, cov = cov_xi_gaussian_nD([cov_object],[(0,0)],[angbin],lmin=cov_object.exact_lmax + 1)
-    
-  
-    
     
     mean = mean[0]
     cov = cov[0,0]
     
-    xip_max = np.fabs(10 * mean)
+    xip_max = np.fabs(3 * mean)
+    xip_max = np.fabs(mean) + 500*np.sqrt(cov)
     dt_xip = 0.45 * 2 * np.pi / xip_max
     steps = 4096
     t0 = -0.5 * dt_xip * (steps - 1)
@@ -400,9 +418,12 @@ def high_ell_gaussian_cf(t_lowell, cov_object,angbin):
 
     gauss_cf = helper_funcs.gaussian_cf(t, mean, np.sqrt(cov))
     
-    assert np.allclose(helper_funcs.skewness(t, gauss_cf), 0, atol=1e-1), helper_funcs.skewness(
+    assert np.allclose(helper_funcs.skewness(t, gauss_cf), 0, atol=1e-3), helper_funcs.skewness(
         t, gauss_cf
     )
+    print('Skewness of Gaussian extension: {}'.format(helper_funcs.skewness(
+        t, gauss_cf)))
+    test_cf2pdf(t,mean,np.sqrt(cov))
     interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
         t_lowell
     ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)
@@ -410,8 +431,6 @@ def high_ell_gaussian_cf(t_lowell, cov_object,angbin):
     return interp_to_lowell
 
 def high_ell_gaussian_cf_nD(t_sets,mu, cov):
-    #TODO: make nD
-    
     
     gauss_cf = helper_funcs.gaussian_cf_nD(t_sets,mu,cov)
     
@@ -426,6 +445,27 @@ def pdf_pcl():
 
 
 def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
+    """
+    Calculates a 1d characteristic function given a covariance matrix and combination matrix.
+
+    Parameters
+    ----------
+    val_max : float
+        positive boundary of the real space grid
+    steps : int
+        number of gridpoints
+    cov : 2-d array
+        covariance matrix of the Gaussian distributed variables
+    m : 2-d array
+        combination matrix combining Gaussiand distributed variables to quadratic form
+    is_diag : bool, optional
+        if the combination matrix is diagonal, by default False
+
+    Returns
+    -------
+    tuple
+        t, cf: the Fourier space grid t and the characteristic function
+    """
     tic = time.perf_counter()
     print('multiplying matrices, N = {:d}...'.format(len(cov)))
     if is_diag:
