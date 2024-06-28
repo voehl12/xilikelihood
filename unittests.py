@@ -1,3 +1,6 @@
+import numpy as np 
+
+
 def test_palm_matching():
     import cov_calc
     palm_kinds = ["ReE", "ImE", "ReB", "ImB"]
@@ -27,7 +30,7 @@ def test_cov_xi():
     nomask_cov.maskname = "disguised_fullsky"
     nomask_cov.set_covalmpath()
     nomask_bruteforce_cov = nomask_cov.cov_alm_xi(pos_m=True)
-    assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array)), 
+    assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array))
 
 
 def test_analytic_pcl():
@@ -61,7 +64,8 @@ def test_analytic_pcl():
     xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
     xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
     xi_ana = helper_funcs.pcl2xi((new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax,lmin=lmin)
-
+    assert np.allclose(xi_ana_cl,xi_ana)
+    assert np.allclose(xi_sim,xi_ana)
     print(xi_sim, xi_ana,xi_ana_cl)
 
 
@@ -85,17 +89,36 @@ def test_palm_cov():
     pcl[0], pcl[1] = (self.p_ee * twoell)[:exact_lmax+1], (self.p_bb * twoell)[:exact_lmax+1]
     
     assert np.allclose(pcl,check_pcl), "Covariance diagonal does not agree with pseudo C_ell"
+    
 
 
 def test_wlmlm():
       #assert np.allclose(wlm[:,:,mid_ind:,:,:],wlm[:,:,:mid_ind+1,:,:])
         #assert np.allclose(wlpmp[:,:,mid_ind:,:,:],wlpmp[:,:,:mid_ind+1,:,:])
 
-
+    pass
 
 
 def test_treecorrvsnamaster():
+    from simulate import TwoPointSimulation
+    import sys
+
+    jobnumber = int(sys.argv[1])
+
+    new_sim = TwoPointSimulation([(2,3)],circmaskattr=(1000,256),l_smooth_mask=30,clname='3x2pt_kids_55', clpath="Cl_3x2pt_kids55.txt", batchsize=1000,simpath="/cluster/scratch/veoehl/tests/",sigma_e='default',ximode='treecorr')
+    new_sim.xi_sim_1D(jobnumber,save_pcl=False,pixwin=False,plot=False)
 
 
 def test_means():
+    pass
     
+
+def test_cf2pdf(t,mu,sigma):
+    import scipy.stats as stats
+    from helper_funcs import gaussian_cf
+    from calc_pdf import cf_to_pdf_1d
+    
+    cf = gaussian_cf(t,mu,sigma)
+    x, pdf_from_cf = cf_to_pdf_1d(t,cf)
+    pdf = stats.norm.pdf(x, mu, sigma)
+    assert np.allclose(pdf,pdf_from_cf), pdf_from_cf
