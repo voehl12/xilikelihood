@@ -31,16 +31,37 @@ def mmatrix_xi(prefactors, kind="p", pos_m=False):
 
 
 def m_xi_cross(prefactors, combs=((1, 1), (0, 1)), kind=("p", "p"), pos_m=True):
+    """
+    Creates combination matrices according to the number of correlation functions for which we wish to
+    calculate the joint likelihood.
+
+    Parameters
+    ----------
+    prefactors : tuple of arrays
+        each entry is a (2,l_max+1) array, where first dim: xip and xim, second dim: ell-dependence
+    combs : tuple, optional
+        each entry gives a redshift bin-combination as a tuple, by default ((1, 1), (0, 1))
+        ordering and indexing according to the covariance matrix, which needs to be provided for all redshift bins jointly.
+    kind : tuple, optional
+        specifies xip or xim for each correlation function, by default ("p", "p")
+    pos_m : bool, optional
+        only positive m modes are considered, by default True
+
+    Returns
+    -------
+    array
+        stack of 2D combination matrices
+    """
     m = []
     n_m = len(combs)
     listlist = [list(set(tuple(combs[t]))) for t in range(len(combs))]
     allbins = [x for xs in listlist for x in xs]
-
+    if len(combs) != len(kind):
+        raise RuntimeError(
+            "m_xi_cross: number of redshift combinations needs to match number of kinds of correlation functions!"
+        )
     n_bins = max(allbins) + 1
 
-    # function to create two (or more) m matrices to crosscorrelate different redshift bins (i.e. different sets of pseudo alms). first m only selects first half of covariance matrix, second, the second ect.
-    # prefactors is tuple of prefactors, so is kinds and bin_n
-    # combs: bin combinations according to the ordering of the covariance matrix
     for i in range(n_m):
         sub_m = mmatrix_xi(prefactors[i], kind[i], pos_m)
         len_sub_m = len(sub_m)
