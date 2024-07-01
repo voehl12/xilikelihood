@@ -45,9 +45,9 @@ def m_xi_cross(prefactors, combs=((1, 1), (0, 1)), kind=("p", "p"), pos_m=True):
         sub_m = mmatrix_xi(prefactors[i], kind[i], pos_m)
         len_sub_m = len(sub_m)
         m_i = np.zeros((len_sub_m * n_bins, len_sub_m * n_bins))
-        print(m_i.shape)
+
         comb = combs[i]
-        print(comb)
+
         m_i[
             comb[0] * len_sub_m : (comb[0] + 1) * len_sub_m,
             comb[1] * len_sub_m : (comb[1] + 1) * len_sub_m,
