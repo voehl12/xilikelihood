@@ -10,6 +10,7 @@ from sys import getsizeof
 import gc
 import time
 
+
 class Cov(SphereMask, TheoryCl):
     """
     Class to calculate and store pseudo-alm covariances for masked spherical Gaussian random fields.
@@ -18,25 +19,25 @@ class Cov(SphereMask, TheoryCl):
     ----------
     cov_alm : 2D array
         covariance matrix of pseudo alm (currently E and B modes)
-    ang_bins : list of tuples
-        angular bins for the correlation function under consideration (so far only one)
-    cov_xi : float
-        total (sample and shot noise) Gaussian covariance of a correlation function
-    cov_sn : float
-        shot noise Gaussian covariance of a correlation function
-    xi: float
-        mean of correlation function considered (only if Gaussian covariances are calculated)
+
+
     exact_lmax : integer
         maximum multipole moment to which calculations are taken to
     __sigma_e : tuple or None
         (sigma_epsilon,n_gal_per_arcmin2), single component intrinstic ellipticity dispersion, number density of galaxies.
         if None: no shot noise. Private because it shouldn't be changed afterwards.
+    ee,bb,nn,... : 1D arrays
+        theory power spectra
+    p_ee,p_bb,... : 1D arrays
+        pseudo Cl
 
     Methods
     -------
     cov_alm_xi(exact_lmax=None,pos_m=False)
         Calculates 2D covariance matrix of pseudo alm cov_alm needed for likelihoods of spin-2 correlation functions or power spectra (E and B modes)
-    
+    cl2pcl()
+        Calculates pseudo-Cl based on mask and theory Cl
+
     Parameters
     ----------
     SphereMask : _type_
@@ -54,7 +55,7 @@ class Cov(SphereMask, TheoryCl):
         clpath=None,
         theory_lmin=2,
         clname="3x2pt_kids_55",
-        s8 = None,
+        s8=None,
         maskpath=None,
         circmaskattr=None,
         lmin=None,
@@ -67,8 +68,8 @@ class Cov(SphereMask, TheoryCl):
 
         if working_dir is None:
             working_dir = os.getcwd()
-        self.working_dir=working_dir
-            
+        self.working_dir = working_dir
+
         SphereMask.__init__(
             self,
             exact_lmax=exact_lmax,
@@ -114,15 +115,15 @@ class Cov(SphereMask, TheoryCl):
             self.set_covalmpath()
             self.set_noise_sigma()
             if hasattr(self, "cov_alm"):
-                print("Set new noise level, recalculate pseudo alm covariance.")
+                print("Cov: Set new noise level, recalculate pseudo alm covariance.")
                 self.cov_alm_xi(exact_lmax=self._exact_lmax, pos_m=True)
 
             if hasattr(self, "cov_xi"):
-                print("Set new noise level, recalculate Gaussian covariance.")
+                print("Cov: Set new noise level, recalculate Gaussian covariance.")
                 self.cov_xi_gaussian()
 
             else:
-                print("Set new noise level, nothing to recalculate.")
+                print("Cov: Set new noise level, nothing to recalculate.")
 
     @property
     def exact_lmax(self):
@@ -131,7 +132,9 @@ class Cov(SphereMask, TheoryCl):
     @exact_lmax.setter
     def exact_lmax(self, new_lmax):
         if isinstance(new_lmax, int) and new_lmax != self._exact_lmax:
-            print("Warning: Resetting exact lmax within a covariance instance is not supported at the moment (concerning recalculation of dependent quantities)")
+            print(
+                "Cov: Warning: Resetting exact lmax within a covariance instance is not supported at the moment (concerning recalculation of dependent quantities)"
+            )
             self._exact_lmax = new_lmax
             if self.l_smooth_auto:
                 self.l_smooth = new_lmax
@@ -149,20 +152,50 @@ class Cov(SphereMask, TheoryCl):
 
     def cov_alm_xi(self, exact_lmax=None, pos_m=True):
         """
-        calculates covariance of pseudo-alm needed for the spin-2 correlation function xi+/-
+        Calculates covariance of pseudo-alm needed for the spin-2 correlation function xi+/-.
+
+        Parameters
+        ----------
+        exact_lmax : int, optional
+            maximum multipole moment ell to be used, None defaults to class instance exact_lmax set earlier, by default None
+        pos_m : bool, optional
+            only calculate covariances of pseudo-alm with positive m, by default True
+
+        Returns
+        -------
+        2D array
+            Covariance matrix of pseudo-alm: E, and B-modes, real and imaginary parts, sorted by ell, then m (see (cov_alm_gen))
+        """
+
+        alm_kinds = [
+            "ReE",
+            "ImE",
+            "ReB",
+            "ImB",
+        ]
+        self.cov_alm = self.cov_alm_gen(alm_kinds, exact_lmax=exact_lmax, pos_m=True)
+        return self.cov_alm
+
+    def cov_alm_gen(self, alm_kinds, exact_lmax=None, pos_m=True, lmin=0):
+        """
+        calculates covariance of pseudo-alm
 
         always a covariance of pseudo alms - order and number depends on two point statistics considered
         order of alm follows structure of cov_4D - meaning first sort by E/B Re/Im, then by l and then by m
         only positive m part of covariance is needed (tests say yes, analytically to be confirmed) - way to only calculate this, just like wlmlpmp are only plugged into the sum for given l as needed
-        only valid for E/B alms so far.
+        only tested for E/B alms so far.
         could implement limitation of m to current l, would make n_cov smaller overall
 
         Parameters
         ----------
+        alm_kinds : list of strings
+            which pseudo-alm to calculate covariance for; real/imag and mode (e.g. ReE, ImE, ...)
         exact_lmax : integer, optional
             maximum multipole moment for exact calculations (only maximum multipole moment relevant here), by default None
         pos_m : bool, optional
-            only calculate contributions for positive m (seems to be sufficient for plus correlation function, couldn't show analytically why yet), by default False
+            only calculate contributions for positive m (seems to be sufficient for plus correlation function, couldn't show analytically why yet), by default True
+        lmin : int, optional
+            minimum ell considered , by default 0
 
         Returns
         -------
@@ -174,9 +207,9 @@ class Cov(SphereMask, TheoryCl):
         NotImplementedError
             if all m covariance (including negative) calculation is attempted for fullsky version
         """
-        
+
         buffer = self.cov_ell_buffer
-        
+
         if exact_lmax is None:
             exact_lmax = self._exact_lmax
         elif exact_lmax != self._exact_lmax:
@@ -187,70 +220,102 @@ class Cov(SphereMask, TheoryCl):
             self.load_cov()
             return self.cov_alm
         else:
-            alm_kinds = ["ReE", "ImE", "ReB", "ImB"] # more generic function would take these as input, would generalize to spin-0 as well
             alm_inds = cov_calc.match_alm_inds(alm_kinds)
             n_alm = len(alm_inds)
-            lmin = 0
 
             if hasattr(self, "_noise_sigma"):
-                theory_cell += helper_funcs.noise_cl_cube(self.noise_cl[:self.exact_lmax+1+buffer])
+                theory_cell += helper_funcs.noise_cl_cube(
+                    self.noise_cl[: self.exact_lmax + 1 + buffer]
+                )
 
             if pos_m:
-               
+
                 n_cov = n_alm * (exact_lmax - lmin + 1) * (exact_lmax + 1)
             else:
-                
+
                 n_cov = n_alm * (exact_lmax - lmin + 1) * (2 * (exact_lmax) + 1)
 
             if self.maskname == "fullsky":
                 if pos_m == False:
                     raise NotImplementedError(
-                        "No mask case covariance matrix only implemented for positive m"
+                        "cov_alm_gen: no mask case covariance matrix only implemented for positive m"
                     )
                 else:
                     cov_matrix = self.cov_fullsky(alm_inds, n_cov, theory_cell)
-                    
 
             else:
-                cov_matrix = self.cov_masked(alm_inds, n_cov, theory_cell, lmin, pos_m)
+                cov_matrix = self.cov_masked(alm_inds, n_cov, theory_cell, pos_m=pos_m)
 
             cov_matrix = np.where(np.isnan(cov_matrix), cov_matrix.T, cov_matrix)
-            assert np.allclose(cov_matrix, cov_matrix.T), "Covariance matrix not symmetric"
+            assert np.allclose(
+                cov_matrix, cov_matrix.T
+            ), "cov_alm_gen: covariance matrix not symmetric"
 
-            # check that the diagonal matches the pseudo-cl to 10%:    
+            # check that the diagonal matches the pseudo-cl to 10%:
             diag_alm = np.diag(cov_matrix)
-            
-            if pos_m == False:
-                len_sub = 2*exact_lmax+1
-                reps = int(len(diag_alm) / (len_sub))
-                check_pcl_sub = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
-            else:
-                len_sub = exact_lmax+1
-                reps = int(len(diag_alm) / (len_sub))
-                check_pcl_sub = np.array([np.sum(2*diag_alm[i*len_sub + 1:(i+1)*len_sub+1]) + diag_alm[i*len_sub] for i in range(reps)])
-            
-            check_pcl = np.zeros((2,exact_lmax+1))
-            check_pcl[0], check_pcl[1] = check_pcl_sub[:exact_lmax+1]+check_pcl_sub[exact_lmax+1:2*(exact_lmax+1)], check_pcl_sub[2*(exact_lmax+1):3*(exact_lmax+1)]+check_pcl_sub[3*(exact_lmax+1):4*(exact_lmax+1)]
-            pcl = np.zeros_like(check_pcl)
-            twoell= 2 * self.ell + 1
-            self.cl2pseudocl()
-            pcl[0], pcl[1] = (self.p_ee * twoell)[:exact_lmax+1], (self.p_bb * twoell)[:exact_lmax+1]
-            assert np.allclose(pcl,check_pcl,rtol=1e-1), "Covariance diagonal does not agree with pseudo C_ell"
 
+            if pos_m == False:
+                len_sub = 2 * exact_lmax + 1
+                reps = int(len(diag_alm) / (len_sub))
+                check_pcl_sub = np.array(
+                    [np.sum(diag_alm[i * len_sub : (i + 1) * len_sub]) for i in range(reps)]
+                )
+            else:
+                len_sub = exact_lmax + 1
+                reps = int(len(diag_alm) / (len_sub))
+                check_pcl_sub = np.array(
+                    [
+                        np.sum(2 * diag_alm[i * len_sub + 1 : (i + 1) * len_sub + 1])
+                        + diag_alm[i * len_sub]
+                        for i in range(reps)
+                    ]
+                )
+
+            check_pcl = np.zeros((2, exact_lmax + 1))
+            check_pcl[0], check_pcl[1] = (
+                check_pcl_sub[: exact_lmax + 1]
+                + check_pcl_sub[exact_lmax + 1 : 2 * (exact_lmax + 1)],
+                check_pcl_sub[2 * (exact_lmax + 1) : 3 * (exact_lmax + 1)]
+                + check_pcl_sub[3 * (exact_lmax + 1) : 4 * (exact_lmax + 1)],
+            )
+            pcl = np.zeros_like(check_pcl)
+            twoell = 2 * self.ell + 1
+            self.cl2pseudocl()
+            pcl[0], pcl[1] = (self.p_ee * twoell)[: exact_lmax + 1], (self.p_bb * twoell)[
+                : exact_lmax + 1
+            ]
+            assert np.allclose(
+                pcl, check_pcl, rtol=1e-1
+            ), "cov_alm_gen: covariance diagonal does not agree with pseudo C_ell"
 
             self.cov_alm = cov_matrix
             self.save_cov()
             return self.cov_alm
-    
-    def cov_fullsky(self, alm_inds,n_cov, theory_cell):
+
+    def cov_fullsky(self, alm_inds, n_cov, theory_cell):
+        """
+        Sets up covariance matrix for alms (i.e. when no mask is present). So far only works for spin-0 if spin-2 are calculated as well.
+
+        Parameters
+        ----------
+        alm_inds : list of int
+            integers according to alm kinds from cov_calc.match_alm_inds()
+        n_cov : int
+            side length of covariance matrix
+        theory_cell : 3D array
+            cube of theory c_ell. first & second dimension: pairings of modes, third dimension: ell (see self.cell_cube())
+
+        Returns
+        -------
+        2D array
+            covariance matrix of pseudo-alm
+        """
         cov_matrix = np.zeros((n_cov, n_cov))
         diag = np.zeros(n_cov)
         for i in alm_inds:
             t = int(np.floor(i / 2))  # same c_l for Re and Im
             len_sub = self._exact_lmax + 1
-            cell_ranges = [
-                np.repeat(theory_cell[t, t, i], i + 1) for i in range(len_sub)
-            ]
+            cell_ranges = [np.repeat(theory_cell[t, t, i], i + 1) for i in range(len_sub)]
             full_ranges = [
                 np.append(
                     cell_ranges[i],
@@ -259,7 +324,7 @@ class Cov(SphereMask, TheoryCl):
                 for i in range(len(cell_ranges))
             ]
             cov_part = 0.5 * np.ndarray.flatten(np.array(full_ranges))
-            if i % 2 == 0: # true if alm part is real
+            if i % 2 == 0:  # true if alm part is real
                 cov_part[::len_sub] *= 2
             else:
                 cov_part[::len_sub] *= 0
@@ -272,14 +337,39 @@ class Cov(SphereMask, TheoryCl):
         cov_matrix = np.diag(diag)
         return cov_matrix
 
-    
-    def cov_masked(self, alm_inds, n_cov, theory_cell, lmin, pos_m):
+    def cov_masked(self, alm_inds, n_cov, theory_cell, lmin=0, pos_m=True):
+        """
+        Sets up covariance matrix for pseudo-alms. So far only works for spin-0 if spin-2 are calculated as well.
+
+        Parameters
+        ----------
+        alm_inds : list of int
+            integers according to alm kinds from cov_calc.match_alm_inds()
+        n_cov : int
+            side length of covariance matrix
+        theory_cell : 3D array
+            cube of theory c_ell. first & second dimension: pairings of modes, third dimension: ell (see self.cell_cube())
+        lmin : int
+            minimum ell considered , by default 0
+        pos_m : bool, optional
+            only calculate contributions for positive m (seems to be sufficient for plus correlation function, couldn't show analytically why yet), by default True
+
+
+        Returns
+        -------
+        2D array
+            covariance matrix of pseudo-alm
+        """
         tic = time.perf_counter()
         buffer = self.cov_ell_buffer
         w_arr = self.w_arr(cov_ell_buffer=buffer)
         cov_matrix = np.full((n_cov, n_cov), np.nan)
-        print('Beginning to fill covariance matrix with size {} mb.'.format(getsizeof(cov_matrix)/1024**2))
-        numparts =  (len(alm_inds)**2 - len(alm_inds)) / 2 + len(alm_inds)
+        print(
+            "cov_masked: beginning to fill covariance matrix with size {} mb.".format(
+                getsizeof(cov_matrix) / 1024**2
+            )
+        )
+        numparts = (len(alm_inds) ** 2 - len(alm_inds)) / 2 + len(alm_inds)
         part = 1
         for i in alm_inds:
             for j in alm_inds:
@@ -288,43 +378,33 @@ class Cov(SphereMask, TheoryCl):
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
                     )
                     if pos_m == False:
-                        len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-2*buffer)
-                    
-                        cov_2D = np.reshape(cov_part[:-buffer,buffer:-buffer,:-buffer,buffer:-buffer], (len_2D, len_2D))
+                        len_2D = (cov_part.shape[0] - buffer) * (cov_part.shape[1] - 2 * buffer)
+
+                        cov_2D = np.reshape(
+                            cov_part[:-buffer, buffer:-buffer, :-buffer, buffer:-buffer],
+                            (len_2D, len_2D),
+                        )
                     else:
-                        
-                        len_2D = (cov_part.shape[0]-buffer) * (cov_part.shape[1]-buffer)
-                    
-                        cov_2D = np.reshape(cov_part[:-buffer,:-buffer,:-buffer,:-buffer], (len_2D, len_2D))
+
+                        len_2D = (cov_part.shape[0] - buffer) * (cov_part.shape[1] - buffer)
+
+                        cov_2D = np.reshape(
+                            cov_part[:-buffer, :-buffer, :-buffer, :-buffer], (len_2D, len_2D)
+                        )
 
                     pos_y = (len_2D * i, len_2D * (i + 1))
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
+                    # clear some memory:
                     del cov_2D
                     gc.collect()
-                    print('Finished part {:d}/{:d}.'.format(int(part),int(numparts)))
+                    print("cov_masked: finished part {:d}/{:d}.".format(int(part), int(numparts)))
                     part += 1
         toc = time.perf_counter()
-        print('Covariance matrix calculation took {:.2f} minutes'.format((toc-tic)/60))
+        print(
+            "cov_masked: covariance matrix calculation took {:.2f} minutes".format((toc - tic) / 60)
+        )
         return cov_matrix
-
-    def cov_cl_gaussian(self):
-        cl_e = self.ee.copy()
-        cl_b = self.bb.copy()
-        noise2 = np.zeros_like(cl_e)
-        ell = np.arange(self.lmax + 1)
-        if hasattr(self, "_noise_sigma"):
-            noise_B = noise_E = self.noise_cl
-
-            cl_e += noise_E
-            cl2 = np.square(cl_e) + np.square(noise_B)
-            noise2 += np.square(noise_E) + np.square(noise_B)
-        else:
-            cl2 = np.square(cl_e)
-
-        diag = 2 * cl2
-        noise_diag = 2 * noise2
-        return diag, noise_diag
 
     def set_noise_sigma(self):
         if self._sigma_e is not None:
@@ -388,25 +468,29 @@ class Cov(SphereMask, TheoryCl):
 
     def set_covalmpath(self):
         charac = self.set_char_string()
-        
-        if not os.path.isdir(self.working_dir+'/covariances'):
+
+        if not os.path.isdir(self.working_dir + "/covariances"):
             command = "mkdir covariances"
             os.system(command)
-        covname = self.working_dir+"/covariances/cov_xi" + charac
+        covname = self.working_dir + "/covariances/cov_xi" + charac
         self.covalm_path = covname
 
     def cl2pseudocl(self):
         # from namaster scientific documentation paper
-        if not os.path.isdir(self.working_dir+'/pcls'):
-            command = "mkdir "+self.working_dir+"/pcls"
+        if not os.path.isdir(self.working_dir + "/pcls"):
+            command = "mkdir " + self.working_dir + "/pcls"
             os.system(command)
-        pclpath = self.working_dir+"/pcls/pcl" + "_n{:d}_{}_{}_{}.npz".format(
-            self.nside,
-            self.maskname,
-            self.clname,
-            self.sigmaname,
+        pclpath = (
+            self.working_dir
+            + "/pcls/pcl"
+            + "_n{:d}_{}_{}_{}.npz".format(
+                self.nside,
+                self.maskname,
+                self.clname,
+                self.sigmaname,
+            )
         )
-        
+
         if os.path.isfile(pclpath):
             pclfile = np.load(pclpath)
             self.p_ee = pclfile["pcl_ee"]
@@ -420,7 +504,7 @@ class Cov(SphereMask, TheoryCl):
             if hasattr(self, "_noise_sigma"):
                 cl_e = self.ee.copy() + self.noise_cl
                 cl_b = self.bb.copy() + self.noise_cl
-                
+
             else:
                 cl_e = self.ee.copy()
                 cl_b = self.bb.copy()
@@ -430,5 +514,5 @@ class Cov(SphereMask, TheoryCl):
             self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
             self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
 
-            print("saving pseudo_cl...")
+            print("pseudo_cl: saving pseudo_cl...")
             np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb, pcl_eb=self.p_eb)
