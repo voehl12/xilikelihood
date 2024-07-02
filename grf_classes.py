@@ -19,7 +19,14 @@ class TheoryCl:
     """
 
     def __init__(
-        self, lmax=30, clpath=None, theory_lmin=2, clname="test_cl", smooth_signal=None,s8=None,working_dir=None
+        self,
+        lmax=30,
+        clpath=None,
+        theory_lmin=2,
+        clname="test_cl",
+        smooth_signal=None,
+        s8=None,
+        working_dir=None,
     ):
         self.lmax = lmax
         print("lmax has been set to {:d}.".format(self.lmax))
@@ -28,11 +35,11 @@ class TheoryCl:
         self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
         self.clname = clname
-        self.clpath = clpath # if clpath is set, s8 will be ignored.
+        self.clpath = clpath  # if clpath is set, s8 will be ignored.
         if working_dir is None:
             working_dir = os.getcwd()
-        self.working_dir=working_dir
-        self.s8 = s8 
+        self.working_dir = working_dir
+        self.s8 = s8
         self.nn = None
         self.ee = None
         self.ne = None
@@ -43,26 +50,27 @@ class TheoryCl:
             self.read_clfile()
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
-            
+
         elif self.s8 is not None:
             import theory_cl
+
             self.clpath, self.clname = theory_cl.clnames(self.s8)
-            if file_handling.check_for_file(self.clpath,kind = 'theory cl'):
+            if file_handling.check_for_file(self.clpath, kind="theory cl"):
                 self.read_clfile()
                 self.load_cl()
                 print("Loaded C_l with lmax = {:d}".format(self.lmax))
             else:
-                
+
                 cl = theory_cl.get_cl_s8(self.s8)
-                theory_cl.save_cl(cl,self.clpath)
+                theory_cl.save_cl(cl, self.clpath)
                 cl = np.array(cl)
                 spectra = np.concatenate(
-            (
-                np.zeros((3, self.theory_lmin)),
-                cl[:, : self.lmax - self.theory_lmin + 1],
-            ),
-            axis=1,
-        )
+                    (
+                        np.zeros((3, self.theory_lmin)),
+                        cl[:, : self.lmax - self.theory_lmin + 1],
+                    ),
+                    axis=1,
+                )
 
                 self.ee = spectra[0]
                 self.ne = spectra[1]
@@ -185,7 +193,7 @@ class SphereMask:
             )
         if working_dir is None:
             working_dir = os.getcwd()
-        self.working_dir=working_dir
+        self.working_dir = working_dir
         self.npix = hp.nside2npix(self.nside)
         self.spins = spins
         self.spin0 = None
@@ -319,11 +327,13 @@ class SphereMask:
         self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
         return self._eff_area
 
-    def initiate_w_arrs(self,cov_ell_buffer):
-     
+    def initiate_w_arrs(self, cov_ell_buffer):
+
         buffer = cov_ell_buffer
         self.L = np.arange(self._exact_lmax + buffer + 1)
-        print("4D W_llpmmp will be calculated for lmax = {:d} + {:d}".format(self._exact_lmax,buffer))
+        print(
+            "4D W_llpmmp will be calculated for lmax = {:d} + {:d}".format(self._exact_lmax, buffer)
+        )
         self.M = np.arange(-self._exact_lmax - buffer, self._exact_lmax + buffer + 1)
         Nl = len(self.L)
         Nm = len(self.M)
@@ -341,8 +351,8 @@ class SphereMask:
         l1_ind = np.argmin(np.fabs(L1 - self.L))
         l2_ind = np.argmin(np.fabs(L2 - self.L))
         inds = (l1_ind, m1_ind, l2_ind, m2_ind)
-        self.buffer_lmax = self._exact_lmax # buffer in these sums does not change anything
-        
+        self.buffer_lmax = self._exact_lmax  # buffer in these sums does not change anything
+
         if self.spin0 is None:
             w0 = 0
         else:
@@ -383,8 +393,7 @@ class SphereMask:
             inds = (slice(0, 2), *inds)
             self.wpm_arr[inds] = [wp, wm]
 
-    
-    def w_arr(self, cov_ell_buffer=0,verbose=True):
+    def w_arr(self, cov_ell_buffer=0, verbose=True):
         self.set_wpmpath(cov_ell_buffer)
         if self.check_w_arr():
             self.load_w_arr()
@@ -396,7 +405,7 @@ class SphereMask:
         if verbose:
             print("Preparing list of l, m arguments...")
         for l1, L1 in enumerate(self.L):
-            #TODO: implement pos_m stuff here, so m1 is only calculated for positive m. Check, whether positive m also suffice for m2.
+            # TODO: implement pos_m stuff here, so m1 is only calculated for positive m. Check, whether positive m also suffice for m2.
             M1_arr = np.arange(-L1, L1 + 1)
             for l2, L2 in enumerate(self.L):
                 M2_arr = np.arange(-L2, L2 + 1)
@@ -476,24 +485,23 @@ class SphereMask:
     def load_w_arr(self):
         print("Loading Wpm0 arrays.")
         wpmfile = np.load(self.wpm_path)
-        print("Loaded with size {} mb.".format(getsizeof(wpmfile["wpm0"])/1024**2))
+        print("Loaded with size {} mb.".format(getsizeof(wpmfile["wpm0"]) / 1024**2))
         self._w_arr = wpmfile["wpm0"]
 
-    def set_wpm_string(self,cov_ell_buffer):
-        
+    def set_wpm_string(self, cov_ell_buffer):
+
         charstring = "_l{:d}_n{:d}_{}.npz".format(
             self._exact_lmax + cov_ell_buffer,
             self.nside,
             self.maskname,
-            
         )
         return charstring
 
-    def set_wpmpath(self,cov_ell_buffer):
+    def set_wpmpath(self, cov_ell_buffer):
         charac = self.set_wpm_string(cov_ell_buffer)
-        #covname = "covariances/cov_xi" + charac
-        if not os.path.isdir(self.working_dir+'/wpm_arrays'):
-            command = "mkdir "+self.working_dir+"/wpm_arrays"
+        # covname = "covariances/cov_xi" + charac
+        if not os.path.isdir(self.working_dir + "/wpm_arrays"):
+            command = "mkdir " + self.working_dir + "/wpm_arrays"
             os.system(command)
-        wpm_name = self.working_dir+"/wpm_arrays/wpm" + charac
+        wpm_name = self.working_dir + "/wpm_arrays/wpm" + charac
         self.wpm_path = wpm_name
