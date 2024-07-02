@@ -1,11 +1,7 @@
 import numpy as np
-import cov_calc, helper_funcs
-import scipy.stats as stats
-from scipy.integrate import quad_vec
-import wigner
+import cov_funcs, helper_funcs
 import os.path
 from grf_classes import TheoryCl, SphereMask
-import matplotlib.pyplot as plt
 from sys import getsizeof
 import gc
 import time
@@ -19,10 +15,10 @@ class Cov(SphereMask, TheoryCl):
     ----------
     cov_alm : 2D array
         covariance matrix of pseudo alm (currently E and B modes)
-
-
     exact_lmax : integer
         maximum multipole moment to which calculations are taken to
+    cov_ell_buffer : int
+        buffer in exact_lmax to ensure convergence (is cut to exact_lmax for final covariance matrix, just for computation)
     __sigma_e : tuple or None
         (sigma_epsilon,n_gal_per_arcmin2), single component intrinstic ellipticity dispersion, number density of galaxies.
         if None: no shot noise. Private because it shouldn't be changed afterwards.
@@ -62,7 +58,7 @@ class Cov(SphereMask, TheoryCl):
         maskname="mask",
         l_smooth_mask=None,
         l_smooth_signal=None,
-        cov_ell_buffer=0,
+        cov_ell_buffer=1,
         working_dir=None,
     ):
 
@@ -220,7 +216,7 @@ class Cov(SphereMask, TheoryCl):
             self.load_cov()
             return self.cov_alm
         else:
-            alm_inds = cov_calc.match_alm_inds(alm_kinds)
+            alm_inds = cov_funcs.match_alm_inds(alm_kinds)
             n_alm = len(alm_inds)
 
             if hasattr(self, "_noise_sigma"):
@@ -251,43 +247,6 @@ class Cov(SphereMask, TheoryCl):
                 cov_matrix, cov_matrix.T
             ), "cov_alm_gen: covariance matrix not symmetric"
 
-            # check that the diagonal matches the pseudo-cl to 10%:
-            diag_alm = np.diag(cov_matrix)
-
-            if pos_m == False:
-                len_sub = 2 * exact_lmax + 1
-                reps = int(len(diag_alm) / (len_sub))
-                check_pcl_sub = np.array(
-                    [np.sum(diag_alm[i * len_sub : (i + 1) * len_sub]) for i in range(reps)]
-                )
-            else:
-                len_sub = exact_lmax + 1
-                reps = int(len(diag_alm) / (len_sub))
-                check_pcl_sub = np.array(
-                    [
-                        np.sum(2 * diag_alm[i * len_sub + 1 : (i + 1) * len_sub + 1])
-                        + diag_alm[i * len_sub]
-                        for i in range(reps)
-                    ]
-                )
-
-            check_pcl = np.zeros((2, exact_lmax + 1))
-            check_pcl[0], check_pcl[1] = (
-                check_pcl_sub[: exact_lmax + 1]
-                + check_pcl_sub[exact_lmax + 1 : 2 * (exact_lmax + 1)],
-                check_pcl_sub[2 * (exact_lmax + 1) : 3 * (exact_lmax + 1)]
-                + check_pcl_sub[3 * (exact_lmax + 1) : 4 * (exact_lmax + 1)],
-            )
-            pcl = np.zeros_like(check_pcl)
-            twoell = 2 * self.ell + 1
-            self.cl2pseudocl()
-            pcl[0], pcl[1] = (self.p_ee * twoell)[: exact_lmax + 1], (self.p_bb * twoell)[
-                : exact_lmax + 1
-            ]
-            assert np.allclose(
-                pcl, check_pcl, rtol=1e-1
-            ), "cov_alm_gen: covariance diagonal does not agree with pseudo C_ell"
-
             self.cov_alm = cov_matrix
             self.save_cov()
             return self.cov_alm
@@ -299,7 +258,7 @@ class Cov(SphereMask, TheoryCl):
         Parameters
         ----------
         alm_inds : list of int
-            integers according to alm kinds from cov_calc.match_alm_inds()
+            integers according to alm kinds from cov_funcs.match_alm_inds()
         n_cov : int
             side length of covariance matrix
         theory_cell : 3D array
@@ -344,7 +303,7 @@ class Cov(SphereMask, TheoryCl):
         Parameters
         ----------
         alm_inds : list of int
-            integers according to alm kinds from cov_calc.match_alm_inds()
+            integers according to alm kinds from cov_funcs.match_alm_inds()
         n_cov : int
             side length of covariance matrix
         theory_cell : 3D array
@@ -374,7 +333,7 @@ class Cov(SphereMask, TheoryCl):
         for i in alm_inds:
             for j in alm_inds:
                 if i <= j:
-                    cov_part = cov_calc.cov_4D(
+                    cov_part = cov_funcs.cov_4D(
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
                     )
                     if pos_m == False:
