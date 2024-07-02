@@ -24,7 +24,7 @@ class TwoPointSimulation(Cov):
         seps_in_deg,
         ximode="namaster",
         batchsize=1,
-        simpath="simulations/",
+        simpath=None,
         exact_lmax=None,
         spins=[2],
         lmax=None,
@@ -39,6 +39,7 @@ class TwoPointSimulation(Cov):
         maskname="mask",
         l_smooth_mask=None,
         l_smooth_signal=None,
+        healpix_datapath=None,
     ):
         super().__init__(
             exact_lmax,
@@ -59,8 +60,16 @@ class TwoPointSimulation(Cov):
 
         self.ximode = ximode
         self.batchsize = batchsize
-        self.simpath = simpath
+        if simpath is None:
+            current = os.getcwd()
+            if not os.path.isdir(current + "/simulations"):
+                command = "mkdir simulations"
+                os.system(command)
+            self.simpath = current + "/simulations"
+        else:
+            self.simpath = simpath
         self.seps_in_deg = seps_in_deg
+        self.healpix_datapath = healpix_datapath
 
     def create_maps(self, seed=None):
         """
@@ -123,7 +132,8 @@ class TwoPointSimulation(Cov):
                 maps_TQU_masked,
                 iter=5,
                 use_pixel_weights=True,
-                datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
+                datapath=self.healpix_datapath,
+                # "/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
             )
             return pcl_e, pcl_b, pcl_eb
 
@@ -332,7 +342,8 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
                     field_j,
                     iter=5,
                     use_pixel_weights=True,
-                    datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
+                    datapath=self.healpix_datapath,
+                    # "/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
                 )
 
                 pcl_s.append([pcl_e, pcl_b, pcl_eb])
