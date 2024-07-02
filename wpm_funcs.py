@@ -1,11 +1,7 @@
 import wigner
 import healpy as hp
 import numpy as np
-import time
 from scipy.special import factorial
-
-
-# what if the mask is a class containing information about spins, geometry and the wlmlpmp?
 
 
 def w_factor(l, l1, l2):
