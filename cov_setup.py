@@ -384,6 +384,7 @@ class Cov(SphereMask, TheoryCl):
         else:
             try:
                 del self._noise_sigma
+                del self.pixelsigma
             except:
                 pass
 
