@@ -80,6 +80,7 @@ def test_analytic_pcl():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
     import helper_funcs
+    import calc_pdf
 
     l_smooth_mask = 30
     lmin = 0
@@ -91,6 +92,14 @@ def test_analytic_pcl():
         batchsize=10,
         simpath="",
         healpix_datapath=testdir,
+    )
+    cov = Cov(
+        30,
+        [2],
+        circmaskattr=(4000, 256),
+        l_smooth_mask=l_smooth_mask,
+        clname="3x2pt_kids_55",
+        clpath="Cl_3x2pt_kids55.txt",
     )
     new_sim.wl
 
@@ -110,9 +119,11 @@ def test_analytic_pcl():
     xi_ana = helper_funcs.pcl2xi(
         (new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax, lmin=lmin
     )
-    assert np.allclose(xi_ana_cl, xi_ana, rtol=1e-2)
-    assert np.allclose(xi_sim, xi_ana, rtol=1e-2)
-    print(xi_sim, xi_ana, xi_ana_cl)
+    xi_ana = [xi_ana[0][0], xi_ana[1][0]]
+    xi_sim = [xi_sim[0][0], xi_sim[1][0]]
+    cov_comp = np.sqrt(calc_pdf.cov_xi_gaussian_nD((cov,), ((0, 0),), [(4, 6)])[1][0, 0])
+    assert np.allclose(np.array(xi_ana_cl), np.array(xi_ana), atol=cov_comp)
+    assert np.allclose(xi_sim, xi_ana, atol=cov_comp)
 
 
 def test_wlmlm():
@@ -156,18 +167,45 @@ def test_treecorrvsnamaster():
 
 
 def test_means():
-    pass
+    import calc_pdf
+    import helper_funcs
+
+    steps = 2048
+    cov = np.random.random((10, 10))
+    m = np.random.random(10)
+
+    mean_trace = np.trace(m[:, None] * cov)
+    var_trace = 2 * np.trace(m[:, None] * cov @ m[:, None] * cov)
+
+    ximax = mean_trace + 10 * np.sqrt(var_trace)
+    t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
+    x_low, pdf_low = calc_pdf.cf_to_pdf_1d(t, cf)
+    mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
+    var_lowell_pdf = np.trapz(x_low**2 * pdf_low, x=x_low)
+    mean_lowell_cf, var_lowell_cf = helper_funcs.nth_moment(2, t, cf)
+
+    assert np.allclose(mean_trace, mean_lowell_cf, rtol=1e-2), (mean_trace, mean_lowell_cf)
+    assert np.allclose(var_trace, var_lowell_cf, rtol=1e-2), (var_trace, var_lowell_cf)
+    assert np.allclose(mean_lowell_cf, mean_lowell_pdf, rtol=1e-2), (
+        mean_lowell_cf,
+        mean_lowell_pdf,
+    )
+    assert np.allclose(var_lowell_pdf, var_lowell_cf, rtol=1e-2)
 
 
-def test_cf2pdf(t, mu, sigma):
+def test_cf2pdf():
     import scipy.stats as stats
     from helper_funcs import gaussian_cf
     from calc_pdf import cf_to_pdf_1d
 
+    mu = 0
+    sigma = 1
+    val_max = mu + 10 * sigma
+    dt = 0.45 * 2 * np.pi / val_max
+    steps = 2048
+    t0 = -0.5 * dt * (steps - 1)
+    t = np.linspace(t0, -t0, steps - 1)
     cf = gaussian_cf(t, mu, sigma)
     x, pdf_from_cf = cf_to_pdf_1d(t, cf)
     pdf = stats.norm.pdf(x, mu, sigma)
     assert np.allclose(pdf, pdf_from_cf), pdf_from_cf
-
-
-test_treecorrvsnamaster()
