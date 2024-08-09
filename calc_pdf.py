@@ -19,6 +19,38 @@ def pdf_xi_1D(
     high_ell_extension=True,
     m_path="/cluster/work/refregier/veoehl/m_matrices/",
 ):
+    """
+    Calculates 1D likelihoods of a correlation function for several angular separation bins.
+
+    Parameters
+    ----------
+    ang_bins_in_deg : array of tuples
+        angular separation bins in degree
+    cov_objects : tuple of Cov() objects
+        objects of the class Cov() containing covariance of pseudo-alm; can be two if cross-correlation of two redshift bins is attempted
+    comb : tuple, optional
+        combination of redshift bins according to order of covariance objects, by default (0, 0)
+    kind : str, optional
+        kind of spin-2 correlation function, "p" or "m", by default "p"
+    steps : int, optional
+        number of steps for the characteristic function grid, by default 4096
+    savestuff : bool, optional
+        whether to save characteristic functions and pdfs, by default True
+    high_ell_extension : bool, optional
+        whether apply the Gaussian extension of the likleihood up to the bandlimit of the given mask, by default True
+    m_path : str, optional
+        path for the combination matrices, by default "/cluster/work/refregier/veoehl/m_matrices/"
+
+    Returns
+    -------
+    arrays
+       arrays containing correlation function values, corresponding likelihood and an array of summaries (mean, std and skewness)
+
+    Raises
+    ------
+    RuntimeError
+        _description_
+    """
     exact_lmax = cov_objects[0].exact_lmax
     maskname = cov_objects[0].maskname
     x_arr = np.zeros((len(ang_bins_in_deg), steps - 1))
