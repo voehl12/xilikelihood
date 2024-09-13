@@ -58,7 +58,7 @@ class Cov(SphereMask, TheoryCl):
         maskname="mask",
         l_smooth_mask=None,
         l_smooth_signal=None,
-        cov_ell_buffer=1,
+        cov_ell_buffer=10,
         working_dir=None,
     ):
 
