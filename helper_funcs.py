@@ -64,7 +64,7 @@ def nth_moment(n, t, cf):
     derivs_at_zero = [
         1j * UnivariateSpline(t, cf.imag, k=k, s=0).derivative(n=i)(0)
         + UnivariateSpline(t, cf.real, k=k, s=0).derivative(n=i)(0)
-        for i in range(1, 4)
+        for i in range(1, n + 1)
     ]
     return [(1j**-k * derivs_at_zero[k - 1]) for k in range(1, n + 1)]
 
