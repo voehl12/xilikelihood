@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 from statsmodels.stats.moment_helpers import mnc2cum
 from statsmodels.distributions.edgeworth import ExpandedNormal
 import calc_pdf
@@ -48,10 +49,7 @@ def moments_nd(m, cov):
     dims = np.arange(ndim)
     prods = [m[i] @ cov for i in range(ndim)]
 
-    firsts = []
-    for dim in dims:
-        first_moment = np.trace(prods[dim])
-        firsts.append(first_moment)
+    firsts = [np.trace(prods[dim]) for dim in dims]
 
     seconds = np.full(((ndim, ndim)), np.nan)
     for comb in itertools.combinations_with_replacement(dims, 2):
@@ -67,20 +65,20 @@ def moments_nd(m, cov):
     thirds = []
     # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
     for comb in itertools.combinations_with_replacement(dims, 3):
-        one, two, three = comb
-        prod2 = prods[two] @ prods[three]
+        i, j, k = comb
+        prod2 = prods[j] @ prods[k]
         third_moment = (
-            np.prod([np.trace(prods[j]) for j in comb])
+            np.prod([np.trace(prods[m]) for m in comb])
             + 2
             * (
                 np.sum(
                     [
-                        np.trace(prods[k]) * np.sum(prods[l] * np.transpose(prods[n]))
-                        for (k, l, n) in [(one, two, three), (three, one, two), (two, three, one)]
+                        np.trace(prods[one]) * np.sum(prods[two] * np.transpose(prods[three]))
+                        for (one, two, three) in [(i, j, k), (k, i, j), (j, i, k)]
                     ]
                 )
             )
-            + 8 * np.sum(prods[one] * np.transpose(prod2))
+            + 8 * np.sum(prods[i] * np.transpose(prod2))
         )
         thirds.append(third_moment)
 
@@ -97,6 +95,8 @@ class MultiNormalExpansion:
         # should be extended to take any number of cumulants (just like the moment conversion function)
         ndim = len(self.cumulants[0])
         dims = np.arange(len(self.cumulants[0]))
+        assert len(x) == ndim, "h_1: x has wrong dimensions"
+
         lambda_inv = np.linalg.inv(self.cumulants[1])
 
         def h_1(x):
@@ -113,6 +113,7 @@ class MultiNormalExpansion:
             np.array 1d
                 first order hermite polynomial, evaluated at x
             """
+
             return np.dot(lambda_inv, x - self.cumulants[0])
 
         def h_2(x):
@@ -136,8 +137,10 @@ class MultiNormalExpansion:
         return [h_1(x), h_2(x), h_3(x)]
 
     def pdf(self, x: np.ndarray):
+        gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
+        extension = 1 + np.sum(self.hermite_nd(x)[2] * self.cumulants[2]) / 6
 
-        return pdf
+        return gaussian.pdf(x) * extension
 
 
 def get_edgeworth_1d(moments):
