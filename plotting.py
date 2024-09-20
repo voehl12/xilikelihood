@@ -288,9 +288,8 @@ def add_data_1d(ax,sims,color,name,mean=False,density=True,range=None,nbins=512)
         ax.axvline(np.mean(sims),color=color,linestyle='dashed')
 
 
-def read_2D_cf(configpath):
-    config = configparser.ConfigParser()
-    config.read(configpath)
+def read_2D_cf(config):
+    ndim = int(config["Run"]['ndim'])
     paths = config['Paths']
     params = config['Params']
     batchsize = int(config['Run']['batchsize'])
@@ -298,10 +297,8 @@ def read_2D_cf(configpath):
     steps = int(params['steps'])
     t_sets = np.load(paths['t_sets'])['t']
 
+    xi_max = [float(params['ximax{:d}'.format(i)]) for i in range(ndim)]
     
-    xip_max1 = float(params['ximax1'])
-    xip_max2 = float(params['ximax2'])
-    xi_max = [xip_max1,xip_max2]
     t_inds, t_sets, t0_set, dt_set = calc_pdf.setup_t(xi_max,steps)
     
     
