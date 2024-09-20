@@ -47,17 +47,15 @@ def noise_cl_cube(noise_cl):
     return c_all
 
 
-
-
-
 def gaussian_cf(t, mu, sigma):
-    
+
     return np.exp(1j * t * mu - 0.5 * sigma**2 * t**2)
+
 
 def gaussian_cf_nD(t_sets, mu, cov):
     tmu = np.dot(t_sets, mu)
-    cov_t = np.einsum('ij,kj->ki',cov,t_sets)
-    tct = np.einsum('ki,ki->k',t_sets,cov_t)
+    cov_t = np.einsum("ij,kj->ki", cov, t_sets)
+    tct = np.einsum("ki,ki->k", t_sets, cov_t)
     return np.exp(1j * tmu - 0.5 * tct)
 
 
@@ -179,6 +177,7 @@ def pcl2xi(pcl, prefactors, out_lmax, lmin=0):
 
     return xip, xim
 
+
 def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     """
     _summary_
@@ -205,18 +204,18 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
 
     xips = np.sum(
-        p_cl_prefactors_p[None,:, lmin : out_lmax + 1]
+        p_cl_prefactors_p[None, :, lmin : out_lmax + 1]
         * l
-        * (pcls_e[:,None,lmin : out_lmax + 1] + pcls_b[:,None,lmin : out_lmax + 1]),
+        * (pcls_e[:, None, lmin : out_lmax + 1] + pcls_b[:, None, lmin : out_lmax + 1]),
         axis=-1,
     )
     xims = np.sum(
-        p_cl_prefactors_m[None,:, lmin : out_lmax + 1]
+        p_cl_prefactors_m[None, :, lmin : out_lmax + 1]
         * l
         * (
-            pcls_e[:,None,lmin : out_lmax + 1]
-            - pcls_b[:,None,lmin : out_lmax + 1]
-            - 2j * pcls_eb[:,None,lmin : out_lmax + 1]
+            pcls_e[:, None, lmin : out_lmax + 1]
+            - pcls_b[:, None, lmin : out_lmax + 1]
+            - 2j * pcls_eb[:, None, lmin : out_lmax + 1]
         ),
         axis=-1,
     )
@@ -251,3 +250,21 @@ def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
     )
 
     return xip, xim
+
+
+def check_property_equal(instances, property_name):
+    """
+    Check if a specific property of all instances is equal.
+
+    Parameters:
+        instances (list): A list of instances to check.
+        property_name (str): The name of the property to check.
+
+    Returns:
+        bool: True if the property is equal for all instances, False otherwise.
+    """
+    if not instances:
+        return True  # If the list is empty, return True
+
+    first_value = getattr(instances[0], property_name)
+    return all(getattr(instance, property_name) == first_value for instance in instances)
