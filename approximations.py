@@ -81,6 +81,7 @@ def moments_nd(m, cov):
             + 8 * np.sum(prods[i] * np.transpose(prod2))
         )
         thirds.append(third_moment)
+    thirds = np.array(thirds)
 
     return [firsts, seconds, thirds]
 
@@ -132,13 +133,13 @@ class MultiNormalExpansion:
                     ]
                 )
                 h_3.append(h_ijk)
-            return h_3
+            return np.array(h_3)
 
         return [h_1(x), h_2(x), h_3(x)]
 
     def pdf(self, x: np.ndarray):
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
-        extension = 1 + np.sum(self.hermite_nd(x)[2] * self.cumulants[2]) / 6
+        extension = 1 + np.dot(self.hermite_nd(x)[2],self.cumulants[2]) / 6
 
         return gaussian.pdf(x) * extension
 
@@ -170,7 +171,8 @@ def ncmom2cum_nd(moments):
         len(moments) <= 3
     ), "ncmom2cum_nd: moments list too long, only implemented up to third order cumulants"
     conversion_functions = cumulant_generator()
-    cumulants = [conversion_functions[i](moments) for i in range(len(moments))]
+    cumulants = [c_function(moments) for c_function in conversion_functions]
+    
 
     return cumulants
 
@@ -221,8 +223,6 @@ def cumulant_generator():
         n += 1
 
 
-def get_cumulants(moments):
-    return mnc2cum(moments)
 
 
 def get_exact(m, cov, steps=4096):
