@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import calc_pdf
 
 
 class File:
@@ -115,6 +116,7 @@ def read_2D_cf(config):
 
 
 def read_sims_nd(filepath,corr_num,angbin,njobs,lmax,kind='xip'):
+    # should make this truly nd
     allxi1,allxi2=[],[]
     missing = []
     for i in range(1,njobs+1):
