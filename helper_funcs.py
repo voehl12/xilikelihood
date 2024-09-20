@@ -250,3 +250,21 @@ def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
     )
 
     return xip, xim
+
+
+def check_property_equal(instances, property_name):
+    """
+    Check if a specific property of all instances is equal.
+
+    Parameters:
+        instances (list): A list of instances to check.
+        property_name (str): The name of the property to check.
+
+    Returns:
+        bool: True if the property is equal for all instances, False otherwise.
+    """
+    if not instances:
+        return True  # If the list is empty, return True
+
+    first_value = getattr(instances[0], property_name)
+    return all(getattr(instance, property_name) == first_value for instance in instances)
