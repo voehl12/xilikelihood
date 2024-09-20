@@ -55,7 +55,7 @@ def save_matrix(m, filename, kind="M"):
     np.savez(filename, matrix=m)
 
 def read_2D_cf(config):
-    ndim = int(config["Run"]['ndim'])
+    ndim = 2#int(config["Run"]['ndim'])
     paths = config['Paths']
     params = config['Params']
     batchsize = int(config['Run']['batchsize'])
@@ -63,7 +63,7 @@ def read_2D_cf(config):
     steps = int(params['steps'])
     t_sets = np.load(paths['t_sets'])['t']
 
-    xi_max = [float(params['ximax{:d}'.format(i)]) for i in range(ndim)]
+    xi_max = [float(params['ximax{:d}'.format(i)]) for i in range(1,ndim+1)]
     
     t_inds, t_sets, t0_set, dt_set = calc_pdf.setup_t(xi_max,steps)
     
