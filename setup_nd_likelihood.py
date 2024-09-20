@@ -19,7 +19,7 @@ def setup_config():
 
 def save_config(config):
     steps = config["Run"]["steps"]
-    configname = config["Paths"]["result"] + "_config_{:d}.ini".format(int(steps))
+    configname = config["Paths"]["result"] + "config_{:d}.ini".format(int(steps))
     with open(configname, "w") as configfile:
         config.write(configfile)
 
