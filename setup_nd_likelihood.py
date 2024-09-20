@@ -89,7 +89,7 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     tset_path = config["Paths"]["t_sets"]
     _, t_sets, _, _ = calc_pdf.setup_t(xi_max, steps)
     np.savez(tset_path, t=t_sets)
-
+    # ximax should go up to number of dimensions and save all
     config["Params"] = {
         "ximax1": str(xi_max[0]),
         "ximax2": str(xi_max[1]),
