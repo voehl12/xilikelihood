@@ -166,11 +166,11 @@ def ncmom2cum_nd(moments):
     list
         list of lists of first, second and third cumulants. second cumulants are given out in the shape of a covariance matrix.
     """
-
+    n = len(moments)
     assert (
-        len(moments) <= 3
+        n <= 3
     ), "ncmom2cum_nd: moments list too long, only implemented up to third order cumulants"
-    conversion_functions = cumulant_generator()
+    conversion_functions = cumulant_generator(n)
     cumulants = [c_function(moments) for c_function in conversion_functions]
 
     return cumulants
@@ -215,9 +215,9 @@ def select_conversion_function(n):
         raise ValueError("n > 2 not implemented")
 
 
-def cumulant_generator():
+def cumulant_generator(N):
     n = 0
-    while True:
+    while n < N:
         yield select_conversion_function(n)
         n += 1
 
