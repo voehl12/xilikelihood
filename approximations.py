@@ -91,7 +91,7 @@ class MultiNormalExpansion:
     def __init__(self, cumulants) -> None:
         self.cumulants = cumulants
 
-    def hermite_nd(self, x: np.ndarray):
+    def hermite_nd(self, x: np.ndarray, order=3):
         # x: point in R^n
         # should be extended to take any number of cumulants (just like the moment conversion function)
         ndim = len(self.cumulants[0])
@@ -112,34 +112,72 @@ class MultiNormalExpansion:
             Returns
             -------
             np.array 2d of size Nxn
-                first order hermite polynomial, evaluated at x
+                first order hermite polynomials, evaluated at x
             """
 
-            return np.einsum('ij,kj->ki',lambda_inv, x - self.cumulants[0])
+            return np.einsum("ij,kj->ki", lambda_inv, x - self.cumulants[0])
 
         def h_2(x):
+            """
+            Calculate second order hermite polynomials for n-dimensional distribution.
+
+            Parameters
+            ----------
+            x : np.2darray of size Nxn
+                points in R^n
+
+            Returns
+            -------
+            np.array 3d of size Nxnxn
+                second order hermite polynomials, evaluated at x
+
+            """
             # second order hermite polynomials arranged in a 2d square matrix, evaluated at x
-            return -lambda_inv + np.outer(h_1(x), h_1(x))
+            h1 = h_1(x)
+            return np.einsum("ik,il->ikl", h1, h1) - lambda_inv
 
         def h_3(x):
+            """
+            Calculate third order hermite polynomials for n-dimensional distribution.
+
+            Parameters
+            ----------
+            x : np.2darray of size Nxn
+                points in R^n
+
+            Returns
+            -------
+            np.array 2d of size NxK, where K = n(n+1)(n+2)/6
+                third order hermite polynomials, evaluated at x
+
+            """
             # third order hermite polynomials arranged in a list according to the order of itertools.combinations_with_replacement
             h_3 = []
+            h1 = h_1(x)
             for comb in itertools.combinations_with_replacement(dims, 3):
                 i, j, k = comb
-                h_ijk = np.prod([h_1(x)[m] for m in comb]) - np.sum(
+                h_ijk = np.prod([h1[:, m] for m in comb], axis=0) - np.sum(
                     [
-                        h_1(x)[one] * lambda_inv[two, three]
+                        h1[:, one] * lambda_inv[two, three]
                         for (one, two, three) in [(i, j, k), (j, i, k), (k, i, j)]
-                    ]
+                    ],
+                    axis=0,
                 )
                 h_3.append(h_ijk)
             return np.array(h_3)
 
-        return [h_1(x), h_2(x), h_3(x)]
+        if order == 1:
+            return h_1(x)
+        elif order == 2:
+            return h_2(x)
+        elif order == 3:
+            return h_3(x)
+        else:
+            raise ValueError("order > 3 not implemented")
 
     def pdf(self, x: np.ndarray):
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
-        extension = 1 + np.dot(self.hermite_nd(x)[2], self.cumulants[2]) / 6
+        extension = 1 + np.einsum("ji,j->i", self.hermite_nd(x), self.cumulants[2]) / 6
 
         return gaussian.pdf(x) * extension
 
