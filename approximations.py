@@ -96,7 +96,7 @@ class MultiNormalExpansion:
         # should be extended to take any number of cumulants (just like the moment conversion function)
         ndim = len(self.cumulants[0])
         dims = np.arange(len(self.cumulants[0]))
-        assert len(x) == ndim, "h_1: x has wrong dimensions"
+        assert len(x[-1]) == ndim, "h_1: x has wrong dimensions"
 
         lambda_inv = np.linalg.inv(self.cumulants[1])
 
@@ -106,16 +106,16 @@ class MultiNormalExpansion:
 
             Parameters
             ----------
-            x : np.1darray of length n
-                point in R^n
+            x : np.2darray of size Nxn
+                points in R^n
 
             Returns
             -------
-            np.array 1d
+            np.array 2d of size Nxn
                 first order hermite polynomial, evaluated at x
             """
 
-            return np.dot(lambda_inv, x - self.cumulants[0])
+            return np.einsum('ij,kj->ki',lambda_inv, x - self.cumulants[0])
 
         def h_2(x):
             # second order hermite polynomials arranged in a 2d square matrix, evaluated at x
