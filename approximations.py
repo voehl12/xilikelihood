@@ -139,7 +139,7 @@ class MultiNormalExpansion:
 
     def pdf(self, x: np.ndarray):
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
-        extension = 1 + np.dot(self.hermite_nd(x)[2],self.cumulants[2]) / 6
+        extension = 1 + np.dot(self.hermite_nd(x)[2], self.cumulants[2]) / 6
 
         return gaussian.pdf(x) * extension
 
@@ -172,7 +172,6 @@ def ncmom2cum_nd(moments):
     ), "ncmom2cum_nd: moments list too long, only implemented up to third order cumulants"
     conversion_functions = cumulant_generator()
     cumulants = [c_function(moments) for c_function in conversion_functions]
-    
 
     return cumulants
 
@@ -191,10 +190,10 @@ def select_conversion_function(n):
         second = moments[1]
         third = moments[2]
         third_cumulants = []
-        for comb in itertools.combinations_with_replacement(dims, 3):
+        for n, comb in enumerate(itertools.combinations_with_replacement(dims, 3)):
             i, j, k = comb
             kappa_ijk = (
-                third[i, j, k]
+                third[n]
                 - np.sum(
                     [
                         first[one] * second[two, three]
@@ -221,8 +220,6 @@ def cumulant_generator():
     while True:
         yield select_conversion_function(n)
         n += 1
-
-
 
 
 def get_exact(m, cov, steps=4096):
