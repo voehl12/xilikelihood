@@ -49,39 +49,46 @@ def moments_nd(m, cov):
     dims = np.arange(ndim)
     prods = [m[i] @ cov for i in range(ndim)]
 
-    firsts = [np.trace(prods[dim]) for dim in dims]
+    def first_moments():
+        return [np.trace(prods[dim]) for dim in dims]
 
-    seconds = np.full(((ndim, ndim)), np.nan)
-    for comb in itertools.combinations_with_replacement(dims, 2):
-        one, two = comb
-        second_moment = np.trace(prods[one]) * np.trace(prods[two]) + 2 * np.sum(
-            prods[one] * np.transpose(prods[two])
-        )
-        seconds[one, two] = second_moment
-
-    seconds = np.where(np.isnan(seconds), seconds.T, seconds)
-    assert np.allclose(seconds, seconds.T), "moments_nd: covariance matrix not symmetric"
-
-    thirds = []
-    # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
-    for comb in itertools.combinations_with_replacement(dims, 3):
-        i, j, k = comb
-        prod2 = prods[j] @ prods[k]
-        third_moment = (
-            np.prod([np.trace(prods[m]) for m in comb])
-            + 2
-            * (
-                np.sum(
-                    [
-                        np.trace(prods[one]) * np.sum(prods[two] * np.transpose(prods[three]))
-                        for (one, two, three) in [(i, j, k), (k, i, j), (j, i, k)]
-                    ]
-                )
+    def second_moments(firsts):
+        seconds = np.full(((ndim, ndim)), np.nan)
+        for comb in itertools.combinations_with_replacement(dims, 2):
+            one, two = comb
+            second_moment = firsts[one] * firsts[two] + 2 * np.sum(
+                prods[one] * np.transpose(prods[two])
             )
-            + 8 * np.sum(prods[i] * np.transpose(prod2))
-        )
-        thirds.append(third_moment)
-    thirds = np.array(thirds)
+            seconds[one, two] = second_moment
+        seconds = np.where(np.isnan(seconds), seconds.T, seconds)
+        assert np.allclose(seconds, seconds.T), "moments_nd: covariance matrix not symmetric"
+        return seconds
+
+    def third_moments(firsts, seconds):
+        thirds = []
+        # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
+        for comb in itertools.combinations_with_replacement(dims, 3):
+            i, j, k = comb
+            prod2 = prods[j] @ prods[k]
+            third_moment = (
+                np.prod([firsts[m] for m in comb])
+                + 2
+                * (
+                    np.sum(
+                        [
+                            firsts[one] * np.sum(prods[two] * np.transpose(prods[three]))
+                            for (one, two, three) in [(i, j, k), (k, i, j), (j, i, k)]
+                        ]
+                    )
+                )
+                + 8 * np.sum(prods[i] * np.transpose(prod2))
+            )
+            thirds.append(third_moment)
+        thirds = np.array(thirds)
+
+    firsts = first_moments()
+    seconds = second_moments(firsts)
+    thirds = third_moments(firsts, seconds)
 
     return [firsts, seconds, thirds]
 
