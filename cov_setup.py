@@ -328,13 +328,14 @@ class Cov(SphereMask, TheoryCl):
                 getsizeof(cov_matrix) / 1024**2
             )
         )
-        numparts = (len(alm_inds) ** 2 - len(alm_inds)) / 2 + len(alm_inds)
+        num_alm = len(alm_inds)
+        numparts = (num_alm**2 - num_alm) / 2 + num_alm
         part = 1
         for i in alm_inds:
             for j in alm_inds:
                 if i <= j:
-                    cov_part = cov_funcs.cov_4D(
-                        i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell, pos_m=pos_m
+                    cov_part = cov_funcs.cov_4D_jit(
+                        i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell
                     )
                     if pos_m == False:
                         len_2D = (cov_part.shape[0] - buffer) * (cov_part.shape[1] - 2 * buffer)
