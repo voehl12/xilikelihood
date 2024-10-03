@@ -303,6 +303,13 @@ def get_cov_pos(comb):
     return (row, column)
 
 
+def get_cov_n(comb):
+    row, column = get_cov_pos(comb)
+    rowlengths = np.arange(1, row)
+    n = np.sum(rowlengths) + column
+    return n
+
+
 def cov_cl_nD(cov_objects, xicombs=((1, 1), (1, 0))):
     # xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell, cross-corr always with the larger number first
     c = len(cov_objects)
