@@ -38,6 +38,7 @@ def setup_cls(config, cl_paths, cl_names, noise_contribs):
 
 def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     # split in geometry and cosmology?
+
     ndim = len(combs)
     config["Run"] = {"steps": str(steps), "ndim": str(ndim)}
 
@@ -56,7 +57,7 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     nside = covs[0].nside
     config["Geometry"] = {"area": area, "nside": nside}
 
-    for i in range(len(ang_bins_in_deg)):
+    for i in range(ndim):
         config.set("Geometry", "lower{:d}".format(i), str(ang_bins_in_deg[i][0]))
         config.set("Geometry", "upper{:d}".format(i), str(ang_bins_in_deg[i][1]))
 
@@ -90,12 +91,14 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     _, t_sets, _, _ = calc_pdf.setup_t(xi_max, steps)
     np.savez(tset_path, t=t_sets)
     # ximax should go up to number of dimensions and save all
+    combs_n = [calc_pdf.get_cov_n(comb) for comb in combs]
     config["Params"] = {
-        "ximax1": str(xi_max[0]),
-        "ximax2": str(xi_max[1]),
         "l_exact": l_exact,
         "l_buffer": ell_buffer,
     }
+    for i in range(ndim):
+        config.set("Params", "comb{:d}".format(i), str(combs_n[i]))
+        config.set("Params", "ximax{:d}".format(i), str(xi_max[i]))
 
 
 def setup_cluster_computation(config, jobnum, steps):
