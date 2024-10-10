@@ -85,6 +85,7 @@ def moments_nd(m, cov):
             )
             thirds.append(third_moment)
         thirds = np.array(thirds)
+        return thirds
 
     firsts = first_moments()
     seconds = second_moments(firsts)
