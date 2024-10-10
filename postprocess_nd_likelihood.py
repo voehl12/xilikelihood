@@ -32,10 +32,12 @@ def compare_to_sims(config, simpath):
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
     allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], 1000, exact_lmax)
 
-    pass
+    orders = [1, 2, 3]
+    stats = get_stats_from_sims(allxis, orders)
+    return stats
 
 
-def get_stats_from_sims(sims):
+def get_stats_from_sims(sims, orders):
 
     dims = np.arange(sims.shape[0])
     n_sims = sims.shape[1]
@@ -54,6 +56,9 @@ def get_stats_from_sims(sims):
                 moment = np.mean(np.prod([sims[i] for i in comb], axis=0))
                 higher_moments.append(moment)
             return np.array(higher_moments)
+
+    stats = [moments_nd(order) for order in orders]
+    return stats
 
 
 def compare_to_gaussian(cov_objects):
