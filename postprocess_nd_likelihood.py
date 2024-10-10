@@ -6,7 +6,9 @@ import file_handling
 import itertools
 from scipy.stats import moment
 
+#class ExactLikelihood()
 
+#class EdgeworthLikelihood()
 def load_config(configpath):
     config = configparser.ConfigParser()
     config.read(configpath)
@@ -28,11 +30,13 @@ def compare_to_sims(config, simpath):
         (int(angbins[0][1]), int(angbins[1][1])),
         (int(angbins[2][1]), int(angbins[3][1])),
     )
-    comb_n = [params["comb{:d}".format(i)] for i in range(int(config["Run"]["ndim"]))]
+    comb_n = [int(params["comb{:d}".format(i)]) for i in range(int(config["Run"]["ndim"]))]
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
+    print('Loading simulations...')
     allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], 1000, exact_lmax)
 
     orders = [1, 2, 3]
+    print('Calculating statistics...')
     stats = get_stats_from_sims(allxis, orders)
     return stats
 
