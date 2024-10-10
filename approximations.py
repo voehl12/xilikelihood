@@ -90,7 +90,7 @@ def moments_nd(m, cov):
     seconds = second_moments(firsts)
     thirds = third_moments(firsts, seconds)
 
-    return [firsts, seconds, thirds]
+    return firsts, seconds, thirds
 
 
 class MultiNormalExpansion:
