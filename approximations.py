@@ -184,8 +184,12 @@ class MultiNormalExpansion:
             raise ValueError("order > 3 not implemented")
 
     def pdf(self, x: np.ndarray):
+        assert len(self.cumulants) >= 2
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
-        extension = 1 + np.einsum("ji,j->i", self.hermite_nd(x), self.cumulants[2]) / 6
+        if len(self.cumulants) == 2:
+            extension = 1
+        else:
+            extension = 1 + np.einsum("ji,j->i", self.hermite_nd(x), self.cumulants[2]) / 6
 
         return gaussian.pdf(x) * extension
 
