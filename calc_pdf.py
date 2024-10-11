@@ -309,6 +309,19 @@ def get_cov_n(comb):
     n = np.sum(rowlengths) + column
     return n
 
+def get_combs(cov_n):
+    row = -1
+    sum_rows = 0
+    while sum_rows < cov_n:
+        row += 1
+        rowlength = row + 1
+        sum_rows += rowlength
+        
+    return (row,sum_rows-cov_n-1)
+    
+
+   
+
 
 def cov_cl_nD(cov_objects, xicombs=((1, 1), (1, 0))):
     # xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell, cross-corr always with the larger number first
