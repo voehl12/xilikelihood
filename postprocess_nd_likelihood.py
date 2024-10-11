@@ -22,15 +22,12 @@ def convert_nd_cf_to_pdf(config):
 
 
 def compare_to_sims(config, simpath):
-    angbins = config.items("Geometry")[2:]
+    
     params = config["Params"]
     exact_lmax = int(params["l_exact"])
     # fix angbins to be flexible like in the config setup
-    angbins_in_deg = (
-        (int(angbins[0][1]), int(angbins[1][1])),
-        (int(angbins[2][1]), int(angbins[3][1])),
-    )
-    comb_n = [int(params["comb{:d}".format(i)]) for i in range(int(config["Run"]["ndim"]))]
+    angbins_in_deg = get_angbins(config)
+    comb_n = get_comb_ns(config)
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
     print('Loading simulations...')
     allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], 1000, exact_lmax)
@@ -40,6 +37,17 @@ def compare_to_sims(config, simpath):
     stats = get_stats_from_sims(allxis, orders)
     return stats
 
+def get_angbins(config):
+    angbins = config.items("Geometry")[2:]
+    angbins_in_deg = (
+        (int(angbins[0][1]), int(angbins[1][1])),
+        (int(angbins[2][1]), int(angbins[3][1])),
+    )
+    return angbins_in_deg
+
+def get_comb_ns(config):
+    params = config["Params"]
+    return  [int(params["comb{:d}".format(i)]) for i in range(int(config["Run"]["ndim"]))]
 
 def get_stats_from_sims(sims, orders):
 
@@ -64,8 +72,33 @@ def get_stats_from_sims(sims, orders):
     stats = [moments_nd(order) for order in orders]
     return stats
 
+def setup_covs(config):
+    theory = config.items('Theory')
+    covs = []
+    for i in range(int(theory[0][1])):
+        cl_path = theory[i+4][1]
+        cl_name = theory[i+4][0]
+        area, nside = int(geom['area']), int(geom['nside'])
+        new_cov = Cov(exact_lmax,
+                [2],
+                circmaskattr=(area,nside),
+                clpath=cl_path,
+                clname = cl_name,
+                sigma_e=noises[i],
+                l_smooth_mask=exact_lmax,
+                l_smooth_signal=None,
+                cov_ell_buffer=ell_buffer,)
+        covs.append(new_cov)
+    cov_objects = tuple(covs)
+    return covs
 
-def compare_to_gaussian(cov_objects):
+
+def compare_to_gaussian(config):
+    angbins_in_deg = get_angbins(config)
+    params = config['Params']
+    exact_lmax = int(params['l_exact'])
+    xi_combs = [calc_pdf.get_combs(comb_n) for comb_n in get_comb_ns(config)]
+    cov_objects = setup_covs(config)
     mu, cov = calc_pdf.cov_xi_gaussian_nD(
         cov_objects, xi_combs=xi_combs, angbins_in_deg=angbins_in_deg, lmin=0, lmax=exact_lmax
     )
