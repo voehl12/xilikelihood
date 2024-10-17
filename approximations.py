@@ -99,6 +99,19 @@ class MultiNormalExpansion:
     def __init__(self, cumulants) -> None:
         self.cumulants = cumulants
 
+    def normalize_third_cumulant(self):
+        covariance = self.cumulants[1]
+        inv_cov = np.linalg.inv(covariance)
+        normalized_third_cumulant = []
+        for cum3, (i, j, k) in zip(
+            self.cumulants[2], itertools.combinations_with_replacement(range(len(covariance)), 3)
+        ):
+            normalized_third_cumulant.append(
+                cum3 / np.sqrt(inv_cov[i, i] * inv_cov[j, j] * inv_cov[k, k])
+            )
+
+        return np.array(normalized_third_cumulant)
+
     def hermite_nd(self, x: np.ndarray, order=3):
         # x: point in R^n
         # should be extended to take any number of cumulants (just like the moment conversion function)
