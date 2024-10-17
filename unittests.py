@@ -209,3 +209,130 @@ def test_cf2pdf():
     x, pdf_from_cf = cf_to_pdf_1d(t, cf)
     pdf = stats.norm.pdf(x, mu, sigma)
     assert np.allclose(pdf, pdf_from_cf), pdf_from_cf
+
+
+def test_hermite():
+    import scipy.stats as stats
+    from approximations import MultiNormalExpansion
+    import itertools
+
+    point_3d = np.random.random(3)
+    mu = np.zeros(3)
+    cov = np.eye(3)
+    expansion = MultiNormalExpansion([mu, cov])
+    points_3d = [point_3d]
+    first_order = expansion.hermite_nd(points_3d, 1)
+    second_order = expansion.hermite_nd(points_3d, 2)
+    third_order = expansion.hermite_nd(points_3d, 3)
+    pdf = stats.multivariate_normal.pdf(point_3d, mean=mu, cov=cov)
+
+    def multivariate_gaussian_derivatives(x, mu, sigma):
+        """
+        Compute the gradient and Hessian of the multivariate Gaussian PDF.
+
+        Parameters:
+        x (np.ndarray): Point at which to evaluate the derivatives.
+        mu (np.ndarray): Mean vector of the Gaussian distribution.
+        sigma (np.ndarray): Covariance matrix of the Gaussian distribution.
+
+        Returns:
+        gradient (np.ndarray): Gradient of the Gaussian PDF at x.
+        hessian (np.ndarray): Hessian of the Gaussian PDF at x.
+        """
+        k = len(mu)
+        sigma_inv = np.linalg.inv(sigma)
+        diff = x - mu
+        pdf = stats.multivariate_normal.pdf(x, mean=mu, cov=sigma)
+
+        # Gradient
+        gradient = -pdf * sigma_inv @ diff
+
+        # Hessian
+        hessian = pdf * (sigma_inv @ np.outer(diff, diff) @ sigma_inv - sigma_inv)
+
+        return gradient, hessian
+
+    gradient_3d, hessian_3d, third_3d = multivariate_gaussian_derivatives(point_3d, mu, cov)
+    gradient_hermite, hessian_hermite, third_hermite = (
+        -first_order[0] * pdf,
+        second_order[0] * pdf,
+        -third_order[0] * pdf,
+    )
+    assert np.allclose(gradient_3d, gradient_hermite)
+    assert np.allclose(hessian_3d, hessian_hermite)
+    assert np.allclose(third_3d, third_hermite)
+
+
+def test_edgeworth_nd():
+    import scipy.stats as stats
+    import postprocess_nd_likelihood
+    import approximations
+    import matplotlib.pyplot as plt
+
+    # Parameters for the multivariate t-distribution
+    mu = np.array([0, 0])  # Mean vector
+    Sigma = np.array([[1, 0.5], [0.5, 1]])  # Scale matrix (covariance matrix)
+    nu = 10  # Degrees of freedom
+
+    # Generate samples from the multivariate t-distribution
+    n_samples = 100000
+    samples = stats.multivariate_t.rvs(loc=mu, shape=Sigma, df=nu, size=n_samples).T
+    moments = postprocess_nd_likelihood.get_stats_from_sims(samples, [1, 2, 3])
+
+    cumulants = approximations.ncmom2cum_nd(moments)
+    analytical_mean = mu
+    analytical_cov = (nu / (nu - 2)) * Sigma
+    cumulants[0] = analytical_mean
+    cumulants[1] = analytical_cov
+
+    edgeworth_expansion = approximations.MultiNormalExpansion(cumulants)
+    third_cumulant_normalized = edgeworth_expansion.normalize_third_cumulant()
+    print("Normalized third cumulant: {}".format(third_cumulant_normalized))
+
+    test_points = np.random.multivariate_normal(mu, Sigma, 1000)
+    edgeworth_pdf_values = edgeworth_expansion.pdf(test_points)
+    t_dist_pdf_values = stats.multivariate_t.pdf(test_points, loc=mu, shape=Sigma, df=nu)
+
+    empirical_mean = np.mean(samples.T, axis=0)
+    empirical_cov = np.cov(samples.T, rowvar=False)
+
+    analytical_mean = mu
+    analytical_cov = (nu / (nu - 2)) * Sigma
+
+    print("Empirical Mean:")
+    print(empirical_mean)
+    print("Analytical Mean:")
+    print(analytical_mean)
+    print("Empirical Covariance:")
+    print(empirical_cov)
+    print("Analytical Covariance:")
+    print(analytical_cov)
+
+    # Optionally, you can assert that the values are close (within some tolerance)
+    assert np.allclose(
+        empirical_mean, analytical_mean, atol=1e-1
+    ), "Mean values do not match within tolerance"
+    assert np.allclose(
+        empirical_cov, analytical_cov, atol=1e-1
+    ), "Covariance values do not match within tolerance"
+    plt.figure(figsize=(10, 6))
+    plt.scatter(
+        test_points[:, 0],
+        test_points[:, 1],
+        c=(edgeworth_pdf_values - t_dist_pdf_values) / t_dist_pdf_values,
+        cmap="viridis",
+        marker="o",
+    )
+    plt.colorbar(label="Fractional PDF Value Difference")
+    plt.xlabel("X1")
+    plt.ylabel("X2")
+    plt.title("Comparison of Edgeworth Expansion and Multivariate t-Distribution")
+    plt.legend()
+    plt.show()
+
+    assert np.allclose(
+        edgeworth_pdf_values, t_dist_pdf_values, atol=1e-2
+    ), "PDF values do not match within tolerance"
+
+
+test_edgeworth_nd()
