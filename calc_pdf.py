@@ -6,7 +6,6 @@ import wigner
 import time
 from os import environ
 from file_handling import check_for_file, load_cfs, load_pdfs
-from unittests import test_cf2pdf
 
 
 def pdf_xi_1D(
@@ -309,6 +308,7 @@ def get_cov_n(comb):
     n = np.sum(rowlengths) + column
     return n
 
+
 def get_combs(cov_n):
     row = -1
     sum_rows = 0
@@ -316,11 +316,8 @@ def get_combs(cov_n):
         row += 1
         rowlength = row + 1
         sum_rows += rowlength
-        
-    return (row,sum_rows-cov_n-1)
-    
 
-   
+    return (row, sum_rows - cov_n - 1)
 
 
 def cov_cl_nD(cov_objects, xicombs=((1, 1), (1, 0))):
