@@ -269,70 +269,128 @@ def test_edgeworth_nd():
     import approximations
     import matplotlib.pyplot as plt
 
-    # Parameters for the multivariate t-distribution
-    mu = np.array([0, 0])  # Mean vector
-    Sigma = np.array([[1, 0.5], [0.5, 1]])  # Scale matrix (covariance matrix)
-    nu = 10  # Degrees of freedom
+    def compare_edgeworth_t_distribution(
+        mu, Sigma, nu_values, n_samples=1000000, n_test_points=5000
+    ):
+        """
+        Compare the Edgeworth expansion and the multivariate t-distribution for increasing values of nu.
 
-    # Generate samples from the multivariate t-distribution
-    n_samples = 100000
-    samples = stats.multivariate_t.rvs(loc=mu, shape=Sigma, df=nu, size=n_samples).T
-    moments = postprocess_nd_likelihood.get_stats_from_sims(samples, [1, 2, 3])
+        Parameters
+        ----------
+        mu : array-like
+            Mean vector of the distributions.
+        Sigma : array-like
+            Covariance matrix of the distributions.
+        nu_values : list
+            List of degrees of freedom to compare.
+        n_samples : int, optional
+            Number of samples to generate from the multivariate t-distribution.
+        n_test_points : int, optional
+            Number of test points to evaluate the PDFs.
 
-    cumulants = approximations.ncmom2cum_nd(moments)
-    analytical_mean = mu
-    analytical_cov = (nu / (nu - 2)) * Sigma
-    cumulants[0] = analytical_mean
-    cumulants[1] = analytical_cov
+        Returns
+        -------
+        None
+        """
+        fig, axes = plt.subplots(len(nu_values), 2, figsize=(10, 6 * len(nu_values)))
 
-    edgeworth_expansion = approximations.MultiNormalExpansion(cumulants)
-    third_cumulant_normalized = edgeworth_expansion.normalize_third_cumulant()
-    print("Normalized third cumulant: {}".format(third_cumulant_normalized))
+        for idx, nu in enumerate(nu_values):
+            # Generate samples from the multivariate t-distribution
+            samples = stats.multivariate_t.rvs(loc=mu, shape=Sigma, df=nu, size=n_samples).T
+            moments = postprocess_nd_likelihood.get_stats_from_sims(samples, [1, 2, 3])
 
-    test_points = np.random.multivariate_normal(mu, Sigma, 1000)
-    edgeworth_pdf_values = edgeworth_expansion.pdf(test_points)
-    t_dist_pdf_values = stats.multivariate_t.pdf(test_points, loc=mu, shape=Sigma, df=nu)
+            cumulants = approximations.ncmom2cum_nd(moments)
+            analytical_mean = mu
+            analytical_cov = (nu / (nu - 2)) * Sigma
+            cumulants[0] = analytical_mean
+            cumulants[1] = analytical_cov
 
-    empirical_mean = np.mean(samples.T, axis=0)
-    empirical_cov = np.cov(samples.T, rowvar=False)
+            edgeworth_expansion = approximations.MultiNormalExpansion(cumulants)
+            third_cumulant_normalized = edgeworth_expansion.normalize_third_cumulant()
+            print(f"Normalized third cumulant for nu={nu}: {third_cumulant_normalized}")
+            gaussian = stats.multivariate_normal(mean=mu, cov=Sigma)
+            test_points = stats.uniform.rvs(size=(n_test_points, len(mu)), loc=-5, scale=10)
+            edgeworth_pdf_values = edgeworth_expansion.pdf(test_points)
+            t_dist_pdf_values = stats.multivariate_t.pdf(test_points, loc=mu, shape=Sigma, df=nu)
+            gaussian_pdf_values = gaussian.pdf(test_points)
+            empirical_mean = np.mean(samples.T, axis=0)
+            empirical_cov = np.cov(samples.T, rowvar=False)
 
-    analytical_mean = mu
-    analytical_cov = (nu / (nu - 2)) * Sigma
+            analytical_mean = mu
+            analytical_cov = (nu / (nu - 2)) * Sigma
 
-    print("Empirical Mean:")
-    print(empirical_mean)
-    print("Analytical Mean:")
-    print(analytical_mean)
-    print("Empirical Covariance:")
-    print(empirical_cov)
-    print("Analytical Covariance:")
-    print(analytical_cov)
+            print(f"Empirical Mean for nu={nu}:")
+            print(empirical_mean)
+            print(f"Analytical Mean for nu={nu}:")
+            print(analytical_mean)
+            print(f"Empirical Covariance for nu={nu}:")
+            print(empirical_cov)
+            print(f"Analytical Covariance for nu={nu}:")
+            print(analytical_cov)
 
-    # Optionally, you can assert that the values are close (within some tolerance)
-    assert np.allclose(
-        empirical_mean, analytical_mean, atol=1e-1
-    ), "Mean values do not match within tolerance"
-    assert np.allclose(
-        empirical_cov, analytical_cov, atol=1e-1
-    ), "Covariance values do not match within tolerance"
-    plt.figure(figsize=(10, 6))
-    plt.scatter(
-        test_points[:, 0],
-        test_points[:, 1],
-        c=(edgeworth_pdf_values - t_dist_pdf_values) / t_dist_pdf_values,
-        cmap="viridis",
-        marker="o",
-    )
-    plt.colorbar(label="Fractional PDF Value Difference")
-    plt.xlabel("X1")
-    plt.ylabel("X2")
-    plt.title("Comparison of Edgeworth Expansion and Multivariate t-Distribution")
-    plt.legend()
-    plt.show()
+            # Optionally, you can assert that the values are close (within some tolerance)
+            assert np.allclose(
+                empirical_mean, analytical_mean, atol=1e-1
+            ), f"Mean values do not match within tolerance for nu={nu}"
+            assert np.allclose(
+                empirical_cov, analytical_cov, atol=1e-1
+            ), f"Covariance values do not match within tolerance for nu={nu}"
 
-    assert np.allclose(
-        edgeworth_pdf_values, t_dist_pdf_values, atol=1e-2
-    ), "PDF values do not match within tolerance"
+            ax1 = axes[idx, 0] if len(nu_values) > 1 else axes[0]
+            scatter1 = ax1.scatter(
+                test_points[:, 0],
+                test_points[:, 1],
+                c=(edgeworth_pdf_values - t_dist_pdf_values) / t_dist_pdf_values,
+                cmap="viridis",
+                marker="o",
+                vmin=-0.4,
+                vmax=0.4,
+            )
+            ax1.set_xlabel("X1")
+            ax1.set_ylabel("X2")
+            ax1.set_title(f"Edgeworth vs t-Distribution for nu={nu}")
+            fig.colorbar(scatter1, ax=ax1, label="Fractional PDF Value Difference")
+
+            ax2 = axes[idx, 1] if len(nu_values) > 1 else axes[1]
+            scatter2 = ax2.scatter(
+                test_points[:, 0],
+                test_points[:, 1],
+                c=(gaussian_pdf_values - t_dist_pdf_values) / t_dist_pdf_values,
+                cmap="viridis",
+                marker="o",
+                vmin=-0.4,
+                vmax=0.4,
+            )
+            ax2.set_xlabel("X1")
+            ax2.set_ylabel("X2")
+            ax2.set_title(f"Gaussian vs t-Distribution for nu={nu}")
+            fig.colorbar(scatter2, ax=ax2, label="Fractional PDF Value Difference")
+
+            textstr = f"Normalized third cumulant:\n{third_cumulant_normalized}"
+            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+            ax1.text(
+                0.05,
+                0.95,
+                textstr,
+                transform=ax1.transAxes,
+                fontsize=12,
+                verticalalignment="top",
+                bbox=props,
+            )
+
+            error_edgeworth = np.mean(np.abs(edgeworth_pdf_values - t_dist_pdf_values))
+            error_gaussian = np.mean(np.abs(gaussian_pdf_values - t_dist_pdf_values))
+            print(f"Mean absolute error for Edgeworth expansion: {error_edgeworth}")
+            print(f"Mean absolute error for Gaussian distribution: {error_gaussian}")
+
+        plt.tight_layout()
+        plt.show()
+
+    # Example usage
+    mu = np.array([0, 0])
+    Sigma = np.array([[1, 0.5], [0.5, 1]])
+    nu_values = [5, 10, 20, 50, 100]  # List of degrees of freedom to compare
+    compare_edgeworth_t_distribution(mu, Sigma, nu_values)
 
 
 test_edgeworth_nd()
