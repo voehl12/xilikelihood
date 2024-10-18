@@ -5,6 +5,8 @@ from statsmodels.distributions.edgeworth import ExpandedNormal
 import calc_pdf
 import itertools
 import time
+from jax import jit
+import jax.numpy as jnp
 
 
 def get_moments_1d(m, cov):
@@ -27,7 +29,7 @@ def get_moments_1d(m, cov):
     return moments
 
 
-def moments_nd(m, cov):
+def moments_nd(m, cov, ndim):
     """
     Calculate first three moments for an n-dimensional likelihood.
 
@@ -43,55 +45,51 @@ def moments_nd(m, cov):
     list
         list of lists of first, second and third moments. second moments are given out in the shape of a covariance matrix.
     """
-    ndim = m.shape[0]
+    assert ndim == m.shape[0], "list of matrices m length {} does not align with ndim={}".format(
+        m.shape[0], ndim
+    )
     if ndim > 100:
         print("Warning: ndim > 100")
-    dims = np.arange(ndim)
-    prods = [m[i] @ cov for i in range(ndim)]
+    dims = jnp.arange(ndim)
+
+    prods = jnp.einsum("dij,jk->dik", m, cov)
 
     def first_moments():
-        return [np.trace(prods[dim]) for dim in dims]
+        return jnp.einsum("dii->d", prods)
 
     def second_moments(firsts):
-        seconds = np.full(((ndim, ndim)), np.nan)
-        for comb in itertools.combinations_with_replacement(dims, 2):
-            one, two = comb
-            second_moment = firsts[one] * firsts[two] + 2 * np.sum(
-                prods[one] * np.transpose(prods[two])
-            )
-            seconds[one, two] = second_moment
-        seconds = np.where(np.isnan(seconds), seconds.T, seconds)
-        assert np.allclose(seconds, seconds.T), "moments_nd: covariance matrix not symmetric"
+        seconds = jnp.full((ndim, ndim), jnp.nan)
+        combs = jnp.array(list(itertools.combinations_with_replacement(dims, 2)))
+
+        one, two = combs[:, 0], combs[:, 1]
+        second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
+            "dij,dji->d", prods[one], prods[two]
+        )
+        seconds = seconds.at[one, two].set(second_moment_values)
+        seconds = seconds.at[two, one].set(second_moment_values)
+
         return seconds
 
-    def third_moments(firsts, seconds):
-        thirds = []
-        # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
-        for comb in itertools.combinations_with_replacement(dims, 3):
-            i, j, k = comb
-            prod2 = prods[j] @ prods[k]
-            third_moment = (
-                np.prod([firsts[m] for m in comb])
-                + 2
-                * (
-                    np.sum(
-                        [
-                            firsts[one] * np.sum(prods[two] * np.transpose(prods[three]))
-                            for (one, two, three) in [(i, j, k), (k, i, j), (j, i, k)]
-                        ]
-                    )
-                )
-                + 8 * np.sum(prods[i] * np.transpose(prod2))
-            )
-            thirds.append(third_moment)
-        thirds = np.array(thirds)
-        return thirds
+    def third_moments(firsts):
+        combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
+
+        i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
+        third_moment_values = jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0) + 2 * (
+            jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
+            + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
+            + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
+        )
+
+        return jnp.ravel(third_moment_values)
 
     firsts = first_moments()
     seconds = second_moments(firsts)
-    thirds = third_moments(firsts, seconds)
+    thirds = third_moments(firsts)
 
     return firsts, seconds, thirds
+
+
+moments_nd_jitted = jit(moments_nd, static_argnums=(2,))
 
 
 class MultiNormalExpansion:
