@@ -47,7 +47,7 @@ third_cumulant_normalized = approx.normalize_third_cumulant()
 print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
 gauss_comp = scipy.stats.multivariate_normal(mean=cumulants[0], cov=cumulants[1])
-test_points = gauss_comp.rvs(1000)
+test_points = np.random.uniform(-1e-6, 3e-6, (5000, 2))
 sample_inds_x = [
     np.argmin(np.fabs(x[:, 0, 0] - test_points[i, 0])) for i in range(len(test_points))
 ]
