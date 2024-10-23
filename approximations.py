@@ -5,8 +5,12 @@ from statsmodels.distributions.edgeworth import ExpandedNormal
 import calc_pdf
 import itertools
 import time
+import jax
 from jax import jit
 import jax.numpy as jnp
+from jax import config
+
+config.update("jax_enable_x64", True)
 
 
 def get_moments_1d(m, cov):
@@ -51,20 +55,22 @@ def moments_nd(m, cov, ndim):
     if ndim > 100:
         print("Warning: ndim > 100")
     dims = jnp.arange(ndim)
-
-    prods = jnp.einsum("dij,jk->dik", m, cov)
+    with jax.default_matmul_precision('highest'):
+        prods = jnp.einsum("dij,jk->dik", m, cov)
 
     def first_moments():
-        return jnp.einsum("dii->d", prods)
+        with jax.default_matmul_precision('highest'):
+            return jnp.einsum("dii->d", prods)
 
     def second_moments(firsts):
-        seconds = jnp.full((ndim, ndim), jnp.nan)
+        seconds = jnp.zeros((ndim, ndim), dtype='float64')
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 2)))
 
         one, two = combs[:, 0], combs[:, 1]
-        second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
-            "dij,dji->d", prods[one], prods[two]
-        )
+        with jax.default_matmul_precision('highest'):
+            second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
+                "dij,dji->d", prods[one], prods[two]
+            )
         seconds = seconds.at[one, two].set(second_moment_values)
         seconds = seconds.at[two, one].set(second_moment_values)
 
@@ -74,11 +80,12 @@ def moments_nd(m, cov, ndim):
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
 
         i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
-        third_moment_values = jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0) + 2 * (
-            jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
-            + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
-            + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
-        )
+        with jax.default_matmul_precision('highest'):
+            third_moment_values = jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0) + 2 * (
+                jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
+                + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
+                + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
+            ) 
 
         return jnp.ravel(third_moment_values)
     
@@ -221,6 +228,7 @@ class MultiNormalExpansion:
         assert len(self.cumulants) >= 2
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
         if len(self.cumulants) == 2:
+            print('No higher order cumulants given, returning Gaussian...')
             extension = 1
         else:
             extension = 1 + np.einsum("ji,j->i", self.hermite_nd(x), self.cumulants[2]) / 6
