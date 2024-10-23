@@ -55,19 +55,19 @@ def moments_nd(m, cov, ndim):
     if ndim > 100:
         print("Warning: ndim > 100")
     dims = jnp.arange(ndim)
-    with jax.default_matmul_precision('highest'):
+    with jax.default_matmul_precision("highest"):
         prods = jnp.einsum("dij,jk->dik", m, cov)
 
     def first_moments():
-        with jax.default_matmul_precision('highest'):
+        with jax.default_matmul_precision("highest"):
             return jnp.einsum("dii->d", prods)
 
     def second_moments(firsts):
-        seconds = jnp.zeros((ndim, ndim), dtype='float64')
+        seconds = jnp.zeros((ndim, ndim), dtype="float64")
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 2)))
 
         one, two = combs[:, 0], combs[:, 1]
-        with jax.default_matmul_precision('highest'):
+        with jax.default_matmul_precision("highest"):
             second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
                 "dij,dji->d", prods[one], prods[two]
             )
@@ -80,15 +80,20 @@ def moments_nd(m, cov, ndim):
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
 
         i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
-        with jax.default_matmul_precision('highest'):
-            third_moment_values = jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0) + 2 * (
-                jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
-                + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
-                + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
-            ) 
+        with jax.default_matmul_precision("highest"):
+            third_moment_values = (
+                jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0)
+                + 2
+                * (
+                    jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
+                    + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
+                    + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
+                )
+                + 8 * jnp.einsum("dij,djk,dki->d", prods[i], prods[j], prods[k])
+            )
 
         return jnp.ravel(third_moment_values)
-    
+
     def third_moments_old(firsts, seconds):
         thirds = []
         # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
@@ -228,7 +233,7 @@ class MultiNormalExpansion:
         assert len(self.cumulants) >= 2
         gaussian = scipy.stats.multivariate_normal(mean=self.cumulants[0], cov=self.cumulants[1])
         if len(self.cumulants) == 2:
-            print('No higher order cumulants given, returning Gaussian...')
+            print("No higher order cumulants given, returning Gaussian...")
             extension = 1
         else:
             extension = 1 + np.einsum("ji,j->i", self.hermite_nd(x), self.cumulants[2]) / 6
