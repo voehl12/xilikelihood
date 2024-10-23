@@ -81,6 +81,29 @@ def moments_nd(m, cov, ndim):
         )
 
         return jnp.ravel(third_moment_values)
+    
+    def third_moments_old(firsts, seconds):
+        thirds = []
+        # define n-dim 3rd order hermite polynomials in exactly the same manner / order!
+        for comb in itertools.combinations_with_replacement(dims, 3):
+            i, j, k = comb
+            prod2 = prods[j] @ prods[k]
+            third_moment = (
+                np.prod([firsts[m] for m in comb])
+                + 2
+                * (
+                    np.sum(
+                        [
+                            firsts[one] * np.sum(prods[two] * np.transpose(prods[three]))
+                            for (one, two, three) in [(i, j, k), (k, i, j), (j, i, k)]
+                        ]
+                    )
+                )
+                + 8 * np.sum(prods[i] * np.transpose(prod2))
+            )
+            thirds.append(third_moment)
+        thirds = np.array(thirds)
+        return thirds
 
     firsts = first_moments()
     seconds = second_moments(firsts)
