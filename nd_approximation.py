@@ -12,9 +12,7 @@ import scipy.stats
 # should eventually become a class
 configpath = "/cluster/home/veoehl/2ptlikelihood/config_adjusted.ini"
 configpath = "config_adjusted.ini"
-# simspath = (
-#   "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault/"
-# )
+simspath = ("/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault/")
 config = postprocess_nd_likelihood.load_config(configpath)
 
 paths = config["Paths"]
@@ -27,18 +25,25 @@ mset = marrs["matrix"]
 x, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config)
 
 vmax = 4e12
-# moments_sims = postprocess_nd_likelihood.compare_to_sims(config, simspath)
+sims = postprocess_nd_likelihood.load_sims(config, simspath,njobs=100)
+sims = np.array(sims)
+orders = [1, 2, 3]
+print('Calculating statistics...')
+moments_sims = postprocess_nd_likelihood.get_stats_from_sims(sims,axis=1)
+bootstrap_func = postprocess_nd_likelihood.get_stats_from_sims
+thirds_bootstrap = postprocess_nd_likelihood.bootstrap(sims,100,axis=1,func=bootstrap_func,func_kwargs={'orders':[3]})
+
 print("Calculating analytical moments...")
 firsts, seconds, thirds = moments_nd_jitted(mset, cov, 2)
 print("Done.")
 moments = [firsts, seconds, thirds]
-print(thirds)
-# thirds_sims = np.array(moments_sims[2])
-# print(thirds_sims)
-# plt.figure()
-# plt.plot(thirds_sims - thirds, label="3rd moments difference")
-# plt.legend()
-# plt.savefig("3rd_moments_diff.png")
+print(moments)
+thirds_sims = np.array(moments_sims[2])
+
+print(moments_sims)
+thirds_std = np.std(thirds_bootstrap,axis=0)
+print(thirds_std)
+print(np.array(thirds) - thirds_sims / thirds_std)
 
 cumulants = ncmom2cum_nd(moments)
 
@@ -47,7 +52,7 @@ third_cumulant_normalized = approx.normalize_third_cumulant()
 print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
 gauss_comp = scipy.stats.multivariate_normal(mean=cumulants[0], cov=cumulants[1])
-test_points = np.random.uniform(-1e-6, 3e-6, (5000, 2))
+test_points = np.random.uniform(0, 2e-6, (5000, 2))
 sample_inds_x = [
     np.argmin(np.fabs(x[:, 0, 0] - test_points[i, 0])) for i in range(len(test_points))
 ]
