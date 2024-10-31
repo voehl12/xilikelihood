@@ -1,7 +1,9 @@
 import numpy as np
 import scipy
+import scipy.optimize
 from statsmodels.stats.moment_helpers import mnc2cum
 from statsmodels.distributions.edgeworth import ExpandedNormal
+from scipy.special import kv, gamma
 import calc_pdf
 import itertools
 import time
@@ -55,22 +57,22 @@ def moments_nd(m, cov, ndim):
     if ndim > 100:
         print("Warning: ndim > 100")
     dims = jnp.arange(ndim)
-    with jax.default_matmul_precision("highest"):
-        prods = jnp.einsum("dij,jk->dik", m, cov)
+
+    prods = jnp.einsum("dij,jk->dik", m, cov)
 
     def first_moments():
-        with jax.default_matmul_precision("highest"):
-            return jnp.einsum("dii->d", prods)
+
+        return jnp.einsum("dii->d", prods)
 
     def second_moments(firsts):
         seconds = jnp.zeros((ndim, ndim), dtype="float64")
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 2)))
 
         one, two = combs[:, 0], combs[:, 1]
-        with jax.default_matmul_precision("highest"):
-            second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
-                "dij,dji->d", prods[one], prods[two]
-            )
+
+        second_moment_values = firsts[one] * firsts[two] + 2 * jnp.einsum(
+            "dij,dji->d", prods[one], prods[two]
+        )
         seconds = seconds.at[one, two].set(second_moment_values)
         seconds = seconds.at[two, one].set(second_moment_values)
 
@@ -80,17 +82,17 @@ def moments_nd(m, cov, ndim):
         combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
 
         i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
-        with jax.default_matmul_precision("highest"):
-            third_moment_values = (
-                jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0)
-                + 2
-                * (
-                    jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
-                    + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
-                    + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
-                )
-                + 8 * jnp.einsum("dij,djk,dki->d", prods[i], prods[j], prods[k])
+
+        third_moment_values = (
+            jnp.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0)
+            + 2
+            * (
+                jnp.einsum("ijk,ikj->i", prods[j], prods[k]) * firsts[i]
+                + jnp.einsum("ijk,ikj->i", prods[k], prods[i]) * firsts[j]
+                + jnp.einsum("ijk,ikj->i", prods[i], prods[j]) * firsts[k]
             )
+            + 8 * jnp.einsum("dij,djk,dki->d", prods[i], prods[j], prods[k])
+        )
 
         return jnp.ravel(third_moment_values)
 
@@ -125,6 +127,114 @@ def moments_nd(m, cov, ndim):
 
 
 moments_nd_jitted = jit(moments_nd, static_argnums=(2,))
+
+
+class GeneralizedLaplace:
+    def __init__(self, moments):
+        self.moments = moments
+        self.ndim = len(moments[0])
+
+    def get_moments(self):
+        return self.moments
+
+    def get_pdf(self, x):
+        return self.pdf(x)
+
+    def pdf(self, x):
+        if not hasattr(self, "params"):
+            self.moment_matching()
+        sigma_inv = np.linalg.inv(self.sigma_matched)
+        q_x = np.sqrt(np.einsum("ij,ni,nj->n", sigma_inv, x, x))
+        c_sigma_mu = self.c_sigma_mu
+        bessel = kv(self.s_matched - self.ndim / 2, c_sigma_mu * q_x)
+        prefactor = (
+            2
+            * (q_x / c_sigma_mu) ** (self.s_matched - self.ndim / 2)
+            / ((2 * np.pi) ** (self.ndim / 2) * gamma(self.s_matched))
+        )
+        exp_part = np.exp(np.einsum("ni,ij,j->n", x, sigma_inv, self.mu_matched))
+
+        return prefactor * bessel * exp_part
+
+    def parametrized_moments(self, s, mu, sigma):
+        def first_moment():
+            return s * mu
+
+        def second_moment(firsts):
+            seconds = s * ((s + 1) * np.outer(firsts, firsts) + sigma)
+            return seconds
+
+        def third_moment(firsts, seconds):
+            # rewrite
+            dims = np.arange(len(firsts))
+            combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
+
+            i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
+
+            third_moment_values = (
+                s
+                * (s + 1)
+                * (
+                    (s + 2) * np.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0)
+                    + seconds[i, j] * firsts[k]
+                    + seconds[i, k] * firsts[j]
+                    + seconds[j, k] * firsts[i]
+                )
+            )
+
+            return np.ravel(third_moment_values)
+
+        firsts = first_moment()
+        seconds = second_moment(firsts)
+        all_moments = [firsts, seconds, third_moment(firsts, seconds)]
+
+        return all_moments
+
+    def convert_1d_params(self, params):
+        s = params[0]
+        mu = params[1 : 1 + self.mu_shape[0]].reshape(self.mu_shape)
+        sigma = params[1 + self.mu_shape[0] :].reshape(self.sigma_shape)
+        return s, mu, sigma
+
+    def moment_matching(self):
+        self.mu_shape = self.moments[0].shape
+        self.sigma_shape = self.moments[1].shape
+
+        def equations_to_solve(params):
+            s, mu, sigma = self.convert_1d_params(params)
+
+            firsts, seconds, thirds = self.parametrized_moments(s, mu, sigma)
+            first_diff = firsts - self.moments[0]
+            second_diff = np.ravel(seconds - self.moments[1])
+            third_diff = np.ravel(thirds - self.moments[2])
+
+            return np.concatenate(
+                [
+                    first_diff,
+                    second_diff,
+                    third_diff,
+                ]
+            )
+
+        initial_guess = np.concatenate(
+            [
+                np.array([1]),  # Initial guess for s
+                self.moments[0].ravel(),  # Initial guess for mu
+                self.moments[1].ravel(),  # Initial guess for sigma
+            ]
+        )
+        solution = scipy.optimize.least_squares(equations_to_solve, initial_guess, ftol=1e-20)
+        if solution.success:
+            self.params = solution.x
+        else:
+            raise ValueError("Root finding did not converge")
+        self.params = solution.x
+        s_matched, mu_matched, sigma_matched = self.convert_1d_params(self.params)
+        self.s_matched, self.mu_matched, self.sigma_matched = s_matched, mu_matched, sigma_matched
+        self.c_sigma_mu = np.sqrt(
+            2 + np.einsum("ij,i,j", np.linalg.inv(sigma_matched), mu_matched, mu_matched)
+        )
+        self.param_moments = self.parametrized_moments(s_matched, mu_matched, sigma_matched)
 
 
 class MultiNormalExpansion:
@@ -278,6 +388,7 @@ def select_conversion_function(n):
         return moments[0]
 
     def second_cumulant(moments):
+        # is this correct? does this cause the wrong edgeworth expansion because cumulants and moments should be the same at second order?
         first = moments[0]
         return moments[1] - np.outer(first, first)
 

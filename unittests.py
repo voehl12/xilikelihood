@@ -302,8 +302,6 @@ def test_edgeworth_nd():
             cumulants = approximations.ncmom2cum_nd(moments)
             analytical_mean = mu
             analytical_cov = (nu / (nu - 2)) * Sigma
-            cumulants[0] = analytical_mean
-            cumulants[1] = analytical_cov
 
             edgeworth_expansion = approximations.MultiNormalExpansion(cumulants)
             third_cumulant_normalized = edgeworth_expansion.normalize_third_cumulant()
