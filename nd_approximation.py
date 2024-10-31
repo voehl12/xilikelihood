@@ -1,5 +1,5 @@
 import numpy as np
-from approximations import MultiNormalExpansion, moments_nd_jitted, ncmom2cum_nd
+from approximations import MultiNormalExpansion, GeneralizedLaplace, moments_nd_jitted, ncmom2cum_nd
 import configparser
 import postprocess_nd_likelihood
 import plotting
@@ -12,7 +12,9 @@ import scipy.stats
 # should eventually become a class
 configpath = "/cluster/home/veoehl/2ptlikelihood/config_adjusted.ini"
 configpath = "config_adjusted.ini"
-simspath = ("/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault/")
+simspath = (
+    "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault/"
+)
 config = postprocess_nd_likelihood.load_config(configpath)
 
 paths = config["Paths"]
@@ -25,29 +27,32 @@ mset = marrs["matrix"]
 x, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config)
 
 vmax = 4e12
-sims = postprocess_nd_likelihood.load_sims(config, simspath,njobs=100)
+""" sims = postprocess_nd_likelihood.load_sims(config, simspath, njobs=100)
 sims = np.array(sims)
 orders = [1, 2, 3]
-print('Calculating statistics...')
-moments_sims = postprocess_nd_likelihood.get_stats_from_sims(sims,axis=1)
+print("Calculating statistics...")
+moments_sims = postprocess_nd_likelihood.get_stats_from_sims(sims, axis=1)
 bootstrap_func = postprocess_nd_likelihood.get_stats_from_sims
-thirds_bootstrap = postprocess_nd_likelihood.bootstrap(sims,1000,axis=1,func=bootstrap_func,func_kwargs={'orders':[3]})
+thirds_bootstrap = postprocess_nd_likelihood.bootstrap(
+    sims, 1000, axis=1, func=bootstrap_func, func_kwargs={"orders": [3]}
+) """
 
 print("Calculating analytical moments...")
 firsts, seconds, thirds = moments_nd_jitted(mset, cov, 2)
 print("Done.")
 moments = [firsts, seconds, thirds]
 print(moments)
-thirds_sims = np.array(moments_sims[2])
+# thirds_sims = np.array(moments_sims[2])
 
-print(moments_sims)
-thirds_std = np.std(thirds_bootstrap,axis=0)
-print(thirds_std)
-print((np.array(thirds) - thirds_sims) / thirds_std)
+# print(moments_sims)
+# thirds_std = np.std(thirds_bootstrap, axis=0)
+# print(thirds_std)
+# print((np.array(thirds) - thirds_sims) / thirds_std)
 
 cumulants = ncmom2cum_nd(moments)
 
 approx = MultiNormalExpansion(cumulants)
+approx_laplace = GeneralizedLaplace(moments)
 third_cumulant_normalized = approx.normalize_third_cumulant()
 print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
@@ -64,6 +69,8 @@ exact_pdf_values = [pdf_exact[sample_inds_x[i], sample_inds_y[i]] for i in range
 
 edgeworth_pdf_values = approx.pdf(test_points)
 gauss_pdf_values = gauss_comp.pdf(test_points)
+laplace_pdf_values = approx_laplace.pdf(test_points)
+print(approx_laplace.param_moments, moments)
 
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 10))
 ax1.scatter(test_points[:, 0], test_points[:, 1], c=edgeworth_pdf_values, vmax=vmax)
@@ -75,10 +82,8 @@ ax3.set_title("Exact")
 ax4.scatter(
     test_points[:, 0],
     test_points[:, 1],
-    c=(edgeworth_pdf_values - exact_pdf_values) / exact_pdf_values,
-    vmax=1,
-    vmin=-1,
+    c=laplace_pdf_values,
 )
-ax4.set_title("Relative Difference")
+ax4.set_title("Laplace")
 
 fig.savefig("2d_comp_edgeworth.png")
