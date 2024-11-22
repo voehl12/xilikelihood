@@ -199,9 +199,11 @@ class GeneralizedLaplace:
         def second_moment():
             if self.ndim == 1:
                 seconds = s * ((s + 1) * mu**2 + sigma)
+                second_central = s*(mu**2 + sigma)
             else:
-                seconds = s * ((s + 1) * np.outer(mu, mu) + sigma)
-            return seconds
+                seconds = s * (np.outer(mu, mu) + sigma)
+                seconds_central = s*(mu**2 + sigma)
+            return seconds_central
 
         def third_moment():
             # rewrite
@@ -471,8 +473,8 @@ def get_edgeworth_1d(moments):
 
 def ncmom2cum_nd(moments):
     """
-    Calculate cumulants from moments for an n-dimensional distribution.
-    Up to third order cumulants are calculated.
+    Calculate cumulants from non central moments for an n-dimensional distribution.
+    Up to third order cumulants are calculated (same as central moments).
 
     Parameters
     ----------
@@ -499,9 +501,9 @@ def select_conversion_function(n):
         return moments[0]
 
     def second_cumulant(moments):
-        # is this correct? does this cause the wrong edgeworth expansion because cumulants and moments should be the same at second order?
+        # cumulants and (central!) moments should be the same at second order - we use non-central moments
         first = moments[0]
-        return moments[1]  # - np.outer(first, first)
+        return moments[1]  - np.outer(first, first)
 
     def third_cumulant(moments):
         first = moments[0]
