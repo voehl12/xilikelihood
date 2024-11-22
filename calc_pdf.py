@@ -297,6 +297,8 @@ def get_cov_triang(cov_objects):
 
 
 def get_cov_pos(comb):
+    if comb[0] < comb[1]:
+        raise RuntimeError("Cross-correlation: provide combination with larger number first.")
     column = int(np.fabs(comb[1] - comb[0]))
     row = comb[0]
     return (row, column)
@@ -509,7 +511,7 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
         t, gauss_cf
     )
     print("Skewness of Gaussian extension: {}".format(helper_funcs.skewness(t, gauss_cf)))
-    test_cf2pdf(t, mean, np.sqrt(cov))
+    # test_cf2pdf(t, mean, np.sqrt(cov))
     interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
         t_lowell
     ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)

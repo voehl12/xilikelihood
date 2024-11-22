@@ -36,6 +36,24 @@ def setup_cls(config, cl_paths, cl_names, noise_contribs):
         config.set("Theory", cl_names[i], cl_paths[i])
 
 
+def setup_covariances(area, nside, l_exact, ell_buffer, noise_contribs, clnames, clpaths):
+    covs = [
+        Cov(
+            l_exact,
+            [2],
+            circmaskattr=(area, nside),
+            clpath=clpath,
+            clname=clname,
+            sigma_e=noise,
+            l_smooth_mask=l_exact,
+            l_smooth_signal=None,
+            cov_ell_buffer=ell_buffer,
+        )
+        for clpath, clname, noise in zip(clpaths, clnames, noise_contribs)
+    ]
+    return covs
+
+
 def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     # split in geometry and cosmology?
 
