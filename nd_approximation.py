@@ -83,8 +83,8 @@ print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
 gauss_comp = scipy.stats.multivariate_normal(mean=cumulants[0], cov=cumulants[1])
 grid_size = int(np.sqrt(5000))
-x_vals = np.linspace(0, 2e-6, grid_size)
-y_vals = np.linspace(0, 2e-6, grid_size)
+x_vals = np.linspace(1e-7, 2e-6, grid_size)
+y_vals = np.linspace(1e-7, 2e-6, grid_size)
 x_grid, y_grid = np.meshgrid(x_vals, y_vals)
 test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
 # Interpolate the data for smooth plotting
