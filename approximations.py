@@ -130,9 +130,18 @@ moments_nd_jitted = jit(moments_nd, static_argnums=(2,))
 
 
 class GeneralizedLaplace:
-    def __init__(self, moments):
-        self.moments = moments
-        self.ndim = len(moments[0])
+    def __init__(self, moments=None, params=None):
+        if moments is not None:
+            self.moments = moments
+            self.ndim = 1 if isinstance(self.moments[0], (int, float)) else len(self.moments[0])
+            self.moment_matching()
+            self.s, self.mu, self.sigma = self.s_matched, self.mu_matched, self.sigma_matched
+        elif params is not None:
+            self.params = params
+            self.s, self.mu, self.sigma = self.params
+            self.ndim = 1 if isinstance(self.mu, (int, float)) else len(self.mu)
+        else:
+            raise ValueError("Either moments or params must be provided")
 
     def get_moments(self):
         return self.moments
@@ -141,52 +150,84 @@ class GeneralizedLaplace:
         return self.pdf(x)
 
     def pdf(self, x):
-        if not hasattr(self, "params"):
-            self.moment_matching()
-        sigma_inv = np.linalg.inv(self.sigma_matched)
-        q_x = np.sqrt(np.einsum("ij,ni,nj->n", sigma_inv, x, x))
-        c_sigma_mu = self.c_sigma_mu
-        bessel = kv(self.s_matched - self.ndim / 2, c_sigma_mu * q_x)
-        prefactor = (
-            2
-            * (q_x / c_sigma_mu) ** (self.s_matched - self.ndim / 2)
-            / ((2 * np.pi) ** (self.ndim / 2) * gamma(self.s_matched))
-        )
-        exp_part = np.exp(np.einsum("ni,ij,j->n", x, sigma_inv, self.mu_matched))
+
+        s, mu, sigma = self.s, self.mu, self.sigma
+        self.c_sigma_mu = self.get_c_sigma_mu(mu, sigma)
+        if self.ndim == 1:
+            q_x = np.fabs(x) / np.sqrt(sigma)
+            c_sigma_mu = self.c_sigma_mu
+            bessel = kv(s - 1 / 2, c_sigma_mu * q_x)
+            prefactor = (
+                2
+                * (q_x / c_sigma_mu) ** (s - 1 / 2)
+                / ((2 * np.pi) ** (1 / 2) * gamma(s) * np.sqrt(sigma))
+            )
+            exp_part = np.exp(x * mu / sigma)
+
+        else:
+            sigma_inv = np.linalg.inv(sigma)
+            q_x = np.sqrt(np.einsum("ij,ni,nj->n", sigma_inv, x, x))
+            c_sigma_mu = self.c_sigma_mu
+            bessel = kv(s - self.ndim / 2, c_sigma_mu * q_x)
+            prefactor = (
+                2
+                * (q_x / c_sigma_mu) ** (s - self.ndim / 2)
+                / ((2 * np.pi) ** (self.ndim / 2) * gamma(s) * np.sqrt(np.linalg.det(sigma)))
+            )
+            exp_part = np.exp(np.einsum("ni,ij,j->n", x, sigma_inv, mu))
 
         return prefactor * bessel * exp_part
+
+    def sample(self, n):
+        gamma = scipy.stats.gamma(a=self.s)
+        gamma_samples = gamma.rvs(n)
+        if self.ndim == 1:
+            normal = scipy.stats.norm(loc=0, scale=np.sqrt(self.sigma))
+            normal_samples = normal.rvs(n)
+            return np.sqrt(gamma_samples) * normal_samples + self.mu * gamma_samples
+        else:
+            normal = scipy.stats.multivariate_normal(mean=np.zeros(self.ndim), cov=self.sigma)
+            normal_samples = normal.rvs(n)
+            return (
+                np.sqrt(gamma_samples)[:, None] * normal_samples + self.mu * gamma_samples[:, None]
+            )
 
     def parametrized_moments(self, s, mu, sigma):
         def first_moment():
             return s * mu
 
-        def second_moment(firsts):
-            seconds = s * ((s + 1) * np.outer(firsts, firsts) + sigma)
+        def second_moment():
+            if self.ndim == 1:
+                seconds = s * ((s + 1) * mu**2 + sigma)
+            else:
+                seconds = s * ((s + 1) * np.outer(mu, mu) + sigma)
             return seconds
 
-        def third_moment(firsts, seconds):
+        def third_moment():
             # rewrite
-            dims = np.arange(len(firsts))
-            combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
+            dims = np.arange(self.ndim)
+            if self.ndim == 1:
+                return s * (s + 1) * (s + 2) * mu**3 + 3 * s * (s + 1) * mu * sigma
 
-            i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
+            else:
+                combs = jnp.array(list(itertools.combinations_with_replacement(dims, 3)))
 
-            third_moment_values = (
-                s
-                * (s + 1)
-                * (
-                    (s + 2) * np.prod(jnp.array([firsts[i], firsts[j], firsts[k]]), axis=0)
-                    + seconds[i, j] * firsts[k]
-                    + seconds[i, k] * firsts[j]
-                    + seconds[j, k] * firsts[i]
+                i, j, k = combs[:, 0], combs[:, 1], combs[:, 2]
+
+                third_moment_values = (
+                    s
+                    * (s + 1)
+                    * (
+                        (s + 2) * np.prod(jnp.array([mu[i], mu[j], mu[k]]), axis=0)
+                        + sigma[i, j] * mu[k]
+                        + sigma[i, k] * mu[j]
+                        + sigma[j, k] * mu[i]
+                    )
                 )
-            )
 
-            return np.ravel(third_moment_values)
+                return np.ravel(third_moment_values)
 
-        firsts = first_moment()
-        seconds = second_moment(firsts)
-        all_moments = [firsts, seconds, third_moment(firsts, seconds)]
+        all_moments = [first_moment(), second_moment(), third_moment()]
 
         return all_moments
 
@@ -196,9 +237,26 @@ class GeneralizedLaplace:
         sigma = params[1 + self.mu_shape[0] :].reshape(self.sigma_shape)
         return s, mu, sigma
 
+    def get_c_sigma_mu(self, mu, sigma):
+        if self.ndim == 1:
+            return np.sqrt(2 + mu**2 / sigma)
+        else:
+            return np.sqrt(2 + np.einsum("ij,i,j", np.linalg.inv(sigma), mu, mu))
+
     def moment_matching(self):
         self.mu_shape = self.moments[0].shape
         self.sigma_shape = self.moments[1].shape
+
+        def equations_to_solve_1d(params):
+            s, mu, sigma = params
+            firsts, seconds, thirds = self.parametrized_moments(s, mu, sigma)
+            return np.array(
+                [
+                    firsts - self.moments[0],
+                    seconds - self.moments[1],
+                    thirds - self.moments[2],
+                ]
+            )
 
         def equations_to_solve(params):
             s, mu, sigma = self.convert_1d_params(params)
@@ -216,24 +274,77 @@ class GeneralizedLaplace:
                 ]
             )
 
-        initial_guess = np.concatenate(
-            [
-                np.array([1]),  # Initial guess for s
-                self.moments[0].ravel(),  # Initial guess for mu
-                self.moments[1].ravel(),  # Initial guess for sigma
-            ]
-        )
-        solution = scipy.optimize.least_squares(equations_to_solve, initial_guess, ftol=1e-20)
+        def loss_function_1d(params):
+            s, mu, sigma = params
+            firsts, seconds, thirds = self.parametrized_moments(s, mu, sigma)
+            diffs = np.array(
+                [
+                    firsts - self.moments[0],
+                    seconds - self.moments[1],
+                    thirds - self.moments[2],
+                ]
+            )
+            weights = np.array(
+                [1.0, 10.0, 0.1]
+            )  # Weights to penalize first and second moments more
+            weighted_diffs = weights * np.array(
+                [
+                    firsts - self.moments[0],
+                    seconds - self.moments[1],
+                    thirds - self.moments[2],
+                ]
+            )
+            return np.sum(weighted_diffs**2)
+
+        if self.ndim == 1:
+            initial_guess_1d = np.array([3, self.moments[0] / 3, self.moments[1] / 9])
+            solution = scipy.optimize.minimize(
+                loss_function_1d,
+                initial_guess_1d,
+                method="Nelder-Mead",
+                bounds=[(0.1, 10), (0, np.infty), (1e-15, np.infty)],
+            )
+
+        else:
+            initial_guess = np.concatenate(
+                [
+                    np.array([3]),  # Initial guess for s
+                    self.moments[0].ravel() / 3,  # Initial guess for mu
+                    self.moments[1].ravel() / 9,  # Initial guess for sigma
+                ]
+            )
+            solution = scipy.optimize.least_squares(
+                equations_to_solve,
+                initial_guess,
+                ftol=1e-30,
+                method="dogbox",
+                bounds=(
+                    np.hstack(
+                        [
+                            1.5,
+                            initial_guess[1 : self.ndim + 1].ravel() * 0.5,
+                            initial_guess[self.ndim + 1 :].ravel() * 0.5,
+                        ]
+                    ),
+                    np.hstack(
+                        [
+                            10,
+                            initial_guess[1 : self.ndim + 1].ravel() * 2,
+                            initial_guess[self.ndim + 1 :].ravel() * 2,
+                        ]
+                    ),
+                ),
+            )
         if solution.success:
             self.params = solution.x
         else:
             raise ValueError("Root finding did not converge")
-        self.params = solution.x
-        s_matched, mu_matched, sigma_matched = self.convert_1d_params(self.params)
-        self.s_matched, self.mu_matched, self.sigma_matched = s_matched, mu_matched, sigma_matched
-        self.c_sigma_mu = np.sqrt(
-            2 + np.einsum("ij,i,j", np.linalg.inv(sigma_matched), mu_matched, mu_matched)
+        self.params_1d = solution.x
+        self.params = "matched"
+        s_matched, mu_matched, sigma_matched = (
+            self.convert_1d_params(self.params_1d) if self.ndim > 1 else self.params_1d
         )
+        self.s_matched, self.mu_matched, self.sigma_matched = s_matched, mu_matched, sigma_matched
         self.param_moments = self.parametrized_moments(s_matched, mu_matched, sigma_matched)
 
 
@@ -390,7 +501,7 @@ def select_conversion_function(n):
     def second_cumulant(moments):
         # is this correct? does this cause the wrong edgeworth expansion because cumulants and moments should be the same at second order?
         first = moments[0]
-        return moments[1] - np.outer(first, first)
+        return moments[1]  # - np.outer(first, first)
 
     def third_cumulant(moments):
         first = moments[0]
