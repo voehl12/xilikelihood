@@ -26,7 +26,7 @@ cl_33 = "Cl_3x2pt_kids33.txt"
 cl_paths = (cl_33, cl_55, cl_53)
 cl_names = ("3x2pt_kids_33", "3x2pt_kids_55", "3x2pt_kids_53")
 noise_contribs = ("default", "default", None)
-new_config = setup_nd_likelihood.setup_config()
+""" new_config = setup_nd_likelihood.setup_config()
 covs = setup_nd_likelihood.setup_covariances(10000, 256, 30, 10, noise_contribs, cl_names, cl_paths)
 setup_nd_likelihood.setup_cls(new_config, cl_paths, cl_names, noise_contribs)
 
@@ -40,9 +40,9 @@ setup_nd_likelihood.setup_filenames(
     result,
 )
 angbins = postprocess_nd_likelihood.get_angbins(config)
-setup_nd_likelihood.setup_likelihood(new_config, covs, [(0, 0), (1, 0)], angbins, steps=1024)
+setup_nd_likelihood.setup_likelihood(new_config, covs, [(0, 0), (1, 0)], angbins, steps=1024) """
 
-paths = new_config["Paths"]
+paths = config["Paths"]
 print(paths)
 covs = np.load(paths["cov"])
 cov = covs["matrix"]
@@ -77,7 +77,7 @@ print(moments)
 cumulants = ncmom2cum_nd(moments)
 gen_laplace_mix = [firsts, cumulants[1], thirds]
 approx = MultiNormalExpansion(cumulants)
-approx_laplace = GeneralizedLaplace(gen_laplace_mix)
+approx_laplace = GeneralizedLaplace(moments=gen_laplace_mix)
 third_cumulant_normalized = approx.normalize_third_cumulant()
 print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
@@ -110,26 +110,26 @@ grid_z_laplace = griddata(test_points, laplace_pdf_values, (x_grid, y_grid), met
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 10))
 c1 = ax1.contourf(x_grid, y_grid, grid_z_edgeworth, levels=100, vmax=vmax)
 ax1.set_title("Edgeworth")
-ax1.set_xlim(0.25e-6, 1e-6)
-ax1.set_ylim(0.25e-6, 1e-6)
+ax1.set_xlim(0.1e-6, 2e-6)
+ax1.set_ylim(0.1e-6, 2e-6)
 fig.colorbar(c1, ax=ax1)
 
 c2 = ax2.contourf(x_grid, y_grid, grid_z_gauss, levels=100, vmax=vmax)
 ax2.set_title("Gaussian")
-ax2.set_xlim(0.25e-6, 1e-6)
-ax2.set_ylim(0.25e-6, 1e-6)
+ax2.set_xlim(0.1e-6, 2e-6)
+ax2.set_ylim(0.1e-6, 2e-6)
 fig.colorbar(c2, ax=ax2)
 
 c3 = ax3.contourf(x_grid, y_grid, grid_z_exact, levels=100, vmax=vmax)
 ax3.set_title("Exact")
-ax3.set_xlim(0.25e-6, 1e-6)
-ax3.set_ylim(0.25e-6, 1e-6)
+ax3.set_xlim(0.1e-6, 2e-6)
+ax3.set_ylim(0.1e-6, 2e-6)
 fig.colorbar(c3, ax=ax3)
 
-c4 = ax4.contourf(x_grid, y_grid, grid_z_laplace, levels=100, vmax=None)
+c4 = ax4.contourf(x_grid, y_grid, grid_z_laplace, levels=100)
 ax4.set_title("Laplace")
-ax4.set_xlim(0.25e-6, 1e-6)
-ax4.set_ylim(0.25e-6, 1e-6)
+ax4.set_xlim(0.1e-6, 2e-6)
+ax4.set_ylim(0.1e-6, 2e-6)
 fig.colorbar(c4, ax=ax4)
 
 fig.savefig("2d_comp_edgeworth.png")
