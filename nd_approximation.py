@@ -50,9 +50,9 @@ print(moments)
 # print((np.array(thirds) - thirds_sims) / thirds_std)
 
 cumulants = ncmom2cum_nd(moments)
-
+gen_laplace_mix = [firsts, cumulants[1], thirds]
 approx = MultiNormalExpansion(cumulants)
-approx_laplace = GeneralizedLaplace(moments)
+approx_laplace = GeneralizedLaplace(gen_laplace_mix)
 third_cumulant_normalized = approx.normalize_third_cumulant()
 print("Normalized third cumulant: {}".format(third_cumulant_normalized))
 
@@ -70,7 +70,7 @@ exact_pdf_values = [pdf_exact[sample_inds_x[i], sample_inds_y[i]] for i in range
 edgeworth_pdf_values = approx.pdf(test_points)
 gauss_pdf_values = gauss_comp.pdf(test_points)
 laplace_pdf_values = approx_laplace.pdf(test_points)
-print(approx_laplace.param_moments, moments)
+print(approx_laplace.param_moments, gen_laplace_mix)
 
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 10))
 ax1.scatter(test_points[:, 0], test_points[:, 1], c=edgeworth_pdf_values, vmax=vmax)
