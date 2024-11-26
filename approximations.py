@@ -35,7 +35,7 @@ def get_moments_1d(m, cov):
     return moments
 
 
-def moments_nd(m, cov, ndim):
+def moments_nd(m, cov, ndim, n):
     """
     Calculate first three moments for an n-dimensional likelihood.
 
@@ -119,14 +119,22 @@ def moments_nd(m, cov, ndim):
         thirds = np.array(thirds)
         return thirds
 
-    firsts = first_moments()
-    seconds = second_moments(firsts)
-    thirds = third_moments(firsts)
+    if n == 1:
+        return first_moments()
+    elif n == 2:
+        firsts = first_moments()
+        return firsts, second_moments(firsts)
+    elif n == 3:
 
-    return firsts, seconds, thirds
+        firsts = first_moments()
+        seconds = second_moments(firsts)
+        thirds = third_moments(firsts)
+        return firsts, seconds, thirds
+    else:
+        raise ValueError("n > 3 not implemented")
 
 
-moments_nd_jitted = jit(moments_nd, static_argnums=(2,))
+moments_nd_jitted = jit(moments_nd, static_argnums=(2, 3))
 
 
 class GeneralizedLaplace:
@@ -199,11 +207,11 @@ class GeneralizedLaplace:
         def second_moment():
             if self.ndim == 1:
                 seconds = s * ((s + 1) * mu**2 + sigma)
-                second_central = s*(mu**2 + sigma)
+                seconds_central = s * (mu**2 + sigma)
             else:
                 seconds = s * (np.outer(mu, mu) + sigma)
-                seconds_central = s*(mu**2 + sigma)
-            return seconds_central
+                seconds_central = s * (mu**2 + sigma)
+            return seconds
 
         def third_moment():
             # rewrite
@@ -503,7 +511,7 @@ def select_conversion_function(n):
     def second_cumulant(moments):
         # cumulants and (central!) moments should be the same at second order - we use non-central moments
         first = moments[0]
-        return moments[1]  - np.outer(first, first)
+        return moments[1] - np.outer(first, first)
 
     def third_cumulant(moments):
         first = moments[0]
@@ -546,7 +554,7 @@ def cumulant_generator(N):
 def get_exact(m, cov, steps=4096):
     mean_trace, second, _ = get_moments_1d(m, cov)
     var_trace = second - mean_trace**2
-    ximax = mean_trace + 100 * np.sqrt(var_trace)
+    ximax = mean_trace + 30 * np.sqrt(var_trace)
     m = np.diag(m)
     t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
     x_low, pdf_low = calc_pdf.cf_to_pdf_1d(t, cf)
