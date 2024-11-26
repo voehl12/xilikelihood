@@ -554,8 +554,8 @@ def cumulant_generator(N):
 def get_exact(m, cov, steps=4096):
     mean_trace, second, _ = get_moments_1d(m, cov)
     var_trace = second - mean_trace**2
-    ximax = mean_trace + 30 * np.sqrt(var_trace)
-    m = np.diag(m)
-    t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
+    ximax = mean_trace + 20 * np.sqrt(var_trace)
+    # m = np.diag(m)
+    t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=False)
     x_low, pdf_low = calc_pdf.cf_to_pdf_1d(t, cf)
     return x_low, pdf_low, t, cf
