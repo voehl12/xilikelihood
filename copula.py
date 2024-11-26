@@ -85,11 +85,11 @@ print(moments)
 cumulants = app.ncmom2cum_nd(moments)
 
 
-def get_marginals(ms, covs):
+def get_marginals(ms, cov):
     marginals = []
     cdfs = []
     plt.figure()
-    for m, cov in zip(ms, covs):
+    for m in ms:
         exact_x, exact_pdf, _, _ = app.get_exact(m, cov, steps=2048)
         pchip_interp = PchipInterpolator(exact_x[500:-500], exact_pdf[500:-500])
 
@@ -149,8 +149,10 @@ def joint_pdf(cdf_X, cdf_Y, pdf_X, pdf_Y, rho):
     return copula_density * np.prod(pdf_points, axis=1)
 
 
-m_cov_pairs = setup_m_cov_combs(covs_allcl, angbins)
-marginals, cdfs = get_marginals(m_cov_pairs[:, 0], m_cov_pairs[:, 1])
+#m_cov_pairs = setup_m_cov_combs(covs_allcl, angbins)
+#marginals, cdfs = get_marginals(m_cov_pairs[:, 0], m_cov_pairs[:, 1])
+marginals, cdfs = get_marginals(mset, cov)
+
 
 stds = np.diag(np.sqrt(cumulants[1]))
 cov = cumulants[1][1, 0]
@@ -162,13 +164,14 @@ rho = float(correlation_coefficient)  # Computed from covariance
 correlation_matrix = [[1, rho], [rho, 1]]
 
 # Compute joint PDF
-joint_pdf_values = joint_pdf(cdfs[0], cdfs[2], marginals[0][1], marginals[2][1], rho)
+joint_pdf_values = joint_pdf(cdfs[0], cdfs[1], marginals[0][1], marginals[1][1], rho)
 
 gauss_comp = scipy.stats.multivariate_normal(mean=cumulants[0], cov=cumulants[1])
 
 grid_size = int(np.sqrt(5000))
 x_vals = marginals[0][0][1:-1]
-y_vals = marginals[2][0][1:-1]
+y_vals = marginals[1][0][1:-1]
+
 x_grid, y_grid = np.meshgrid(x_vals, y_vals)
 test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
 
@@ -262,3 +265,11 @@ ax9.set_xticks([])
 
 fig.tight_layout()
 fig.savefig("copula.png")
+
+plt.figure()
+plt.plot(x_vals,marginals[0][1][1:-1],label='x marginal')
+plt.plot(y_vals,marginals[1][1][1:-1],label='y marginal')
+plt.plot(x_vals, marginal_x_exact,label='x marginal from 2d')
+plt.plot(y_vals,marginal_y_exact, label='y marginal from 2d')
+plt.legend()
+plt.savefig("marginals.png")
