@@ -39,7 +39,7 @@ covs_allcl = setup_nd_likelihood.setup_covariances(
 setup_nd_likelihood.setup_cls(new_config, cl_paths, cl_names, noise_contribs)
 
 
-result = "/cluster/work/refregier/veoehl/2Dcf/xip_5535bins_10000/"
+result = "/cluster/work/refregier/veoehl/2Dcf/xip_5535bins_1000/"
 setup_nd_likelihood.setup_filenames(
     new_config,
     "covariances/cov_xip_55_53_l30_n256_circ1000.npz",
