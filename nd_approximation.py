@@ -26,7 +26,7 @@ cl_33 = "Cl_3x2pt_kids33.txt"
 cl_paths = (cl_33, cl_55, cl_53)
 cl_names = ("3x2pt_kids_33", "3x2pt_kids_55", "3x2pt_kids_53")
 noise_contribs = ("default", "default", None)
-""" new_config = setup_nd_likelihood.setup_config()
+new_config = setup_nd_likelihood.setup_config()
 covs = setup_nd_likelihood.setup_covariances(10000, 256, 30, 10, noise_contribs, cl_names, cl_paths)
 setup_nd_likelihood.setup_cls(new_config, cl_paths, cl_names, noise_contribs)
 
@@ -40,7 +40,7 @@ setup_nd_likelihood.setup_filenames(
     result,
 )
 angbins = postprocess_nd_likelihood.get_angbins(config)
-setup_nd_likelihood.setup_likelihood(new_config, covs, [(0, 0), (1, 0)], angbins, steps=1024) """
+setup_nd_likelihood.setup_likelihood(new_config, covs, [(0, 0), (1, 0)], angbins, steps=1024)
 
 paths = config["Paths"]
 print(paths)
