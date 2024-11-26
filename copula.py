@@ -188,24 +188,77 @@ grid_z_copula = griddata(test_points, joint_pdf_values, (x_grid, y_grid), method
 grid_z_gauss = griddata(test_points, gauss_pdf_values, (x_grid, y_grid), method="cubic")
 grid_z_exact = griddata(test_points, exact_pdf_values, (x_grid, y_grid), method="cubic")
 
-fig, ((ax1, ax2, ax3)) = plt.subplots(1, 3, figsize=(15, 5))
+fig = plt.figure(figsize=(20, 15))
+gs = fig.add_gridspec(4, 4, width_ratios=[4, 1, 4, 1], height_ratios=[1, 4, 1, 4])
+
+# Exact plot
+ax1 = fig.add_subplot(gs[1, 0])
 c1 = ax1.contourf(x_grid, y_grid, grid_z_exact, levels=100, vmax=vmax)
 ax1.set_title("Exact")
 ax1.set_xlim(0.1e-6, 2e-6)
 ax1.set_ylim(0.1e-6, 2e-6)
 fig.colorbar(c1, ax=ax1)
 
-c2 = ax2.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=vmax)
-ax2.set_title("Copula")
+# Exact marginals
+ax2 = fig.add_subplot(gs[0, 0], sharex=ax1)
+marginal_x_exact = np.trapz(grid_z_exact, y_vals, axis=0)
+ax2.plot(x_vals, marginal_x_exact, color="blue")
+ax2.set_title("Exact Marginal X")
 ax2.set_xlim(0.1e-6, 2e-6)
-ax2.set_ylim(0.1e-6, 2e-6)
-fig.colorbar(c2, ax=ax2)
+ax2.set_yticks([])
 
-c3 = ax3.contourf(x_grid, y_grid, grid_z_gauss, levels=100, vmax=vmax)
-ax3.set_title("Gaussian")
-ax3.set_xlim(0.1e-6, 2e-6)
+ax3 = fig.add_subplot(gs[1, 1], sharey=ax1)
+marginal_y_exact = np.trapz(grid_z_exact, x_vals, axis=1)
+ax3.plot(marginal_y_exact, y_vals, color="red")
+ax3.set_title("Exact Marginal Y")
 ax3.set_ylim(0.1e-6, 2e-6)
-fig.colorbar(c3, ax=ax3)
+ax3.set_xticks([])
 
+# Copula plot
+ax4 = fig.add_subplot(gs[1, 2])
+c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=vmax)
+ax4.set_title("Copula")
+ax4.set_xlim(0.1e-6, 2e-6)
+ax4.set_ylim(0.1e-6, 2e-6)
+fig.colorbar(c2, ax=ax4)
 
+# Copula marginals
+ax5 = fig.add_subplot(gs[0, 2], sharex=ax4)
+marginal_x_copula = np.trapz(grid_z_copula, y_vals, axis=0)
+ax5.plot(x_vals, marginal_x_copula, color="blue")
+ax5.set_title("Copula Marginal X")
+ax5.set_xlim(0.1e-6, 2e-6)
+ax5.set_yticks([])
+
+ax6 = fig.add_subplot(gs[1, 3], sharey=ax4)
+marginal_y_copula = np.trapz(grid_z_copula, x_vals, axis=1)
+ax6.plot(marginal_y_copula, y_vals, color="red")
+ax6.set_title("Copula Marginal Y")
+ax6.set_ylim(0.1e-6, 2e-6)
+ax6.set_xticks([])
+
+# Gaussian plot
+ax7 = fig.add_subplot(gs[3, 0])
+c3 = ax7.contourf(x_grid, y_grid, grid_z_gauss, levels=100, vmax=vmax)
+ax7.set_title("Gaussian")
+ax7.set_xlim(0.1e-6, 2e-6)
+ax7.set_ylim(0.1e-6, 2e-6)
+fig.colorbar(c3, ax=ax7)
+
+# Gaussian marginals
+ax8 = fig.add_subplot(gs[2, 0], sharex=ax7)
+marginal_x_gauss = np.trapz(grid_z_gauss, y_vals, axis=0)
+ax8.plot(x_vals, marginal_x_gauss, color="blue")
+ax8.set_title("Gaussian Marginal X")
+ax8.set_xlim(0.1e-6, 2e-6)
+ax8.set_yticks([])
+
+ax9 = fig.add_subplot(gs[3, 1], sharey=ax7)
+marginal_y_gauss = np.trapz(grid_z_gauss, x_vals, axis=1)
+ax9.plot(marginal_y_gauss, y_vals, color="red")
+ax9.set_title("Gaussian Marginal Y")
+ax9.set_ylim(0.1e-6, 2e-6)
+ax9.set_xticks([])
+
+fig.tight_layout()
 fig.savefig("copula.png")
