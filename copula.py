@@ -77,6 +77,7 @@ x, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config)
 vmax = 4e12
 
 print("Calculating analytical moments...")
+# extend the moments_nd function by also returning the 1d marginals
 firsts, seconds = app.moments_nd_jitted(mset, cov, 2, 2)
 print("Done.")
 moments = [firsts, seconds]
@@ -90,6 +91,7 @@ def get_marginals(ms, cov):
     cdfs = []
     plt.figure()
     for m in ms:
+        # replace this with a function that does moments and exact pdf at once (so the matrix multiplication is only done once)
         exact_x, exact_pdf, _, _ = app.get_exact(m, cov, steps=2048)
         pchip_interp = PchipInterpolator(exact_x[500:-500], exact_pdf[500:-500])
 
@@ -149,8 +151,8 @@ def joint_pdf(cdf_X, cdf_Y, pdf_X, pdf_Y, rho):
     return copula_density * np.prod(pdf_points, axis=1)
 
 
-#m_cov_pairs = setup_m_cov_combs(covs_allcl, angbins)
-#marginals, cdfs = get_marginals(m_cov_pairs[:, 0], m_cov_pairs[:, 1])
+# m_cov_pairs = setup_m_cov_combs(covs_allcl, angbins)
+# marginals, cdfs = get_marginals(m_cov_pairs[:, 0], m_cov_pairs[:, 1])
 marginals, cdfs = get_marginals(mset, cov)
 
 
@@ -267,9 +269,9 @@ fig.tight_layout()
 fig.savefig("copula.png")
 
 plt.figure()
-plt.plot(x_vals,marginals[0][1][1:-1],label='x marginal')
-plt.plot(y_vals,marginals[1][1][1:-1],label='y marginal')
-plt.plot(x_vals, marginal_x_exact,label='x marginal from 2d')
-plt.plot(y_vals,marginal_y_exact, label='y marginal from 2d')
+plt.plot(x_vals, marginals[0][1][1:-1], label="x marginal")
+plt.plot(y_vals, marginals[1][1][1:-1], label="y marginal")
+plt.plot(x_vals, marginal_x_exact, label="x marginal from 2d")
+plt.plot(y_vals, marginal_y_exact, label="y marginal from 2d")
 plt.legend()
 plt.savefig("marginals.png")
