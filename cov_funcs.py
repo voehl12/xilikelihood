@@ -153,9 +153,34 @@ def cov_4D(I, J, w_arr, lmax, lmin, theory_cell):
     mid_ind = (wlm.shape[2] - 1) // 2
     wlm_pos = wlm[:, :, mid_ind:, :, :]
     wlpmp_pos = wlpmp[:, :, mid_ind:, :, :]
+    # return 0.5 * jnp.einsum("ilmbc,ijb,jcd,jnabd->lmna", wlm_pos, c_lpp, delta, wlpmp_pos)
     step1 = jnp.einsum("ilmbc,ijb->lmbcj", wlm_pos, c_lpp)
     step2 = jnp.einsum("jcd,jnabd->jcnab", delta, wlpmp_pos)
     return 0.5 * jnp.einsum("jcnab,lmbcj->lmna", step2, step1)
+
+
+def precompute(w_arr, I, J, lmax, lmin):
+    w_arr = jnp.array(w_arr)
+    wlm = w_stack(I, w_arr)  # i,l,m,lpp,mpp
+    wlpmp = w_stack(J, w_arr)  # j,lp,mp,lpp,mppp
+
+    # create "Kronecker" delta matrix for covariance structure of alm with m with same modulus but different sign (also accounting for mpp = mppp = 0)
+    len_m = jnp.shape(w_arr)[4]
+    delta = delta_mppmppp(J, len_m)  # j,mpp,mppp
+
+    mid_ind = (wlm.shape[2] - 1) // 2
+    wlm_pos = wlm[:, :, mid_ind:, :, :]
+    wlpmp_pos = wlpmp[:, :, mid_ind:, :, :]
+
+    # Precompute the parts that do not change
+    precomputed = jnp.einsum("ilmbc,jcd,jnabd->lmbcjnab", wlm_pos, delta, wlpmp_pos)
+
+    return precomputed
+
+
+def optimized_cov_4D(precomputed, c_lpp):
+    # Perform the einsum operation with c_lpp
+    return 0.5 * jnp.einsum("lmbcjnab,ijb->lmna", precomputed, c_lpp)
 
 
 cov_4D_jit = jax.jit(cov_4D, static_argnums=(0, 1, 3, 4))
