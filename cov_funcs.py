@@ -1,5 +1,6 @@
 import numpy as np
-import gc
+import jax.numpy as jnp
+import jax
 
 
 def match_alm_inds(alm_keys):
@@ -34,14 +35,11 @@ def sel_perm(I):
         [(0, 0, 2, 0, 2), (1, 1, 2, 1, 2)],
         [(0, 0, 2, 1, 2), (0, 1, 2, 0, 2)],
     ]
-    return i[I]
+    return jnp.array(i[I])
 
 
 def part(j, arr):
-    if j == 0:
-        return np.real(arr)
-    else:
-        return np.imag(arr)
+    return jax.lax.cond(j == 0, lambda _: jnp.real(arr), lambda _: jnp.imag(arr), operand=None)
 
 
 def w_stack(I, w_arr):
@@ -52,37 +50,52 @@ def w_stack(I, w_arr):
     """
     # 0: +/-, 1: Re/Im W, 2: W+/-/0, 3: Re/Im a, 4: E/B/0 a
     # i is going to be the first axis of W
-    w_s = []
-    perm = sel_perm(I)
-    len_m = np.shape(w_arr)[4]
 
-    for p in perm:
+    perm = sel_perm(I)
+
+    def process_permutation(p):
         fac = (-1) ** p[0]
         wpart = part(p[1], w_arr)
         wpm0 = wpart[p[2]]
-        w_s.append(fac * wpm0)
+        return fac * wpm0
 
-    return np.array(w_s)
+    w_s = jax.vmap(process_permutation)(perm)
+    return w_s
 
 
 def delta_mppmppp(I, len_m):
     m_max = int((len_m - 1) / 2)
     m0_ind = m_max
     perm = sel_perm(I)
-    deltas = []
-    diag = np.arange(len_m)
 
-    for p in perm:
-        d_array = np.eye(len_m)
-        if p[3] == 0:
-            d_array[diag, np.flip(diag)] = (-1) ** (np.fabs(np.arange(-m_max, m_max + 1)))
-            d_array[m0_ind, m0_ind] = 2
-        else:
-            d_array[diag, np.flip(diag)] = (-1) ** (np.fabs(np.arange(-m_max, m_max + 1)) + 1)
-            d_array[m0_ind, m0_ind] = 0
-        deltas.append(d_array)
+    diag = jnp.arange(len_m)
 
-    return np.array(deltas)
+    def fill_d_array(p):
+        d_array = jnp.eye(len_m)
+        d_array = jax.lax.cond(
+            p[3] == 0,
+            lambda _: d_array.at[diag, jnp.flip(diag)].set(
+                (-1) ** (jnp.fabs(jnp.arange(-m_max, m_max + 1)))
+            ),
+            lambda _: d_array.at[diag, jnp.flip(diag)].set(
+                (-1) ** (jnp.fabs(jnp.arange(-m_max, m_max + 1)) + 1)
+            ),
+            operand=None,
+        )
+        d_array = jax.lax.cond(
+            p[3] == 0,
+            lambda _: d_array.at[m0_ind, m0_ind].set(2),
+            lambda _: d_array.at[m0_ind, m0_ind].set(0),
+            operand=None,
+        )
+        return d_array
+
+    def process_permutation(p):
+        return fill_d_array(p)
+
+    deltas = jax.vmap(process_permutation)(perm)
+
+    return jnp.array(deltas)
 
 
 def c_ell_stack(I, J, lmin, lmax, theory_cell):
@@ -95,33 +108,38 @@ def c_ell_stack(I, J, lmin, lmax, theory_cell):
     len_i = len(perm_i)
     len_j = len(perm_j)
     len_l = lmax - lmin + 1
-    cl_stack = np.full((len_i, len_j, len_l), np.nan)
+
+    def fill_stack(i, j, ii, jj, cl_stack):
+        cl_stack = jax.lax.cond(
+            ii[3] != jj[3],
+            lambda _: cl_stack.at[i, j].set(jnp.zeros(len_l)),
+            lambda _: cl_stack.at[i, j].set(theory_cell[ii[4], jj[4]]),
+            operand=None,
+        )
+        return cl_stack
+
+    cl_stack = jnp.full((len_i, len_j, len_l), jnp.nan)
     for i, ii in enumerate(perm_i):
         for j, jj in enumerate(perm_j):
-
-            if ii[3] != jj[3]:
-                # checking whether covariance is between real and imaginary alm
-                cl_stack[i, j] = np.zeros(len_l)
-            else:
-                cl_stack[i, j] = theory_cell[ii[4], jj[4]]
+            cl_stack = fill_stack(i, j, ii, jj, cl_stack)
 
     return cl_stack
 
 
-def cov_4D(I, J, w_arr, lmax, lmin, theory_cell, l_out=None, pos_m=False):
-    from einsumt import einsumt as einsum
-    from sys import getsizeof
-
+def cov_4D(I, J, w_arr, lmax, lmin, theory_cell):
     """
     calculate covariances for given combination of pseudo-alm (I,J) for all m, ell, m', ell' at once.
     theory_cell already include noise
     """
     # stack parts of w-matrices in the right order:
+
+    w_arr = jnp.array(w_arr)
+    theory_cell = jnp.array(theory_cell)
     wlm = w_stack(I, w_arr)  # i,l,m,lpp,mpp
     wlpmp = w_stack(J, w_arr)  # j,lp,mp,lpp,mppp
 
     # create "Kronecker" delta matrix for covariance structure of alm with m with same modulus but different sign (also accounting for mpp = mppp = 0)
-    len_m = np.shape(w_arr)[4]
+    len_m = jnp.shape(w_arr)[4]
     delta = delta_mppmppp(
         J, len_m
     )  # j,mpp,mppp (only need to specify one permuation, as the equality of Re/Im of alm to correlate is already enforced by the C_l that are set to zero otherwise)
@@ -131,28 +149,38 @@ def cov_4D(I, J, w_arr, lmax, lmin, theory_cell, l_out=None, pos_m=False):
     c_lpp = c_ell_stack(I, J, lmin, lmax, theory_cell)  # i,j,lpp
 
     # multiply and sum over lpp, mpp, mppp. Factor 0.5 is because cov(alm,alm) = 0.5 Cl for most cases (others are modified by delta_mppmppp).
-    if l_out is not None:
-        wl = wlm[:, l_out - lmin, :, :, :]  # i,m,lpp,mpp
-        wlp = wlpmp[:, l_out - lmin, :, :, :]  # j, mp, lpp, mppp
-        cov_l = 0.5 * einsum("ijb,imbc,jabd,jcd->ma", c_lpp, wl, wlp, delta)
-        return cov_l
-    else:
-        # only need m >= 0 elements, maybe already enforce this here, save resources
-        # assert np.allclose(wlm[:,:,mid_ind:,:,:],wlm[:,:,:mid_ind+1,:,:])
-        # assert np.allclose(wlpmp[:,:,mid_ind:,:,:],wlpmp[:,:,:mid_ind+1,:,:])
-        if pos_m == True:
-            mid_ind = int((wlm.shape[2] - 1) / 2)
-            wlm = wlm[:, :, mid_ind:, :, :]
-            wlpmp = wlpmp[:, :, mid_ind:, :, :]
 
-        # need to reduce all this to the m that are necessary (i.e. not go to m = lmax in the covariance matrix for each ell) possibly by slicing endresult for now?
-        step1 = einsum("ilmbc,ijb->lmbcj", wlm, c_lpp)
-        print("stepsize: {} mb".format(getsizeof(step1) / 1024**2))
-        step2 = einsum("jcd,jnabd->jcnab", delta, wlpmp)
-        cov_lmlpmp = 0.5 * einsum("jcnab,lmbcj->lmna", step2, step1)
-        print("cov part size: {} mb".format(getsizeof(cov_lmlpmp) / 1024**2))
-        del step1
-        del step2
-        gc.collect()
-        # cov_lmlpmp = 0.5 * einsum('ijb,ilmbc,jnabd,jcd->lmna',c_lpp,wlm,wlpmp,delta)
-        return cov_lmlpmp
+    mid_ind = (wlm.shape[2] - 1) // 2
+    wlm_pos = wlm[:, :, mid_ind:, :, :]
+    wlpmp_pos = wlpmp[:, :, mid_ind:, :, :]
+    # return 0.5 * jnp.einsum("ilmbc,ijb,jcd,jnabd->lmna", wlm_pos, c_lpp, delta, wlpmp_pos)
+    step1 = jnp.einsum("ilmbc,ijb->lmbcj", wlm_pos, c_lpp)
+    step2 = jnp.einsum("jcd,jnabd->jcnab", delta, wlpmp_pos)
+    return 0.5 * jnp.einsum("jcnab,lmbcj->lmna", step2, step1)
+
+
+def precompute(w_arr, I, J, lmax, lmin):
+    w_arr = jnp.array(w_arr)
+    wlm = w_stack(I, w_arr)  # i,l,m,lpp,mpp
+    wlpmp = w_stack(J, w_arr)  # j,lp,mp,lpp,mppp
+
+    # create "Kronecker" delta matrix for covariance structure of alm with m with same modulus but different sign (also accounting for mpp = mppp = 0)
+    len_m = jnp.shape(w_arr)[4]
+    delta = delta_mppmppp(J, len_m)  # j,mpp,mppp
+
+    mid_ind = (wlm.shape[2] - 1) // 2
+    wlm_pos = wlm[:, :, mid_ind:, :, :]
+    wlpmp_pos = wlpmp[:, :, mid_ind:, :, :]
+
+    # Precompute the parts that do not change
+    precomputed = jnp.einsum("ilmbc,jcd,jnabd->lmbcjnab", wlm_pos, delta, wlpmp_pos)
+
+    return precomputed
+
+
+def optimized_cov_4D(precomputed, c_lpp):
+    # Perform the einsum operation with c_lpp
+    return 0.5 * jnp.einsum("lmbcjnab,ijb->lmna", precomputed, c_lpp)
+
+
+cov_4D_jit = jax.jit(cov_4D, static_argnums=(0, 1, 3, 4))

@@ -6,7 +6,6 @@ import wigner
 import time
 from os import environ
 from file_handling import check_for_file, load_cfs, load_pdfs
-from unittests import test_cf2pdf
 
 
 def pdf_xi_1D(
@@ -298,9 +297,29 @@ def get_cov_triang(cov_objects):
 
 
 def get_cov_pos(comb):
+    if comb[0] < comb[1]:
+        raise RuntimeError("Cross-correlation: provide combination with larger number first.")
     column = int(np.fabs(comb[1] - comb[0]))
     row = comb[0]
     return (row, column)
+
+
+def get_cov_n(comb):
+    row, column = get_cov_pos(comb)
+    rowlengths = np.arange(1, row)
+    n = np.sum(rowlengths) + column
+    return n
+
+
+def get_combs(cov_n):
+    row = -1
+    sum_rows = 0
+    while sum_rows < cov_n:
+        row += 1
+        rowlength = row + 1
+        sum_rows += rowlength
+
+    return (row, sum_rows - cov_n - 1)
 
 
 def cov_cl_nD(cov_objects, xicombs=((1, 1), (1, 0))):
@@ -492,7 +511,7 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
         t, gauss_cf
     )
     print("Skewness of Gaussian extension: {}".format(helper_funcs.skewness(t, gauss_cf)))
-    test_cf2pdf(t, mean, np.sqrt(cov))
+    # test_cf2pdf(t, mean, np.sqrt(cov))
     interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
         t_lowell
     ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)
