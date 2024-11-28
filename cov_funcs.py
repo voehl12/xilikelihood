@@ -1,6 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
 import jax
+from jax import lax
 
 
 def match_alm_inds(alm_keys):
@@ -35,7 +36,26 @@ def sel_perm(I):
         [(0, 0, 2, 0, 2), (1, 1, 2, 1, 2)],
         [(0, 0, 2, 1, 2), (0, 1, 2, 0, 2)],
     ]
-    return jnp.array(i[I])
+
+    def ere():
+        return jnp.array(i[0])
+
+    def eim():
+        return jnp.array(i[1])
+
+    def bre():
+        return jnp.array(i[2])
+
+    def bim():
+        return jnp.array(i[3])
+
+    def tre():
+        return jnp.array(i[4])
+
+    def tim():
+        return jnp.array(i[5])
+
+    return lax.switch(I, [ere, eim, bre, bim])
 
 
 def part(j, arr):
@@ -159,28 +179,46 @@ def cov_4D(I, J, w_arr, lmax, lmin, theory_cell):
     return 0.5 * jnp.einsum("jcnab,lmbcj->lmna", step2, step1)
 
 
-def precompute(w_arr, I, J, lmax, lmin):
+def w_stack_dynamic(i, w_arr, mid_ind):
+    # Use select_perm to get the permutation array
+    perm = sel_perm(i)
+    # Use the permutation array to select from w_arr
+    w_stack_i = w_arr[perm][:, :, mid_ind:, :, :]
+    return w_stack_i
+
+
+def precompute_einsum(wlm, delta, wlpmp):
+    return jnp.einsum("ilmxc,jcd,jnayd->ilmxjnay", wlm, delta, wlpmp)
+
+
+@jax.jit
+def precompute_xipm(w_arr):
+    alm_inds = jnp.arange(
+        4
+    )  # indices are fixed for xi+/-, so we can precompute all of them directly
     w_arr = jnp.array(w_arr)
-    wlm = w_stack(I, w_arr)  # i,l,m,lpp,mpp
-    wlpmp = w_stack(J, w_arr)  # j,lp,mp,lpp,mppp
-
-    # create "Kronecker" delta matrix for covariance structure of alm with m with same modulus but different sign (also accounting for mpp = mppp = 0)
     len_m = jnp.shape(w_arr)[4]
-    delta = delta_mppmppp(J, len_m)  # j,mpp,mppp
+    mid_ind = (len_m - 1) // 2
+    alm_inds = jnp.arange(4)
 
-    mid_ind = (wlm.shape[2] - 1) // 2
-    wlm_pos = wlm[:, :, mid_ind:, :, :]
-    wlpmp_pos = wlpmp[:, :, mid_ind:, :, :]
+    w_stacks = jax.vmap(lambda i: w_stack(i, w_arr)[:, :, mid_ind:, :, :])(alm_inds)
+    deltas = jax.vmap(lambda i: delta_mppmppp(i, len_m))(alm_inds)
 
-    # Precompute the parts that do not change
-    precomputed = jnp.einsum("ilmbc,jcd,jnabd->lmbcjnab", wlm_pos, delta, wlpmp_pos)
-
+    batched_einsum = jax.vmap(
+        jax.vmap(jax.vmap(precompute_einsum, in_axes=(None, None, 0)), in_axes=(None, 0, None)),
+        in_axes=(0, None, None),
+    )
+    precomputed = batched_einsum(w_stacks, deltas, w_stacks)
     return precomputed
 
 
-def optimized_cov_4D(precomputed, c_lpp):
+def optimized_cov_4D(i, j, precomputed, lmax, lmin, theory_cell):
     # Perform the einsum operation with c_lpp
-    return 0.5 * jnp.einsum("lmbcjnab,ijb->lmna", precomputed, c_lpp)
+
+    c_lpp = c_ell_stack(i, j, lmin, lmax, theory_cell)
+    return 0.5 * jnp.einsum("ilmbjnab,ijb->lmna", precomputed[i, j, j], c_lpp)
 
 
 cov_4D_jit = jax.jit(cov_4D, static_argnums=(0, 1, 3, 4))
+
+optimized_cov_4D_jit = jax.jit(optimized_cov_4D, static_argnums=(0, 1, 3, 4))
