@@ -50,7 +50,7 @@ setup_nd_likelihood.setup_filenames(
 angbins = postprocess_nd_likelihood.get_angbins(config)
 setup_nd_likelihood.setup_likelihood(new_config, covs_allcl, [(0, 0), (1, 0)], angbins, steps=1024)
 
-
+exit()
 paths = config["Paths"]
 
 covs = np.load(paths["cov"])
