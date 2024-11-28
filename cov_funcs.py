@@ -179,12 +179,6 @@ def cov_4D(I, J, w_arr, lmax, lmin, theory_cell):
     return 0.5 * jnp.einsum("jcnab,lmbcj->lmna", step2, step1)
 
 
-def w_stack_dynamic(i, w_arr, mid_ind):
-    # Use select_perm to get the permutation array
-    perm = sel_perm(i)
-    # Use the permutation array to select from w_arr
-    w_stack_i = w_arr[perm][:, :, mid_ind:, :, :]
-    return w_stack_i
 
 
 def precompute_einsum(wlm, delta, wlpmp):
@@ -194,7 +188,7 @@ def precompute_einsum(wlm, delta, wlpmp):
 @jax.jit
 def precompute_xipm(w_arr):
     alm_inds = jnp.arange(
-        4
+        2
     )  # indices are fixed for xi+/-, so we can precompute all of them directly
     w_arr = jnp.array(w_arr)
     len_m = jnp.shape(w_arr)[4]
@@ -203,11 +197,10 @@ def precompute_xipm(w_arr):
 
     w_stacks = jax.vmap(lambda i: w_stack(i, w_arr)[:, :, mid_ind:, :, :])(alm_inds)
     deltas = jax.vmap(lambda i: delta_mppmppp(i, len_m))(alm_inds)
-
-    batched_einsum = jax.vmap(
-        jax.vmap(jax.vmap(precompute_einsum, in_axes=(None, None, 0)), in_axes=(None, 0, None)),
-        in_axes=(0, None, None),
-    )
+    print(w_stacks.shape)
+    print(deltas.shape)
+    batched_einsum = jax.vmap(precompute_einsum)
+    
     precomputed = batched_einsum(w_stacks, deltas, w_stacks)
     return precomputed
 
@@ -216,7 +209,7 @@ def optimized_cov_4D(i, j, precomputed, lmax, lmin, theory_cell):
     # Perform the einsum operation with c_lpp
 
     c_lpp = c_ell_stack(i, j, lmin, lmax, theory_cell)
-    return 0.5 * jnp.einsum("ilmbjnab,ijb->lmna", precomputed[i, j, j], c_lpp)
+    return 0.5 * jnp.einsum("ilmbjnab,ijb->lmna", precomputed[i], c_lpp)
 
 
 cov_4D_jit = jax.jit(cov_4D, static_argnums=(0, 1, 3, 4))

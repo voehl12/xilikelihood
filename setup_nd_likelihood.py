@@ -45,7 +45,7 @@ def setup_covariances(area, nside, l_exact, ell_buffer, noise_contribs, clnames,
             clpath=clpath,
             clname=clname,
             sigma_e=noise,
-            l_smooth_mask=l_exact,
+            l_smooth_mask=30,
             l_smooth_signal=None,
             cov_ell_buffer=ell_buffer,
         )
