@@ -330,10 +330,18 @@ class Cov(SphereMask, TheoryCl):
         )
         num_alm = len(alm_inds)
         numparts = (num_alm**2 - num_alm) / 2 + num_alm
+        tic1 = time.perf_counter()
+        precomputed = cov_funcs.precompute_xipm(w_arr)
+        toc1 = time.perf_counter()
+        print("cov_masked: precomputation took {:.2f} minutes".format((toc1 - tic1) / 60))
+
         part = 1
         for i in alm_inds:
             for j in alm_inds:
                 if i <= j:
+                    cov_part = cov_funcs.optimized_cov_4D_jit(
+                        i, j, precomputed, self._exact_lmax + buffer, lmin, theory_cell
+                    )
                     cov_part = cov_funcs.cov_4D_jit(
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell
                     )
