@@ -342,9 +342,9 @@ class Cov(SphereMask, TheoryCl):
                     cov_part = cov_funcs.optimized_cov_4D_jit(
                         i, j, precomputed, self._exact_lmax + buffer, lmin, theory_cell
                     )
-                    cov_part = cov_funcs.cov_4D_jit(
+                    """ cov_part = cov_funcs.cov_4D_jit(
                         i, j, w_arr, self._exact_lmax + buffer, lmin, theory_cell
-                    )
+                    ) """
                     if pos_m == False:
                         len_2D = (cov_part.shape[0] - buffer) * (cov_part.shape[1] - 2 * buffer)
 
