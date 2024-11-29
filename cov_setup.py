@@ -364,13 +364,13 @@ class Cov(SphereMask, TheoryCl):
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
                     # clear some memory:
-                    del cov_2D
-                    gc.collect()
-                    print("cov_masked: finished part {:d}/{:d}.".format(int(part), int(numparts)))
+                    #del cov_2D
+                    #gc.collect()
+                    #print("cov_masked: finished part {:d}/{:d}.".format(int(part), int(numparts)))
                     part += 1
         toc = time.perf_counter()
         print(
-            "cov_masked: covariance matrix calculation took {:.2f} minutes".format((toc - tic) / 60)
+            "cov_masked: covariance matrix calculation took {:.3f} seconds".format((toc - tic))
         )
         return cov_matrix
 
