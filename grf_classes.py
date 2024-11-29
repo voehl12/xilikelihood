@@ -414,13 +414,7 @@ class SphereMask:
                     for m2, M2 in enumerate(M2_arr):
                         arglist.append((L1, L2, M1, M2))
 
-        # n_proc = mup.cpu_count() - 1
-
-        """ if verbose:
-            print(f'Computing W_lmlpmp with {n_proc} cores')     """
-
-        # pool = mup.Pool(processes=n_proc)
-        # with mup.Pool(processes=n_proc) as pool:
+        
         self.wlm
         self.wlm_lmax
         print("Starting computation of 4D W_llpmmp arrays... ")
@@ -463,14 +457,22 @@ class SphereMask:
             return self._w_arr
 
     @property
-    def m_llp(self):
-        m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
-        self._m_llp = m_llp_p, m_llp_m
+    def m_llp(self,cov_ell_buffer):
+        self.set_mllppath(cov_ell_buffer)
+        if file_handling.check_for_file(self.mllp_path):
+            self.load_mllp_arr()
+        else:
+            m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
+            self._m_llp = m_llp_p, m_llp_m
+            self.save_mllp_arr()
         return self._m_llp
 
     def save_w_arr(self):
         print("Saving Wpm0 arrays.")
         np.savez(self.wpm_path, wpm0=self._w_arr)
+
+    def save_mllp_arr(self):
+        np.savez(self.mllp_path,m_llp_p=self._m_llp[0],m_llp_p=self._m_llp[1])
 
     def check_w_arr(self):
         print("Checking for Wpm0 arrays... ", end="")
@@ -487,6 +489,12 @@ class SphereMask:
         wpmfile = np.load(self.wpm_path)
         print("Loaded with size {} mb.".format(getsizeof(wpmfile["wpm0"]) / 1024**2))
         self._w_arr = wpmfile["wpm0"]
+
+    def load_mllp_arr(self):
+        print("Loading Mllp arrays.")
+        mllpfile = np.load(self.mllp_path)
+        m_llp_p, m_llp_m = mllpfile["m_llp_p"], mllpfile["m_llp_m"]
+        self._m_llp = m_llp_p, m_llp_m
 
     def set_wpm_string(self, cov_ell_buffer):
 
@@ -505,3 +513,12 @@ class SphereMask:
             os.system(command)
         wpm_name = self.working_dir + "/wpm_arrays/wpm" + charac
         self.wpm_path = wpm_name
+
+    def set_mllppath(self, cov_ell_buffer):
+        charac = self.set_wpm_string(cov_ell_buffer)
+        
+        if not os.path.isdir(self.working_dir + "/mllp_arrays"):
+            command = "mkdir " + self.working_dir + "/mllp_arrays"
+            os.system(command)
+        mllp_name = self.working_dir + "/mllp_arrays/mllp" + charac
+        self.mllp_path = mllp_name
