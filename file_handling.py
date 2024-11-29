@@ -51,7 +51,7 @@ def load_cfs(name):
 
 
 def save_matrix(m, filename, kind="M"):
-    print("Saving matrix.".format(kind))
+    print("Saving {} matrix.".format(kind))
     np.savez(filename, matrix=m)
 
 
