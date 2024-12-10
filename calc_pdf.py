@@ -296,6 +296,14 @@ def get_cov_triang(cov_objects):
     return cov_triang
 
 
+def generate_combinations(n):
+    combinations = []
+    for i in range(n):
+        for j in range(i, -1, -1):
+            combinations.append([i, j])
+    return combinations
+
+
 def get_cov_pos(comb):
     if comb[0] < comb[1]:
         raise RuntimeError("Cross-correlation: provide combination with larger number first.")
@@ -569,8 +577,8 @@ def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
 
     t0 = -0.5 * dt * (steps - 1)
     t = np.linspace(t0, -t0, steps - 1)
-
-    t_evals = np.tile(
+    t_evals = t[:, None] * evals
+    """ t_evals = np.tile(
         evals, (steps - 1, 1)
     )  # number of t steps rows of number of eigenvalues columns; each column contains one eigenvalue
     tmat = np.repeat(t, len(evals))  # repeat each t number of eigenvalues times
@@ -578,10 +586,21 @@ def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
         tmat, (steps - 1, len(evals))
     )  # recast to array with number of t steps rows and number of eigenvalues columns; each row contains one t step
     t_evals *= tmat  # each row is one set of eigenvalues times a given t step -> need to multiply along this row (axis 1)
-
+    """
     cf = np.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=1)
 
     return t, cf
+
+
+def batched_cf_1d(eigvals, max_vals, steps=1024):
+
+    all_dt = 0.45 * 2 * np.pi / max_vals
+    all_t0 = -0.5 * all_dt * (steps - 1)
+    all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
+    t_evals = all_t[:, :, :, None] * eigvals[:, :, None, :]
+    cfs = np.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
+
+    return all_t, cfs
 
 
 def get_cf_nD(tset, mset, cov):
