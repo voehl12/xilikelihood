@@ -1,0 +1,102 @@
+import numpy as np
+from scipy.stats import norm, multivariate_normal
+from scipy.interpolate import PchipInterpolator
+from scipy.integrate import cumulative_trapezoid as cumtrapz
+import matplotlib.pyplot as plt
+
+
+def pdf_to_cdf(xs, pdfs):
+    plt.figure()
+    if xs.ndim > 2:
+        x_flat = xs.reshape(-1, xs.shape[-1])
+        pdf_flat = pdfs.reshape(-1, pdfs.shape[-1])
+    else:
+        x_flat = xs
+        pdf_flat = pdfs
+    cdfs, pdfs_interp, xs_interp = [], [], []
+    for x, pdf in zip(x_flat, pdf_flat):
+        interp = PchipInterpolator(x, pdf)
+        x_vals = np.linspace(x[0], x[-1], 512)
+        pdf_vals = interp(x_vals)
+        plt.plot(x_vals, pdf_vals)
+        cdf = cumtrapz(pdf_vals, x_vals, initial=0)
+
+        assert np.fabs(cdf[-1] - 1) < 1e-5, "CDF not normalized to 1"
+        cdf /= max(cdf)
+        cdfs.append(cdf)
+        pdfs_interp.append(pdf_vals)
+        xs_interp.append(x_vals)
+    cdfs = np.array(cdfs)
+    pdfs_interp = np.array(pdfs_interp)
+    xs_interp = np.array(xs_interp)
+    cdfs = cdfs.reshape(xs.shape[0], xs.shape[1], -1)
+    pdfs_interp = pdfs_interp.reshape(xs.shape[0], xs.shape[1], -1)
+    xs_interp = xs_interp.reshape(xs.shape[0], xs.shape[1], -1)
+    return cdfs, pdfs_interp, xs_interp
+
+
+def covariance_to_correlation(cov_matrix):
+    """
+    Converts a covariance matrix to a correlation matrix.
+
+    Parameters:
+    - cov_matrix: A 2D numpy array representing the covariance matrix
+
+    Returns:
+    - corr_matrix: A 2D numpy array representing the correlation matrix
+    """
+    # Compute the standard deviations
+    std_devs = np.sqrt(np.diag(cov_matrix))
+
+    # Outer product of standard deviations
+    std_devs_outer = np.outer(std_devs, std_devs)
+
+    # Compute the correlation matrix
+    corr_matrix = cov_matrix / std_devs_outer
+
+    # Set the diagonal elements to 1
+    np.fill_diagonal(corr_matrix, 1)
+
+    return corr_matrix
+
+
+def gaussian_copula_density(u, v, covariance_matrix):
+    # Convert u and v to normal space
+    z1 = norm.ppf(u)
+    z2 = norm.ppf(v)
+
+    # Bivariate normal PDF with correlation rho
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    mvn = multivariate_normal(mean=[0, 0], cov=corr_matrix)
+    x_grid, y_grid = np.meshgrid(z1, z2)
+    test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
+    bivariate_pdf = mvn.pdf(test_points)
+
+    # Standard normal PDFs
+    pdf_z1 = norm.pdf(z1)
+    pdf_z2 = norm.pdf(z2)
+
+    pdf_z1_grid, pdf_z2_grid = np.meshgrid(pdf_z1, pdf_z2)
+    pdf_points = np.vstack([pdf_z1_grid.ravel(), pdf_z2_grid.ravel()]).T
+
+    # Copula density
+    copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
+    return copula_density
+
+
+def joint_pdf(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
+    # Compute marginals
+    u = cdf_X[1:-1]
+    v = cdf_Y[1:-1]
+    pdf_x_grid, pdf_y_grid = np.meshgrid(pdf_X[1:-1], pdf_Y[1:-1])
+    pdf_points = np.vstack([pdf_x_grid.ravel(), pdf_y_grid.ravel()]).T
+
+    # Compute copula density
+    copula_density = gaussian_copula_density(u, v, cov)
+
+    # Joint PDF
+    return copula_density * np.prod(pdf_points, axis=1)
+
+
+def evaluate():
+    pass
