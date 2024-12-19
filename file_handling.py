@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import calc_pdf
+import helper_funcs
 
 
 class File:
@@ -66,7 +66,7 @@ def read_2D_cf(config):
 
     xi_max = [float(params["ximax{:d}".format(i)]) for i in range(1, ndim + 1)]
 
-    t_inds, t_sets, t0_set, dt_set = calc_pdf.setup_t(xi_max, steps)
+    t_inds, t_sets, t0_set, dt_set = helper_funcs.setup_t(xi_max, steps)
 
     cf_grid = np.full((steps - 1, steps - 1), np.nan, dtype=complex)
 
