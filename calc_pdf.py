@@ -234,13 +234,13 @@ def pdf_xi_1D(
     return x_arr, pdf_arr, stat_arr
 
 
-def cov_cl_gaussian(cov_object):
-    cl_e = cov_object.ee.copy()
-    cl_b = cov_object.bb.copy()
+def cov_cl_gaussian(cl_object):
+    cl_e = cl_object.ee.copy()
+    cl_b = cl_object.bb.copy()
     noise2 = np.zeros_like(cl_e)
-    ell = np.arange(cov_object.lmax + 1)
-    if hasattr(cov_object, "_noise_sigma"):
-        noise_B = noise_E = cov_object.noise_cl
+
+    if hasattr(cl_object, "_noise_sigma"):
+        noise_B = noise_E = cl_object.noise_cl
 
         cl_e += noise_E
         cl_b += noise_B
@@ -253,17 +253,17 @@ def cov_cl_gaussian(cov_object):
     return diag, noise_diag
 
 
-def get_noisy_cl(cov_objects, lmax):
+def get_noisy_cl(cl_objects, lmax):
     cl_es, cl_bs = [], []
-    for cov_object in cov_objects:
-        if cov_object is None:
+    for cl_object in cl_objects:
+        if cl_object is None:
             # assert that this is in place of a cross cl?
             cl_e = cl_b = np.zeros((lmax + 1))
         else:
-            cl_e = cov_object.ee.copy()
-            cl_b = cov_object.bb.copy()
-            if hasattr(cov_object, "_noise_sigma"):
-                noise_B = noise_E = cov_object.noise_cl
+            cl_e = cl_object.ee.copy()
+            cl_b = cl_object.bb.copy()
+            if hasattr(cl_object, "_noise_sigma"):
+                noise_B = noise_E = cl_object.noise_cl
 
                 cl_e += noise_E
                 cl_b += noise_B
@@ -272,9 +272,9 @@ def get_noisy_cl(cov_objects, lmax):
     return tuple(cl_es), tuple(cl_bs)
 
 
-def cov_cl_gaussian_mixed(mixed_cov_objects, lmax):
+def cov_cl_gaussian_mixed(mixed_cl_objects, lmax):
     cl_es, cl_bs = get_noisy_cl(
-        mixed_cov_objects, lmax
+        mixed_cl_objects, lmax
     )  # should return all cle and clb needed with noise added
     one_ee, two_ee, three_ee, four_ee = cl_es
     one_bb, two_bb, three_bb, four_bb = cl_bs
@@ -301,7 +301,7 @@ def generate_combinations(n):
     for i in range(n):
         for j in range(i, -1, -1):
             combinations.append([i, j])
-    return combinations
+    return np.array(combinations)
 
 
 def get_cov_pos(comb):
@@ -314,9 +314,12 @@ def get_cov_pos(comb):
 
 def get_cov_n(comb):
     row, column = get_cov_pos(comb)
-    rowlengths = np.arange(1, row)
-    n = np.sum(rowlengths) + column
-    return n
+    if row == 0:
+        return 0
+    else:
+        rowlengths = np.arange(1, row + 1)
+        n = np.sum(rowlengths) + column
+        return n
 
 
 def get_combs(cov_n):
@@ -330,36 +333,44 @@ def get_combs(cov_n):
     return (row, sum_rows - cov_n - 1)
 
 
-def cov_cl_nD(cov_objects, xicombs=((1, 1), (1, 0))):
+def cov_cl_nD(cl_objects, lmax, redshift_bin_combs=None, n_redshift_bins=None):
     # xicombs: number stands for row of auto correlation in the GLASS ordering of C_ell, cross-corr always with the larger number first
-    c = len(cov_objects)
-    sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8 * c)))
+    c = len(cl_objects)
+    if redshift_bin_combs is None:
+        if n_redshift_bins is None:
+            raise RuntimeError("Provide either redshift_bin_combs or n_redshift_bins.")
+        elif c != n_redshift_bins * (n_redshift_bins + 1) / 2:
+            raise RuntimeError("Number of redshift bins not compatible with number of cl objects.")
+        else:
+            redshift_bin_combs = generate_combinations(n_redshift_bins)
 
-    cov_triang = get_cov_triang(cov_objects)
-    cov = np.zeros((sidelen_xicov, sidelen_xicov, cov_objects[0].lmax + 1))
+    sidelen_xicov = c
+
+    cl_triang = get_cov_triang(cl_objects)
+    cov = np.zeros((sidelen_xicov, sidelen_xicov, lmax + 1))
 
     for i in range(sidelen_xicov):
         for j in range(sidelen_xicov):
             if i <= j:
-                (k, l), (m, n) = xicombs[i], xicombs[j]
+                (k, l), (m, n) = redshift_bin_combs[i], redshift_bin_combs[j]
 
                 mix = [(k, m), (l, n), (k, n), (l, m)]
                 sorted = [np.sort(comb)[::-1] for comb in mix]
                 # need to sort tuples in mix
-                mix_cov_objects = [
-                    cov_triang[get_cov_pos(comb)[0]][get_cov_pos(comb)[1]] for comb in sorted
+                mix_cl_objects = [
+                    cl_triang[get_cov_pos(comb)[0]][get_cov_pos(comb)[1]] for comb in sorted
                 ]
 
-                sub_cov = cov_cl_gaussian_mixed(tuple(mix_cov_objects), cov_objects[0].lmax)
+                sub_cov = cov_cl_gaussian_mixed(tuple(mix_cl_objects), lmax)
                 cov[i, j] = sub_cov
                 cov[j, i] = sub_cov
 
     # diagonal check: (can be removed after this has been run with a sidelen 2 covariance matrix for a couple of times)
-    cov_check = np.zeros((sidelen_xicov, sidelen_xicov, cov_objects[0].lmax + 1))
+    cov_check = np.zeros((sidelen_xicov, sidelen_xicov, lmax + 1))
     for i in range(sidelen_xicov):
-        inds = get_cov_pos(xicombs[i])
-        cov_obj = cov_triang[inds[0]][inds[1]]
-        var, noise = cov_cl_gaussian(cov_obj)
+        inds = get_cov_pos(redshift_bin_combs[i])
+        cl_obj = cl_triang[inds[0]][inds[1]]
+        var, noise = cov_cl_gaussian(cl_obj)
         if var is None:
             cov_check[i, i] = np.zeros_like(cov[0, 0])
         else:
@@ -389,74 +400,87 @@ def get_integrated_wigners(lmin, lmax, bin_in_deg):
     return norm * integrated_wigners * t_norm
 
 
-def cov_xi_gaussian_nD(cov_objects, xi_combs, angbins_in_deg, lmin=0, lmax=None):
+def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None):
     # cov_xi_gaussian(lmin=0, noise_apo=False)
     # Calculates Gaussian  covariance (shot noise and sample variance) of a xi_plus correlation function
     # cov_objects order like in GLASS. assume mask and lmax is the same as for cov_object[0] for all
 
     # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
-    assert len(xi_combs) == len(angbins_in_deg)
-    cov_cl2 = cov_cl_nD(cov_objects, xi_combs)
+
+    # take only cl_objects, not covariance objects because they are really not needed and the noise is now part of the cl_objects
+
+    """assert len(redshift_bin_combs) == len(
+        angbins_in_deg
+    )"""  # need to specify the angular bins for each redshift bin combination, it's a bit more flexible than the likelihood setup
+
     if lmax is None:
-        lmax = cov_objects[0].lmax
+        if not helper_funcs.check_property_equal(cl_objects, "lmax"):
+            raise RuntimeError("lmax not equal for all cl objects.")
+        else:
+            lmax = cl_objects[0].lmax
+    cov_cl2 = cov_cl_nD(cl_objects, lmax, redshift_bin_combs=redshift_bin_combs)
 
-    areas = [cov.eff_area for cov in cov_objects if cov is not None]
-    assert np.all(np.isclose(areas, areas[0])), areas
-    prefactors = helper_funcs.prep_prefactors(
-        angbins_in_deg, cov_objects[0].wl, cov_objects[0].lmax, lmax
-    )
-    fsky = areas[0] / 41253  # assume that all fields have at least similar enough fsky
+    fsky = eff_area / 41253  # assume that all fields have at least similar enough fsky
     c_tot = cov_cl2[:, :, lmin : lmax + 1] / fsky
-    l = 2 * np.arange(lmin, lmax + 1) + 1
+    ell = 2 * np.arange(lmin, lmax + 1) + 1
 
-    xi_cov = np.full(cov_cl2.shape[:2], np.nan)
+    xi_cov = np.full(cov_cl2.shape[:2] * len(angbins_in_deg), np.nan)
     means = []
+    n, m = 0, 0
     for i in range(len(cov_cl2)):
-        for j in range(len(cov_cl2)):
-            if i <= j:
-
-                wigners1 = get_integrated_wigners(lmin, lmax, angbins_in_deg[i])
-                wigners2 = get_integrated_wigners(lmin, lmax, angbins_in_deg[j])
-                xi_cov[i, j] = np.sum(wigners1 * wigners2 * c_tot[i, j] * l)
-
-                if i == j:
-                    autocomb = xi_combs[i]
-                    auto_cov_object = get_cov_triang(cov_objects)[get_cov_pos(autocomb)[0]][
-                        get_cov_pos(autocomb)[1]
-                    ]
-                    auto_cov_object.cl2pseudocl()
-                    pcl_mean_p, pcl_mean_m = helper_funcs.pcl2xi(
-                        (
-                            auto_cov_object.p_ee.copy(),
-                            auto_cov_object.p_bb.copy(),
-                            auto_cov_object.p_eb.copy(),
-                        ),
-                        prefactors,
-                        lmax,
-                        lmin=lmin,
-                    )
-                    if hasattr(auto_cov_object, "_noise_sigma"):
-                        cl_e = auto_cov_object.ee.copy() + auto_cov_object.noise_cl
-                        cl_b = auto_cov_object.bb.copy() + auto_cov_object.noise_cl
-                    else:
-                        cl_e, cl_b = auto_cov_object.ee.copy(), auto_cov_object.bb.copy()
-                    cl_mean_p, cl_mean_m = helper_funcs.cl2xi(
-                        (cl_e, cl_b), angbins_in_deg[i], lmax, lmin=lmin
-                    )
-                    # assert np.allclose(pcl_mean_p[0], cl_mean_p, rtol=1e-2), (pcl_mean_p[0], cl_mean_p)
-                    print(
-                        "lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(
-                            lmin, lmax, pcl_mean_p[i], cl_mean_p
-                        )
-                    )
-                    assert np.allclose(pcl_mean_p[i], cl_mean_p, rtol=1e-1)
-                    means.append(pcl_mean_p[i])
-
+        for k in range(len(angbins_in_deg)):
+            m = 0
+            for j in range(len(cov_cl2)):
+                for l in range(len(angbins_in_deg)):
+                    if n <= m:
+                        # could get these for all bins before the loop
+                        wigners1 = get_integrated_wigners(lmin, lmax, angbins_in_deg[k])
+                        wigners2 = get_integrated_wigners(lmin, lmax, angbins_in_deg[l])
+                        xi_cov[n, m] = np.sum(wigners1 * wigners2 * c_tot[i, j] * ell)
+                    m += 1
+            n += 1
     xi_cov = np.where(np.isnan(xi_cov), xi_cov.T, xi_cov)
     assert np.all(np.linalg.eigvals(xi_cov) >= 0), "Covariance matrix not positive-semidefinite"
     assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
 
-    return np.array(means), xi_cov
+    return xi_cov
+
+
+def mean_xi_gaussian_nD(prefactors, theory_cl_objects, mask, lmin=0, lmax=None, kind="p"):
+
+    all_pcl = np.array(
+        [helper_funcs.cl2pseudocl(mask, cl_object) for cl_object in theory_cl_objects]
+    )
+    pcls_e, pcls_b, pcls_eb = all_pcl[:, 0], all_pcl[:, 1], all_pcl[:, 2]
+    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis(
+        (
+            pcls_e,
+            pcls_b,
+            pcls_eb,
+        ),
+        prefactors,
+        lmax,
+        lmin=lmin,
+    )
+    """ if hasattr(auto_cov_object, "_noise_sigma"):
+        cl_e = auto_cov_object.ee.copy() + auto_cov_object.noise_cl
+        cl_b = auto_cov_object.bb.copy() + auto_cov_object.noise_cl
+    else:
+        cl_e, cl_b = auto_cov_object.ee.copy(), auto_cov_object.bb.copy()
+    cl_mean_p, cl_mean_m = helper_funcs.cl2xi((cl_e, cl_b), angbins_in_deg[i], lmax, lmin=lmin)
+    # assert np.allclose(pcl_mean_p[0], cl_mean_p, rtol=1e-2), (pcl_mean_p[0], cl_mean_p)
+    print(
+        "lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(
+            lmin, lmax, pcl_mean_p[i], cl_mean_p
+        )
+    )
+    assert np.allclose(pcl_mean_p[i], cl_mean_p, rtol=1e-1) """
+    if kind == "p":
+        return pcl_means_p
+    elif kind == "m":
+        return pcl_means_m
+    else:
+        return pcl_means_p, pcl_means_m
 
 
 def cov_xi_nD(cov_objects):
@@ -523,6 +547,54 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
     interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
         t_lowell
     ) + UnivariateSpline(t, gauss_cf.real, k=5, s=0)(t_lowell)
+
+    return interp_to_lowell
+
+
+def high_ell_gaussian_cf_1d(t_lowell, means, vars):
+    """
+    calculates the characteristic function for a set of 1d Gaussians used as high mulitpole moment extension.
+
+    Parameters
+    ----------
+    t_lowell : 3d array
+        Fourier space t grid used for the low multipole moment part
+        shape: (number of redshift bin combinations, number of angular bins, number of t steps)
+    means : 2d array
+        mean values of the Gaussian extensions
+        shape: (number of redshift bin combinations, number of angular bins)
+    vars : 2d array
+        variance values of the Gaussian extensions
+        shape: (number of redshift bin combinations, number of angular bins)
+
+    Returns
+    -------
+    3d complex array
+        characteristic function of the Gaussian extensions on the same t grid as the low ell part
+        shape: (number of redshift bin combinations, number of angular bins, number of t steps)
+    """
+
+    xip_max = np.fabs(means) + 500 * np.sqrt(vars)
+    dt_xip = 0.45 * 2 * np.pi / xip_max
+    steps = 4096
+    all_t0 = -0.5 * dt_xip * (steps - 1)
+    all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
+
+    gauss_cf = np.exp(1j * means[:, :, None] * all_t - 0.5 * vars[:, :, None] * all_t**2)
+
+    interp_to_lowell_real = np.zeros_like(t_lowell, dtype=np.float64)
+    interp_to_lowell_imag = np.zeros_like(t_lowell, dtype=np.float64)
+
+    for i in range(gauss_cf.shape[0]):
+        for j in range(gauss_cf.shape[1]):
+            interp_to_lowell_real[i, j] = UnivariateSpline(
+                all_t[i, j], gauss_cf[i, j].real, k=5, s=0
+            )(t_lowell[i, j])
+            interp_to_lowell_imag[i, j] = UnivariateSpline(
+                all_t[i, j], gauss_cf[i, j].imag, k=5, s=0
+            )(t_lowell[i, j])
+
+    interp_to_lowell = 1j * interp_to_lowell_imag + interp_to_lowell_real
 
     return interp_to_lowell
 
@@ -621,24 +693,45 @@ def cf_to_pdf_1d(t, cf):
 
     Returns tuple of (x, pdf).
     """
+    if t.ndim > 1:
+        t = t.reshape(-1, t.shape[-1])
+        cf_array = cf.reshape(-1, cf.shape[-1])
+        pdf_array = np.fft.fft(cf_array, axis=1)
+        dt = t[:, 1] - t[:, 0]  # assuming uniform spacing
+        t0 = t[:, 0]
+        x_array = np.fft.fftfreq(cf_array.shape[1]) * 2 * np.pi / dt[:, None]
+        pdf_array *= dt[:, None] * np.exp(1j * x_array * t0[:, None]) / (2 * np.pi)
+        xs, pdfs = [], []
+        for x, pdf in zip(x_array, pdf_array):
+            x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
+            xs.append(x_sorted)
+            pdfs.append(pdf_sorted)
 
-    # Main part of the pdf is given by a FFT
-    pdf = np.fft.fft(cf)
-    dt = t[1] - t[0]
-    t0 = t[0]
-    # x is given by the FFT frequencies multiplied by some normalisation factor 2pi/dt
-    x = np.fft.fftfreq(cf.size) * 2 * np.pi / dt
+        pdfs = np.array(pdfs)
+        xs = np.array(xs)
+        pdfs = pdfs.reshape(cf.shape)
+        xs = xs.reshape(cf.shape)
 
-    # Multiply pdf by factor to account for the differences between numpy's FFT and a true continuous FT
-    pdf *= dt * np.exp(1j * x * t0) / (2 * np.pi)
+        return xs, pdfs
 
-    # Take the real part of the pdf, and sort both x and pdf by x
-    # x, pdf = list(zip(*sorted(zip(x, pdf.real))))
-    x, pdf = list(
-        zip(*sorted(zip(x, np.abs(pdf))))
-    )  # I have found this tends to be more numerically stable
+    else:
+        # Main part of the pdf is given by a FFT
+        pdf = np.fft.fft(cf)
+        dt = t[1] - t[0]
+        t0 = t[0]
+        # x is given by the FFT frequencies multiplied by some normalisation factor 2pi/dt
+        x = np.fft.fftfreq(cf.size) * 2 * np.pi / dt
 
-    return (np.array(x), np.array(pdf))
+        # Multiply pdf by factor to account for the differences between numpy's FFT and a true continuous FT
+        pdf *= dt * np.exp(1j * x * t0) / (2 * np.pi)
+
+        # Take the real part of the pdf, and sort both x and pdf by x
+        # x, pdf = list(zip(*sorted(zip(x, pdf.real))))
+        x, pdf = list(
+            zip(*sorted(zip(x, np.abs(pdf))))
+        )  # I have found this tends to be more numerically stable
+
+        return (np.array(x), np.array(pdf))
 
 
 def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
@@ -688,21 +781,3 @@ def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
     pdf_grid = np.abs(fft_grid_with_phase_factor * norm_factor)
 
     return (x_grid, pdf_grid)
-
-
-def setup_t(xi_max, steps):
-    dts, t0s, ts = [], [], []
-
-    for xi in xi_max:
-
-        dt = 0.45 * 2 * np.pi / xi
-        t0 = -0.5 * dt * (steps - 1)
-        t = np.linspace(t0, -t0, steps - 1)
-        dts.append(dt)
-        t0s.append(t0)
-        ts.append(t)
-
-    t_inds = np.arange(len(t))
-    t_sets = np.stack(np.meshgrid(ts[0], ts[1]), -1).reshape(-1, 2)
-
-    return t_inds, t_sets, t0s, dts
