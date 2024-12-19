@@ -122,6 +122,19 @@ def bin_prefactors(ang_bin_in_deg, wl, norm_lmax, out_lmax, kind="p"):
 
 
 def prep_prefactors(angs_in_deg, wl, norm_lmax, out_lmax):
+    """
+    Calculate the l-dependent prefactors that contain all angular information for the correlation function.
+
+    Parameters:
+        angs_in_deg (list): A list of angles in degrees.
+        wl (numpy array): the C_ell of the mask
+        norm_lmax (int): the lmax used for the calculation of the normalization.
+        out_lmax (int): the lmax to which the prefactors will be needed and should be returned
+
+    Returns:
+        numpy array: An array with the prefactors for both xi+ and xi-, the given angles and lmax.
+        Shape: (len(angs_in_deg),2,out_lmax+1)
+    """
     prefactors_arr = np.zeros((len(angs_in_deg), 2, out_lmax + 1))
     if type(angs_in_deg[0]) is tuple:
         prefactors = bin_prefactors
@@ -268,3 +281,44 @@ def check_property_equal(instances, property_name):
 
     first_value = getattr(instances[0], property_name)
     return all(getattr(instance, property_name) == first_value for instance in instances)
+
+
+def cl2pseudocl(mask, theorycl):
+    # from namaster scientific documentation paper
+
+    if mask.smooth_mask is None:
+        mask.wl
+        print("pseudo_cl: calculating wl to establish smoothed mask.")
+    m_llp_p, m_llp_m = mask.m_llp
+    if hasattr(theorycl, "_noise_sigma"):
+        cl_e = theorycl.ee.copy() + theorycl.noise_cl
+        cl_b = theorycl.bb.copy() + theorycl.noise_cl
+
+    else:
+        cl_e = theorycl.ee.copy()
+        cl_b = theorycl.bb.copy()
+    cl_eb = cl_be = cl_b
+
+    p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
+    p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+    p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
+
+    return p_ee, p_bb, p_eb
+
+
+def setup_t(xi_max, steps):
+    dts, t0s, ts = [], [], []
+
+    for xi in xi_max:
+
+        dt = 0.45 * 2 * np.pi / xi
+        t0 = -0.5 * dt * (steps - 1)
+        t = np.linspace(t0, -t0, steps - 1)
+        dts.append(dt)
+        t0s.append(t0)
+        ts.append(t)
+
+    t_inds = np.arange(len(t))
+    t_sets = np.stack(np.meshgrid(ts[0], ts[1]), -1).reshape(-1, 2)
+
+    return t_inds, t_sets, t0s, dts
