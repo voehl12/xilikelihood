@@ -1,16 +1,35 @@
 import numpy as np
 import healpy as hp
-import wpm_funcs
+import wpm_funcs, cov_funcs
 import pickle
 import os.path
 from sys import getsizeof
 import file_handling
+import time
+import scipy.stats
+import helper_funcs
 
 
 def save_maskobject(maskobject, dir=""):
     name = dir + maskobject.name + "_l" + str(maskobject.lmax) + "_n" + str(maskobject.nside)
     maskfile = open(name, "wb")
     pickle.dump(maskobject, maskfile)
+
+
+class RedshiftBin:
+    """
+    A class to store and handle redshift bins
+    """
+
+    def __init__(self, z, nz, nbin, zmean=None, zsig=None):
+        self.z = z
+        self.nz = nz
+        self.nbin = nbin
+        if zmean is not None and zsig is not None:
+            self.zmean = zmean
+            self.zsig = zsig
+            self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
+        self.name = "bin{:d}".format(nbin)
 
 
 class TheoryCl:
@@ -20,8 +39,9 @@ class TheoryCl:
 
     def __init__(
         self,
-        lmax=30,
+        lmax,
         clpath=None,
+        sigma_e=None,
         theory_lmin=2,
         clname="test_cl",
         smooth_signal=None,
@@ -34,7 +54,7 @@ class TheoryCl:
         self.ell = np.arange(self.lmax + 1)
         self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
-        self.clname = clname
+        self.name = clname
         self.clpath = clpath  # if clpath is set, s8 will be ignored.
         if working_dir is None:
             working_dir = os.getcwd()
@@ -45,6 +65,8 @@ class TheoryCl:
         self.ne = None
         self.bb = None
         self.eb = None
+        self._sigma_e = sigma_e
+        self.set_noise_sigma()
 
         if self.clpath is not None:
             self.read_clfile()
@@ -54,7 +76,7 @@ class TheoryCl:
         elif self.s8 is not None:
             import theory_cl
 
-            self.clpath, self.clname = theory_cl.clnames(self.s8)
+            self.clpath, self.name = theory_cl.clnames(self.s8)
             if file_handling.check_for_file(self.clpath, kind="theory cl"):
                 self.read_clfile()
                 self.load_cl()
@@ -89,8 +111,34 @@ class TheoryCl:
             self.nn *= self.smooth_array
             self.ne *= self.smooth_array
             self.bb *= self.smooth_array
-            self.clname += "_smooth{:d}".format(smooth_ell)
+            self.name += "_smooth{:d}".format(smooth_ell)
             print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
+
+        @property
+        def sigma_e(self):
+            return self._sigma_e
+
+    def set_noise_sigma(self):
+        if self._sigma_e is not None:
+            if isinstance(self._sigma_e, str):
+                self._noise_sigma = helper_funcs.get_noise_cl()
+
+            elif isinstance(self._sigma_e, tuple):
+                self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+
+            else:
+                raise RuntimeError(
+                    "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
+                )
+            self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
+            if self.smooth_signal is not None:
+                self.noise_cl *= self.smooth_array
+        else:
+            try:
+                del self._noise_sigma
+
+            except:
+                pass
 
     def read_clfile(self):
         self.raw_spectra = np.loadtxt(self.clpath)
@@ -111,7 +159,7 @@ class TheoryCl:
         self.eb = np.zeros_like(self.ee)
 
     def set_cl_zero(self):
-        self.clname = "none"
+        self.name = "none"
         self.ee = self.ne = self.nn = np.zeros(self.len_l)
 
 
@@ -163,7 +211,7 @@ class SphereMask:
             minimum multipole moment used, by default 0
         exact_lmax : integer, optional
             maximum multipole moment used for exact calculations, by default None, then defaults to bandlimit of mask resolution
-        maskname : str, optional
+        name : str, optional
             name of the mask used for saving covariance matrices, by default "mask"
 
         Raises
@@ -174,7 +222,7 @@ class SphereMask:
             If neither spin 0 or spin 2 are specified
         """
         if maskpath is not None:
-            self.maskname = maskname
+            self.name = maskname
             self.maskpath = maskpath
             self.read_maskfile()
 
@@ -194,6 +242,7 @@ class SphereMask:
         if working_dir is None:
             working_dir = os.getcwd()
         self.working_dir = working_dir
+        self._precomputed = False
         self.npix = hp.nside2npix(self.nside)
         self.spins = spins
         self.spin0 = None
@@ -229,7 +278,7 @@ class SphereMask:
             self.l_smooth_auto = False
             self.l_smooth = l_smooth
         self.smooth_mask = None
-        self.maskname += "smoothl{}".format(str(self.l_smooth))
+        self.name += "smoothl{}".format(str(self.l_smooth))
 
     @property
     def smooth_alm(self):
@@ -250,7 +299,7 @@ class SphereMask:
     def get_circmask(self):
         """Sets mask properties to a circular mask and saves to file"""
         self.maskpath = "circular_{:d}sqd_nside{:d}.fits".format(self.area, self.nside)
-        self.maskname = "circ{:d}".format(self.area)
+        self.name = "circ{:d}".format(self.area)
         if os.path.isfile(self.maskpath):
             self.mask = hp.fitsfunc.read_map(self.maskpath)
             assert np.allclose(
@@ -272,7 +321,7 @@ class SphereMask:
         m = np.ones(npix)
         self.mask = m
         self.maskpath = "fullsky_nside{:d}.fits".format(self.nside)
-        self.maskname = "fullsky"
+        self.name = "fullsky"
         self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
         hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
 
@@ -414,7 +463,6 @@ class SphereMask:
                     for m2, M2 in enumerate(M2_arr):
                         arglist.append((L1, L2, M1, M2))
 
-        
         self.wlm
         self.wlm_lmax
         print("Starting computation of 4D W_llpmmp arrays... ")
@@ -456,9 +504,18 @@ class SphereMask:
             self.save_w_arr()
             return self._w_arr
 
+    def precompute_for_cov_masked(self, cov_ell_buffer=0):
+        tic1 = time.perf_counter()
+        w_arr = self.w_arr(cov_ell_buffer=cov_ell_buffer)
+        self._wpm_delta, self._wpm_stack = cov_funcs.precompute_xipm(w_arr)
+        _ = self.m_llp
+        self._precomputed = True
+        toc1 = time.perf_counter()
+        print("cov_masked: precomputation took {:.2f} minutes".format((toc1 - tic1) / 60))
+
     @property
-    def m_llp(self,cov_ell_buffer):
-        self.set_mllppath(cov_ell_buffer)
+    def m_llp(self):
+        self.set_mllppath()
         if file_handling.check_for_file(self.mllp_path):
             self.load_mllp_arr()
         else:
@@ -472,7 +529,7 @@ class SphereMask:
         np.savez(self.wpm_path, wpm0=self._w_arr)
 
     def save_mllp_arr(self):
-        np.savez(self.mllp_path,m_llp_p=self._m_llp[0],m_llp_p=self._m_llp[1])
+        np.savez(self.mllp_path, m_llp_p=self._m_llp[0], m_llp_m=self._m_llp[1])
 
     def check_w_arr(self):
         print("Checking for Wpm0 arrays... ", end="")
@@ -501,7 +558,7 @@ class SphereMask:
         charstring = "_l{:d}_n{:d}_{}.npz".format(
             self._exact_lmax + cov_ell_buffer,
             self.nside,
-            self.maskname,
+            self.name,
         )
         return charstring
 
@@ -514,11 +571,15 @@ class SphereMask:
         wpm_name = self.working_dir + "/wpm_arrays/wpm" + charac
         self.wpm_path = wpm_name
 
-    def set_mllppath(self, cov_ell_buffer):
-        charac = self.set_wpm_string(cov_ell_buffer)
-        
+    def set_mllppath(self):
+        charstring = "_l{:d}_n{:d}_{}.npz".format(
+            self._exact_lmax,
+            self.nside,
+            self.name,
+        )
+
         if not os.path.isdir(self.working_dir + "/mllp_arrays"):
             command = "mkdir " + self.working_dir + "/mllp_arrays"
             os.system(command)
-        mllp_name = self.working_dir + "/mllp_arrays/mllp" + charac
+        mllp_name = self.working_dir + "/mllp_arrays/mllp" + charstring
         self.mllp_path = mllp_name
