@@ -7,6 +7,9 @@ import scipy.stats
 import matplotlib.pyplot as plt
 import copula_funcs
 from scipy.interpolate import griddata
+from scipy.interpolate import RegularGridInterpolator
+import postprocess_nd_likelihood
+from scipy.stats import norm, multivariate_normal
 
 
 class XiLikelihood:
@@ -136,10 +139,10 @@ class XiLikelihood:
         # products is a 4D array with shape (n_redshift_bin_combs, len(angular_bins), len(cov), len(cov))
         # these means are not right yet, need to take care of the cross terms
         einsum_means = np.einsum("cbll->cb", self._products.copy())
-        self._low_ell_means = calc_pdf.mean_xi_gaussian_nD(
+        self._means_lowell = calc_pdf.mean_xi_gaussian_nD(
             self._prefactors, self._theory_cl, self.mask, lmin=0, lmax=self._exact_lmax
         )
-        diff = einsum_means - self._low_ell_means
+        diff = einsum_means - self._means_lowell
         assert np.all(np.abs(diff) < 1e-10), "Means do not match"
         # mean for each redshift bin combination and angular bin, shape (n_redshift_bin_combs, len(angular_bins))
         # var = 2 * np.sum(prod * np.transpose(prod))
@@ -166,8 +169,8 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._low_ell_means + 5 * np.sqrt(self._variances)
-        self._ximin = self._low_ell_means - 5 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 12 * np.sqrt(self._variances)
+        self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
         )  # shape (n_redshift_bins, len(angular_bins),len(cov))
@@ -273,6 +276,12 @@ class XiLikelihood:
 
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
+    
+    def gauss_compare(self):
+        mean = self._mean.flatten()[1:]
+        mvn = multivariate_normal(mean=mean, cov=self._cov[1:,1:])
+        print(mean,self._cov[1:,1:])
+        return mvn
 
     def likelihood(self, data, cosmology, highell=True):
         # compute the likelihood for a given cosmology
@@ -285,11 +294,15 @@ class XiLikelihood:
         xs, pdfs = self.marginals
 
         self._cov = self.get_covariance_matrix_lowell()
+        self._mean = self._means_lowell
+        highell_moms = None
         assert (
             np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
         ), "Variances do not match"
         if self._highell:
             self._cov = self._cov_lowell + self._cov_highell
+            self._mean = self._means_lowell + self._means_highell
+            highell_moms = [self._means_highell[1:], self._cov_highell[1:,1:]]
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs)
         copula = copula_funcs.joint_pdf(
             self._cdfs[1, 0],
@@ -302,14 +315,45 @@ class XiLikelihood:
         y_vals = self._xs[2, 0, 1:-1]
         x_grid, y_grid = np.meshgrid(x_vals, y_vals)
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
-        grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
-        fig, ax4 = plt.subplots()
-        c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=np.max(grid_z_copula))
-        ax4.set_title("Copula")
-        # ax4.set_xlim(0.1e-6, 2e-6)
-        # ax4.set_ylim(0.1e-6, 2e-6)
-        fig.colorbar(c2, ax=ax4)
-        plt.show()
+        configpath = "config_adjusted.ini"
+        simspath = (
+            "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault_llim_None/"
+        )
+        config = postprocess_nd_likelihood.load_config(configpath)
+       
+        
+        x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
+        vmax = np.max(pdf_exact)
+        copula_grid = copula.reshape(x_grid.shape).T
+        interp = RegularGridInterpolator((x_vals,y_vals), copula_grid,method='cubic')
+        interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
+        marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
+        marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
+
+        fig, ((ax00,ax01,ax02),(ax1,ax2,ax5),(ax3,ax4,ax6)) = plt.subplots(3,3,gridspec_kw=dict(width_ratios=[1,1,1]),figsize=(11,11))
+        
+        bincenters, mean, errors, mu_estimate, cov_estimate = postprocess_nd_likelihood.load_and_bootstrap_sims_2d(config,simspath,(ax00,ax1,ax3),vmax)
+        print(mu_estimate,cov_estimate)
+        
+        #grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
+        gauss = self.gauss_compare().pdf(test_points)
+        gauss_est = multivariate_normal(mean=mu_estimate,cov=cov_estimate)
+        gauss_est = gauss_est.pdf(test_points)
+        gauss_grid = gauss_est.reshape(x_grid.shape).T
+        interp_gauss = RegularGridInterpolator((x_vals,y_vals), gauss_grid,method='cubic')
+        (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d([ax1,ax2,ax5],bincenters,mean,errors,interp,vmax)
+        (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d([ax3,ax4,ax6],bincenters,mean,errors,interp_gauss,vmax)
+        (ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
+       
+        
+        #fig, ax4 = plt.subplots()
+        #c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=np.max(grid_z_copula))
+        #ax4.set_title("Copula")
+       
+        fig.colorbar(res_plot, ax=ax5)
+        fig.colorbar(gauss_res, ax=ax6)
+        fig.colorbar(exact_res, ax=ax02)
+        fig.savefig('comparison_copula_sims_fullell_covfromsims.png')
 
     # copula.evaluate(self._marginals, data)
     # pass
@@ -318,7 +362,7 @@ class XiLikelihood:
 paths = ["Cl_3x2pt_kids33.txt", "Cl_3x2pt_kids55.txt", "Cl_3x2pt_kids53.txt"]
 names = ["3x2pt_kids_33", "3x2pt_kids_55", "3x2pt_kids_53"]
 noises = ["default", "default", None]
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
+mask = SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=30, l_smooth=30)
 z = np.linspace(0, 2, 100)
 nz = scipy.stats.norm.pdf(z, loc=1, scale=0.5)
 redshift_bins = [RedshiftBin(z, nz, 3), RedshiftBin(z, nz, 5)]
