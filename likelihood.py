@@ -339,7 +339,7 @@ class XiLikelihood:
         gauss = self.gauss_compare().pdf(test_points)
         gauss_est = multivariate_normal(mean=mu_estimate,cov=cov_estimate)
         gauss_est = gauss_est.pdf(test_points)
-        gauss_grid = gauss_est.reshape(x_grid.shape).T
+        gauss_grid = gauss.reshape(x_grid.shape).T
         interp_gauss = RegularGridInterpolator((x_vals,y_vals), gauss_grid,method='cubic')
         (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d([ax1,ax2,ax5],bincenters,mean,errors,interp,vmax)
         (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d([ax3,ax4,ax6],bincenters,mean,errors,interp_gauss,vmax)
@@ -353,7 +353,7 @@ class XiLikelihood:
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
         fig.colorbar(exact_res, ax=ax02)
-        fig.savefig('comparison_copula_sims_fullell_covfromsims.png')
+        fig.savefig('comparison_copula_sims_fullell.png')
 
     # copula.evaluate(self._marginals, data)
     # pass
