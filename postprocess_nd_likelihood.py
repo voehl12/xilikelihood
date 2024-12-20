@@ -26,7 +26,7 @@ def convert_nd_cf_to_pdf(config,highell_moms=None):
         vals = calc_pdf.high_ell_gaussian_cf_nD(t_sets,mu_high,cov_high)
         for i,inds in enumerate(ind_sets):
             high_ell_cf[inds[0],inds[1]] = vals[i]
-        all_cf = cf_grid * high_ell_cf
+        cf_grid = cf_grid * high_ell_cf
     x_grid, pdf_grid = calc_pdf.cf_to_pdf_nd(cf_grid, t0_2, dt_2, verbose=True)
     return x_grid, pdf_grid
 
