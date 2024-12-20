@@ -42,7 +42,7 @@ def load_sims(config, simpath, njobs=1000):
     comb_n = get_comb_ns(config)
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
     print("Loading simulations...")
-    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, exact_lmax)
+    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, 767)
 
     return allxis
 
@@ -132,7 +132,7 @@ def compare_to_gaussian(config):
 
 def load_and_bootstrap_sims_2d(config, simpath, axes, vmax):
     n_bootstrap = 500
-    sims = load_sims(config, simpath, njobs=100)
+    sims = load_sims(config, simpath, njobs=1000)
 
     mu_estimate, cov_estimate = get_stats_from_sims(sims, orders=[1, 2])
     for ax in axes:
@@ -169,9 +169,9 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax):
 
     rel_res_plot = axes[2].contourf(X, Y, rel_res, levels=100, vmax=10)
 
-    for ax in axes:
+    """ for ax in axes:
         ax.set_xlim(0.3e-6, 3e-6)
-        ax.set_ylim(0, 1.8e-6)
+        ax.set_ylim(0, 1.8e-6) """
     return axes, rel_res_plot
 
 
