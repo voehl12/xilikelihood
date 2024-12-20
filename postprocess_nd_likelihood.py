@@ -4,7 +4,10 @@ import calc_pdf
 import configparser
 import file_handling
 import itertools
-from scipy.stats import moment
+from scipy.stats import moment, multivariate_normal
+from scipy.interpolate import griddata
+import matplotlib.pyplot as plt
+
 
 #class ExactLikelihood()
 
@@ -15,8 +18,15 @@ def load_config(configpath):
     return config
 
 
-def convert_nd_cf_to_pdf(config):
-    t0_2, dt_2, _, _, cf_grid = file_handling.read_2D_cf(config)
+def convert_nd_cf_to_pdf(config,highell_moms=None):
+    t0_2, dt_2, t_sets, ind_sets, cf_grid = file_handling.read_2D_cf(config)
+    if highell_moms is not None:
+        mu_high,cov_high = highell_moms
+        high_ell_cf = np.full_like(cf_grid,np.nan,dtype=complex)
+        vals = calc_pdf.high_ell_gaussian_cf_nD(t_sets,mu_high,cov_high)
+        for i,inds in enumerate(ind_sets):
+            high_ell_cf[inds[0],inds[1]] = vals[i]
+        all_cf = cf_grid * high_ell_cf
     x_grid, pdf_grid = calc_pdf.cf_to_pdf_nd(cf_grid, t0_2, dt_2, verbose=True)
     return x_grid, pdf_grid
 
@@ -51,6 +61,7 @@ def get_stats_from_sims(sims, orders=[1,2,3],axis=1):
 
     dims = np.arange(sims.shape[axis-1])
     n_sims = sims.shape[axis]
+    print('number of simulations: '+ str(n_sims))
 
     # np.cov needs to have the data in the form of (n, m) where n is the number of variables and m is the number of samples
     def moments_nd(order,sims):
@@ -59,7 +70,11 @@ def get_stats_from_sims(sims, orders=[1,2,3],axis=1):
         elif order == 2:
             if axis == 0:
                 sims = sims.T
-            return sims @ sims.T.conj() / n_sims
+            
+            cov = sims @ sims.T.conj() / n_sims
+            np_cov = np.cov(sims,ddof=1)
+            assert np.allclose(cov,np_cov), np_cov
+            return cov
 
         else:
             
@@ -110,13 +125,60 @@ def compare_to_gaussian(config):
     pass
 
 
+def load_and_bootstrap_sims_2d(config,simpath,axes,vmax):
+    n_bootstrap = 500
+    sims = load_sims(config,simpath,njobs=100)
+    
+    mu_estimate, cov_estimate = get_stats_from_sims(sims,orders=[1,2])
+    for ax in axes:
+        d = ax.hist2d(sims[0],sims[1],bins=256,density=True,vmin=0,vmax=vmax)
+    bincenters_x = [(d[1][i+1]+d[1][i])/2 for i in range(len(d[1])-1)]
+    bincenters_y = [(d[2][i+1]+d[2][i])/2 for i in range(len(d[2])-1)]
+    bincenters = [bincenters_x,bincenters_y]
+    def bootstrap_statistic(data,axis=0,ddof=1):
+        xi1,xi2 = data[:,0], data[:,1]
+        f = np.histogram2d(xi1,xi2,bins=256,density=True,range=[[d[1][0], d[1][-1]], [d[2][0], d[2][-1]]])
+        return f[0]
+
+
+    data = sims.T
+    res = bootstrap(data, func=bootstrap_statistic,n=n_bootstrap)
+    errors = np.std(res,axis=0,ddof=1)
+    errors = np.ma.masked_where(d[0] == 0, errors)
+    mean = d[0]
+
+    return bincenters, mean, errors, mu_estimate, cov_estimate
+
+def compare_to_sims_2d(axes,bincenters,sim_mean,sim_std,interp,vmax):
+    
+    bincenters_x, bincenters_y = bincenters
+    X, Y = np.meshgrid(bincenters_x, bincenters_y,indexing='ij')
+    
+    exact_grid = interp((X,Y))
+    diff_hist = np.fabs(sim_mean-exact_grid)
+    exact = axes[1].contourf(X,Y, exact_grid, levels=100, vmax=vmax)
+    rel_res = diff_hist / sim_std
+    
+    rel_res_plot = axes[2].contourf(X,Y, rel_res, levels=100,vmax=10)
+    
+    for ax in axes:
+        ax.set_xlim(0.3e-6, 3e-6)
+        ax.set_ylim(0, 1.8e-6)
+    return axes, rel_res_plot
+
+
+
+
+
 def get_marginal_likelihoods(x_grid, pdf_grid):
-    pdf_53 = np.trapz(pdf_grid, x=x_grid[:, 0, 0], axis=0)
-    pdf_55 = np.trapz(pdf_grid, x=x_grid[0, :, 1], axis=1)
-    x_53, x_55 = x_grid[0, :, 1], x_grid[:, 0, 0]
+    #x_53, x_55 = x_grid[0, :, 1], x_grid[:, 0, 0]
+    x_55, x_53 = x_grid[0], x_grid[1]
+    pdf_53 = np.trapz(pdf_grid, x=x_55, axis=0)
+    pdf_55 = np.trapz(pdf_grid, x=x_53, axis=1)
+    
     mu_53 = np.trapz(x_53 * pdf_53, x=x_53)
     mu_55 = np.trapz(x_55 * pdf_55, x=x_55)
-    pass
+    return pdf_55, pdf_53
 
 
 def normalize_pdfs():
