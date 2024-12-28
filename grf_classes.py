@@ -277,6 +277,7 @@ class SphereMask:
         else:
             self.l_smooth_auto = False
             self.l_smooth = l_smooth
+        # do mask smoothing on initialization!!
         self.smooth_mask = None
         self.name += "smoothl{}".format(str(self.l_smooth))
 
