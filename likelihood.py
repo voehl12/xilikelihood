@@ -169,7 +169,7 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 8 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 5 * np.sqrt(self._variances)
         self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
@@ -316,7 +316,7 @@ class XiLikelihood:
         x_grid, y_grid = np.meshgrid(x_vals, y_vals)
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
         configpath = "config_adjusted.ini"
-        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None/"
+        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_767/"
         config = postprocess_nd_likelihood.load_config(configpath)
 
         # x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
