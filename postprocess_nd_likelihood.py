@@ -166,7 +166,7 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax):
     diff_hist = np.fabs(sim_mean - exact_grid)
     exact = axes[1].contourf(X, Y, exact_grid, levels=100, vmax=vmax)
     rel_res = diff_hist / sim_std
-
+    print("Mean deviation from simulations: {} std".format(np.mean(rel_res)))
     rel_res_plot = axes[2].contourf(X, Y, rel_res, levels=100, vmax=10)
 
     """ for ax in axes:
