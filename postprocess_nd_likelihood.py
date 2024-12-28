@@ -136,7 +136,7 @@ def load_and_bootstrap_sims_2d(config, simpath, axes, vmax):
 
     mu_estimate, cov_estimate = get_stats_from_sims(sims, orders=[1, 2])
     for ax in axes:
-        d = ax.hist2d(sims[0], sims[1], bins=256, density=True, vmin=0, vmax=vmax)
+        d = ax.hist2d(sims[0], sims[1], bins=128, density=True, vmin=0, vmax=vmax)
     bincenters_x = [(d[1][i + 1] + d[1][i]) / 2 for i in range(len(d[1]) - 1)]
     bincenters_y = [(d[2][i + 1] + d[2][i]) / 2 for i in range(len(d[2]) - 1)]
     bincenters = [bincenters_x, bincenters_y]
@@ -144,7 +144,7 @@ def load_and_bootstrap_sims_2d(config, simpath, axes, vmax):
     def bootstrap_statistic(data, axis=0, ddof=1):
         xi1, xi2 = data[:, 0], data[:, 1]
         f = np.histogram2d(
-            xi1, xi2, bins=256, density=True, range=[[d[1][0], d[1][-1]], [d[2][0], d[2][-1]]]
+            xi1, xi2, bins=128, density=True, range=[[d[1][0], d[1][-1]], [d[2][0], d[2][-1]]]
         )
         return f[0]
 
