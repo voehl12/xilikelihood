@@ -317,18 +317,18 @@ class XiLikelihood:
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
         configpath = "config_adjusted.ini"
         simspath = (
-            "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault_llim_None/"
+            "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None/"
         )
         config = postprocess_nd_likelihood.load_config(configpath)
        
         
-        x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
-        vmax = np.max(pdf_exact)
+        #x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
+        vmax = np.max(copula)
         copula_grid = copula.reshape(x_grid.shape).T
         interp = RegularGridInterpolator((x_vals,y_vals), copula_grid,method='cubic')
-        interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
-        marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
-        marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
+        #interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
+        #marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
+        #marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
 
         fig, ((ax00,ax01,ax02),(ax1,ax2,ax5),(ax3,ax4,ax6)) = plt.subplots(3,3,gridspec_kw=dict(width_ratios=[1,1,1]),figsize=(11,11))
         
@@ -343,7 +343,7 @@ class XiLikelihood:
         interp_gauss = RegularGridInterpolator((x_vals,y_vals), gauss_grid,method='cubic')
         (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d([ax1,ax2,ax5],bincenters,mean,errors,interp,vmax)
         (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d([ax3,ax4,ax6],bincenters,mean,errors,interp_gauss,vmax)
-        (ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
+        #(ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
        
         
         #fig, ax4 = plt.subplots()
@@ -352,8 +352,8 @@ class XiLikelihood:
        
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
-        fig.colorbar(exact_res, ax=ax02)
-        fig.savefig('comparison_copula_sims_fullell.png')
+        #fig.colorbar(exact_res, ax=ax02)
+        fig.savefig('comparison_copula_sims_fullell_10000deg2.png')
 
     # copula.evaluate(self._marginals, data)
     # pass
@@ -362,7 +362,7 @@ class XiLikelihood:
 paths = ["Cl_3x2pt_kids33.txt", "Cl_3x2pt_kids55.txt", "Cl_3x2pt_kids53.txt"]
 names = ["3x2pt_kids_33", "3x2pt_kids_55", "3x2pt_kids_53"]
 noises = ["default", "default", None]
-mask = SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=30, l_smooth=30)
+mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
 z = np.linspace(0, 2, 100)
 nz = scipy.stats.norm.pdf(z, loc=1, scale=0.5)
 redshift_bins = [RedshiftBin(z, nz, 3), RedshiftBin(z, nz, 5)]
