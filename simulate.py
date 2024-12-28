@@ -4,7 +4,7 @@ import numpy as np
 import healpy as hp
 
 # import pymaster as nmt
-import treecorr
+#import treecorr
 
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
@@ -13,7 +13,8 @@ from cov_setup import Cov
 
 from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable
 
-# import glass.fields
+import glass.fields
+# glass          2023.8.dev10+g67a5721 /cluster/home/veoehl/glass
 import time
 
 
@@ -342,8 +343,7 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
                     field_j,
                     iter=5,
                     use_pixel_weights=True,
-                    datapath=self.healpix_datapath,
-                    # "/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
+                    datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
                 )
 
                 pcl_s.append([pcl_e, pcl_b, pcl_eb])
@@ -362,6 +362,7 @@ def get_xi_namaster_nD(maps_TQU_list, smooth_masks, prefactors, lmax, lmin=0):
 
 
 def xi_sim_nD(
+    # also pass only mask entity and theorycl entities, no need for Cov?
     covs,
     j,
     seps_in_deg,
@@ -374,12 +375,12 @@ def xi_sim_nD(
     simpath="simulations/",
 ):
     xis, pcls = [], []
-    gls = np.array([cov.ee for cov in covs])
+    gls = np.array([cov.theorycl.ee for cov in covs])
 
-    nsides = [int(cov.nside) for cov in covs]
-    areas = [cov.eff_area for cov in covs]
-    smooth_masks = [cov.smooth_mask for cov in covs if hasattr(cov, "smooth_mask")]
-
+    nsides = [int(cov.mask.nside) for cov in covs]
+    areas = [cov.mask.eff_area for cov in covs]
+    smooth_masks = [cov.mask.smooth_mask for cov in covs if hasattr(cov.mask, "smooth_mask")]
+    smooth_masks = np.array(smooth_masks)
     noises = [
         cov.pixelsigma for cov in covs if hasattr(cov, "pixelsigma")
     ]  # should return noise for auto-cl in right order
@@ -388,7 +389,7 @@ def xi_sim_nD(
     nside = nsides[0]
 
     foldername = "/croco_{}_{}_{}_llim_{}".format(
-        covs[0].clname, covs[0].maskname, covs[0].sigmaname, str(lmax)
+        covs[0].theorycl.name, covs[0].mask.name, covs[0].sigmaname, str(lmax)
     )
     path = simpath + foldername
     if not os.path.isdir(path):
@@ -399,7 +400,7 @@ def xi_sim_nD(
     if ximode == "namaster":
         if lmax is None:
             lmax = covs[0].lmax
-        prefactors = prep_prefactors(seps_in_deg, covs[0].wl, covs[0].lmax, lmax)
+        prefactors = prep_prefactors(seps_in_deg, covs[0].mask.wl, covs[0].mask.lmax, lmax)
         times = []
         for _i in range(batchsize):
             tic = time.perf_counter()
