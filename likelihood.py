@@ -169,7 +169,7 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 12 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 8 * np.sqrt(self._variances)
         self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
@@ -276,11 +276,11 @@ class XiLikelihood:
 
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
-    
+
     def gauss_compare(self):
         mean = self._mean.flatten()[1:]
-        mvn = multivariate_normal(mean=mean, cov=self._cov[1:,1:])
-        print(mean,self._cov[1:,1:])
+        mvn = multivariate_normal(mean=mean, cov=self._cov[1:, 1:])
+        print(mean, self._cov[1:, 1:])
         return mvn
 
     def likelihood(self, data, cosmology, highell=True):
@@ -302,7 +302,7 @@ class XiLikelihood:
         if self._highell:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-            highell_moms = [self._means_highell[1:], self._cov_highell[1:,1:]]
+            highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs)
         copula = copula_funcs.joint_pdf(
             self._cdfs[1, 0],
@@ -316,44 +316,50 @@ class XiLikelihood:
         x_grid, y_grid = np.meshgrid(x_vals, y_vals)
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
         configpath = "config_adjusted.ini"
-        simspath = (
-            "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None/"
-        )
+        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None/"
         config = postprocess_nd_likelihood.load_config(configpath)
-       
-        
-        #x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
+
+        # x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
         vmax = np.max(copula)
         copula_grid = copula.reshape(x_grid.shape).T
-        interp = RegularGridInterpolator((x_vals,y_vals), copula_grid,method='cubic')
-        #interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
-        #marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
-        #marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
+        interp = RegularGridInterpolator((x_vals, y_vals), copula_grid, method="cubic")
+        # interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
+        # marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
+        # marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
 
-        fig, ((ax00,ax01,ax02),(ax1,ax2,ax5),(ax3,ax4,ax6)) = plt.subplots(3,3,gridspec_kw=dict(width_ratios=[1,1,1]),figsize=(11,11))
-        
-        bincenters, mean, errors, mu_estimate, cov_estimate = postprocess_nd_likelihood.load_and_bootstrap_sims_2d(config,simspath,(ax00,ax1,ax3),vmax)
-        print(mu_estimate,cov_estimate)
-        
-        #grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
+        fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
+            3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
+        )
+
+        bincenters, mean, errors, mu_estimate, cov_estimate = (
+            postprocess_nd_likelihood.load_and_bootstrap_sims_2d(
+                config, simspath, (ax00, ax1, ax3), vmax
+            )
+        )
+        print(mu_estimate, cov_estimate)
+
+        # grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
         gauss = self.gauss_compare().pdf(test_points)
-        gauss_est = multivariate_normal(mean=mu_estimate,cov=cov_estimate)
+        gauss_est = multivariate_normal(mean=mu_estimate, cov=cov_estimate)
         gauss_est = gauss_est.pdf(test_points)
         gauss_grid = gauss.reshape(x_grid.shape).T
-        interp_gauss = RegularGridInterpolator((x_vals,y_vals), gauss_grid,method='cubic')
-        (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d([ax1,ax2,ax5],bincenters,mean,errors,interp,vmax)
-        (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d([ax3,ax4,ax6],bincenters,mean,errors,interp_gauss,vmax)
-        #(ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
-       
-        
-        #fig, ax4 = plt.subplots()
-        #c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=np.max(grid_z_copula))
-        #ax4.set_title("Copula")
-       
+        interp_gauss = RegularGridInterpolator((x_vals, y_vals), gauss_grid, method="cubic")
+        (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d(
+            [ax1, ax2, ax5], bincenters, mean, errors, interp, vmax
+        )
+        (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d(
+            [ax3, ax4, ax6], bincenters, mean, errors, interp_gauss, vmax
+        )
+        # (ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
+
+        # fig, ax4 = plt.subplots()
+        # c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=np.max(grid_z_copula))
+        # ax4.set_title("Copula")
+
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
-        #fig.colorbar(exact_res, ax=ax02)
-        fig.savefig('comparison_copula_sims_fullell_10000deg2.png')
+        # fig.colorbar(exact_res, ax=ax02)
+        fig.savefig("comparison_copula_sims_fullell_10000deg2.png")
 
     # copula.evaluate(self._marginals, data)
     # pass
