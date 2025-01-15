@@ -130,29 +130,37 @@ def compare_to_gaussian(config):
     pass
 
 
-def load_and_bootstrap_sims_2d(config, simpath, axes, vmax):
+def load_and_bootstrap_sims_nd(config, simpath, axes=None, vmax=None):
+    # finish nd version of this function
     n_bootstrap = 500
     sims = load_sims(config, simpath, njobs=1000)
-
+    dims = len(sims)
     mu_estimate, cov_estimate = get_stats_from_sims(sims, orders=[1, 2])
-    for ax in axes:
-        d = ax.hist2d(sims[0], sims[1], bins=128, density=True, vmin=0, vmax=vmax)
-    bincenters_x = [(d[1][i + 1] + d[1][i]) / 2 for i in range(len(d[1]) - 1)]
-    bincenters_y = [(d[2][i + 1] + d[2][i]) / 2 for i in range(len(d[2]) - 1)]
-    bincenters = [bincenters_x, bincenters_y]
+    if dims == 2 and axes is not None:
+        for ax in axes:
+            density, binedges = ax.hist2d(
+                sims[0], sims[1], bins=128, density=True, vmin=0, vmax=vmax
+            )
+    else:
+        density, binedges = np.histogramdd(sims.T, bins=128, density=True, vmin=0, max=vmax)
+
+    # bincenters = [(d[i + 1] + d[i]) / 2 for i in range(len(d) - 1)]
+    bincenters = [0.5 * (edges[1:] + edges[:-1]) for edges in binedges]
 
     def bootstrap_statistic(data, axis=0, ddof=1):
-        xi1, xi2 = data[:, 0], data[:, 1]
-        f = np.histogram2d(
-            xi1, xi2, bins=128, density=True, range=[[d[1][0], d[1][-1]], [d[2][0], d[2][-1]]]
+
+        f = np.histogramdd(
+            data,
+            bins=binedges,
+            density=True,
         )
         return f[0]
 
     data = sims.T
     res = bootstrap(data, func=bootstrap_statistic, n=n_bootstrap)
     errors = np.std(res, axis=0, ddof=1)
-    errors = np.ma.masked_where(d[0] == 0, errors)
-    mean = d[0]
+    errors = np.ma.masked_where(density == 0, errors)
+    mean = density
 
     return bincenters, mean, errors, mu_estimate, cov_estimate
 
