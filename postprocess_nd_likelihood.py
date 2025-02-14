@@ -42,7 +42,7 @@ def load_sims(config, simpath, njobs=1000):
     comb_n = get_comb_ns(config)
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
     print("Loading simulations...")
-    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, 767)
+    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, 30)
 
     return allxis
 
@@ -72,9 +72,10 @@ def get_stats_from_sims(sims, orders=[1, 2, 3], axis=1):
         if order == 1:
             return np.mean(sims, axis=axis)
         elif order == 2:
+            sims = sims - np.mean(sims, axis=axis)[:,None]
             if axis == 0:
                 sims = sims.T
-
+            
             cov = sims @ sims.T.conj() / n_sims
             np_cov = np.cov(sims, ddof=1)
             assert np.allclose(cov, np_cov), np_cov
@@ -83,6 +84,7 @@ def get_stats_from_sims(sims, orders=[1, 2, 3], axis=1):
         else:
 
             combs = np.array(list(itertools.combinations_with_replacement(dims, order)))
+            sims = sims - np.mean(sims, axis=axis)
             if axis == 0:
                 sims = sims.T
             higher_moments = np.mean(np.prod(sims[combs], axis=1), axis=1)
@@ -130,22 +132,39 @@ def compare_to_gaussian(config):
     pass
 
 
-def load_and_bootstrap_sims_nd(config, simpath, axes=None, vmax=None):
+def load_and_bootstrap_sims_nd(config, simpath, axes=None, vmax=None,n_bootstrap=500,diagnostic_ax=None):
     # finish nd version of this function
-    n_bootstrap = 500
+    
     sims = load_sims(config, simpath, njobs=1000)
+    #mu, cov = [2.46969325e-07, 2.36668073e-07], np.array([[2.74045020e-14, 1.31405333e-14], [1.31405333e-14, 1.12209365e-14]])
+    #[2.46969325e-07 2.36668073e-07] [[2.74045020e-14, 1.31405333e-14], [1.31405333e-14, 1.12209365e-14]]
+    #mvn = multivariate_normal(mean=mu, cov=cov)
+    #sims = mvn.rvs(1000000).T
     dims = len(sims)
     mu_estimate, cov_estimate = get_stats_from_sims(sims, orders=[1, 2])
+    print('Estimated mean and cov: ')
+    print(mu_estimate, cov_estimate)
     if dims == 2 and axes is not None:
         for ax in axes:
-            density, binedges = ax.hist2d(
+            hist = ax.hist2d(
                 sims[0], sims[1], bins=128, density=True, vmin=0, vmax=vmax
             )
+            density = hist[0]
+            density_x = np.sum(density, axis=0)
+            density_y = np.sum(density,axis=1)
+            
+            binedges = np.array(hist[1:3])
     else:
         density, binedges = np.histogramdd(sims.T, bins=128, density=True, vmin=0, max=vmax)
 
     # bincenters = [(d[i + 1] + d[i]) / 2 for i in range(len(d) - 1)]
-    bincenters = [0.5 * (edges[1:] + edges[:-1]) for edges in binedges]
+    bincenters = np.array([0.5 * (edges[1:] + edges[:-1]) for edges in binedges])
+    if diagnostic_ax is not None:
+    
+        diagnostic_ax.hist(sims[0],density=True,label='xi55_sims',bins=256)
+        diagnostic_ax.hist(sims[1],density=True,label='xi53_sims',bins=256)
+        
+        
 
     def bootstrap_statistic(data, axis=0, ddof=1):
 
