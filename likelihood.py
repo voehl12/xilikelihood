@@ -58,7 +58,8 @@ class XiLikelihood:
             self._exact_lmax = mask.exact_lmax
         else:
             self._exact_lmax = exact_lmax
-            helper_funcs.check_property_equal([self, self.mask], "_exact_lmax")
+            if not helper_funcs.check_property_equal([self, self.mask], "_exact_lmax"):
+                raise RuntimeError("Exact lmax does not align for mask and likelihood.")
         self._highell = False
 
     @property
@@ -143,7 +144,7 @@ class XiLikelihood:
             self._prefactors, self._theory_cl, self.mask, lmin=0, lmax=self._exact_lmax
         )
         diff = einsum_means - self._means_lowell
-        assert np.all(np.abs(diff) < 1e-10), "Means do not match"
+        assert np.all(np.abs(diff) < 1e-10), ("Means do not match", einsum_means, self._means_lowell)
         # mean for each redshift bin combination and angular bin, shape (n_redshift_bin_combs, len(angular_bins))
         # var = 2 * np.sum(prod * np.transpose(prod))
 
@@ -169,7 +170,7 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 5 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 10 * np.sqrt(self._variances)
         self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
@@ -184,7 +185,7 @@ class XiLikelihood:
             off_diag_elem_1 = auto_prods[comb[0]]
             off_diag_elem_2 = auto_prods[comb[1]]
             mat = 0.5 * np.block(
-                [[diag_elem, off_diag_elem_1], [off_diag_elem_2, diag_elem]]
+                [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
             )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
             cross_matrices.append(mat)
         self._cross_matrices = np.array(
@@ -193,7 +194,7 @@ class XiLikelihood:
         eigvals_cross = np.linalg.eigvals(self._cross_matrices)
         self._eigvals[self._is_cov_cross] = eigvals_cross
         self._t_lowell, self._cfs_lowell = calc_pdf.batched_cf_1d(
-            self._eigvals, self._ximax, steps=2048
+            self._eigvals, self._ximax, steps=4096
         )
         # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov))
         # also introduce ximin? need symmetry in t?
@@ -280,6 +281,7 @@ class XiLikelihood:
     def gauss_compare(self):
         mean = self._mean.flatten()[1:]
         mvn = multivariate_normal(mean=mean, cov=self._cov[1:, 1:])
+        print('Calculated mean and cov: ')
         print(mean, self._cov[1:, 1:])
         return mvn
 
@@ -303,22 +305,38 @@ class XiLikelihood:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
             highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
-        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs)
+        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs) # new xs and pdfs are interpolated
+        fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
+            3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
+        )
+        #bincenters, mean, errors, mu_estimate, cov_estimate
+        configpath = "config_adjusted.ini"
+        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_30/"
+        config = postprocess_nd_likelihood.load_config(configpath)
+        diag_fig,diag_ax = plt.subplots()
+        bincenters, mean, errors, mu_estimate, cov_estimate = (
+            postprocess_nd_likelihood.load_and_bootstrap_sims_nd(
+                config, simspath, axes=(ax00, ax1, ax3), vmax=None,n_bootstrap=1000,diagnostic_ax=diag_ax
+            )
+        )
+
         copula = copula_funcs.joint_pdf(
             self._cdfs[1, 0],
             self._cdfs[2, 0],
             self._pdfs[1, 0],
             self._pdfs[2, 0],
-            self._cov[np.ix_([1, 2], [1, 2])],
+            self._cov[1:,1:],
         )
+        
         x_vals = self._xs[1, 0, 1:-1]
         y_vals = self._xs[2, 0, 1:-1]
+        diag_ax.plot(x_vals,self._pdfs[1, 0,1:-1],label='xi55_analytic')
+        diag_ax.plot(y_vals,self._pdfs[2, 0,1:-1],label='xi53_analytic')
+        diag_ax.legend()
+        diag_fig.savefig('marginal_diagnostics_10000sqd.png')
         x_grid, y_grid = np.meshgrid(x_vals, y_vals)
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
-        configpath = "config_adjusted.ini"
-        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_767/"
-        config = postprocess_nd_likelihood.load_config(configpath)
-
+        
         # x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
         vmax = np.max(copula)
         copula_grid = copula.reshape(x_grid.shape).T
@@ -327,22 +345,14 @@ class XiLikelihood:
         # marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
         # marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
 
-        fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
-            3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
-        )
-
-        bincenters, mean, errors, mu_estimate, cov_estimate = (
-            postprocess_nd_likelihood.load_and_bootstrap_sims_2d(
-                config, simspath, (ax00, ax1, ax3), vmax
-            )
-        )
-        print(mu_estimate, cov_estimate)
+        
+        
 
         # grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
         gauss = self.gauss_compare().pdf(test_points)
         gauss_est = multivariate_normal(mean=mu_estimate, cov=cov_estimate)
         gauss_est = gauss_est.pdf(test_points)
-        gauss_grid = gauss.reshape(x_grid.shape).T
+        gauss_grid = gauss_est.reshape(x_grid.shape).T
         interp_gauss = RegularGridInterpolator((x_vals, y_vals), gauss_grid, method="cubic")
         (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d(
             [ax1, ax2, ax5], bincenters, mean, errors, interp, vmax
@@ -359,7 +369,7 @@ class XiLikelihood:
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
         # fig.colorbar(exact_res, ax=ax02)
-        fig.savefig("comparison_copula_sims_fullell_10000deg2.png")
+        fig.savefig("comparison_copula_sims_fullell_10000deg2_lowell.png")
 
     # copula.evaluate(self._marginals, data)
     # pass
@@ -377,4 +387,4 @@ xi_likelihood = XiLikelihood(mask, redshift_bins, ang_bins_in_deg=ang_bins_in_de
 
 xi_likelihood.initiate_mask_specific()
 xi_likelihood.precompute_combination_matrices()
-xi_likelihood.likelihood(None, (paths, names, noises), highell=True)
+xi_likelihood.likelihood(None, (paths, names, noises), highell=False)
