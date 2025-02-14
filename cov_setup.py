@@ -66,7 +66,7 @@ class Cov:
         self._cov_ell_buffer = cov_ell_buffer
 
         self._cov_ell_buffer = cov_ell_buffer
-        self.set_noise_pixelsigma()
+        #self.set_noise_pixelsigma()
         self.set_covalmpath()
 
     @property
@@ -326,6 +326,7 @@ class Cov:
         self.cov_alm = covfile["cov"]
 
     def set_noise_pixelsigma(self):
+        print("pixelsigma in Cov: deprecated, setting pixelsigma is moved to simulations. and should not be needed here.")
         if self.theorycl._sigma_e is not None:
             if isinstance(self.theorycl._sigma_e, str):
                 self.pixelsigma = helper_funcs.get_noise_pixelsigma(self.mask.nside)
@@ -347,20 +348,14 @@ class Cov:
                 pass
 
     def set_char_string(self):
-        if self.theorycl._sigma_e is None:
-            self.sigmaname = "nonoise"
-        elif isinstance(self.theorycl._sigma_e, str):
-            self.sigmaname = "noise" + self.theorycl._sigma_e
-
-        else:
-            self.sigmaname = "noise" + str(self.theorycl._sigma_e).replace(".", "")
+     
 
         charstring = "_l{:d}_n{:d}_{}_{}_{}.npz".format(
             self._exact_lmax,
             self.mask.nside,
             self.mask.name,
             self.theorycl.name,
-            self.sigmaname,
+            self.theorycl.sigmaname,
         )
         return charstring
 
@@ -385,7 +380,7 @@ class Cov:
                 self.mask.nside,
                 self.mask.name,
                 self.theorycl.name,
-                self.sigmaname,
+                self.theorycl.sigmaname,
             )
         )
 
