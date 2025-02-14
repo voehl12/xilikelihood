@@ -6,6 +6,7 @@ import wigner
 import time
 from os import environ
 from file_handling import check_for_file, load_cfs, load_pdfs
+import matplotlib.pyplot as plt
 
 
 def pdf_xi_1D(
@@ -702,10 +703,13 @@ def cf_to_pdf_1d(t, cf):
         x_array = np.fft.fftfreq(cf_array.shape[1]) * 2 * np.pi / dt[:, None]
         pdf_array *= dt[:, None] * np.exp(1j * x_array * t0[:, None]) / (2 * np.pi)
         xs, pdfs = [], []
+        
         for x, pdf in zip(x_array, pdf_array):
             x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
+            
+        
 
         pdfs = np.array(pdfs)
         xs = np.array(xs)
