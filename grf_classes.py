@@ -114,17 +114,21 @@ class TheoryCl:
             self.name += "_smooth{:d}".format(smooth_ell)
             print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
 
-        @property
-        def sigma_e(self):
-            return self._sigma_e
+    @property
+    def sigma_e(self):
+        return self._sigma_e
 
     def set_noise_sigma(self):
+        
+ 
         if self._sigma_e is not None:
             if isinstance(self._sigma_e, str):
                 self._noise_sigma = helper_funcs.get_noise_cl()
+                self.sigmaname = "noise" + self._sigma_e
 
             elif isinstance(self._sigma_e, tuple):
                 self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+                self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
 
             else:
                 raise RuntimeError(
@@ -134,6 +138,7 @@ class TheoryCl:
             if self.smooth_signal is not None:
                 self.noise_cl *= self.smooth_array
         else:
+            self.sigmaname = "nonoise"
             try:
                 del self._noise_sigma
 
@@ -270,26 +275,19 @@ class SphereMask:
         self.w0_arr = None
         self.wpm_arr = None
         self._w_arr = None
-        if l_smooth == "auto":
-            self.l_smooth_auto = True
-            self.l_smooth = self._exact_lmax
+        if l_smooth is not None:
+            if l_smooth == "auto":
+                self.l_smooth_auto = True
+                self.l_smooth = self._exact_lmax
 
-        else:
-            self.l_smooth_auto = False
-            self.l_smooth = l_smooth
-        # do mask smoothing on initialization!!
-        self.smooth_mask = None
-        self.name += "smoothl{}".format(str(self.l_smooth))
+            else:
+                self.l_smooth_auto = False
+                self.l_smooth = l_smooth
+       
+            self.set_smoothed_mask()
+            self.name += "smoothl{}".format(str(self.l_smooth))
 
-    @property
-    def smooth_alm(self):
-        self._smooth_alm = wpm_funcs.smooth_alm(self.l_smooth, self._exact_lmax)
-        return self._smooth_alm
-
-    @property
-    def smooth_alm_lmax(self):
-        self._smooth_alm_lmax = wpm_funcs.smooth_alm(self.l_smooth, self.lmax)
-        return self._smooth_alm_lmax
+    
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
@@ -327,6 +325,16 @@ class SphereMask:
         hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
 
     @property
+    def smooth_alm(self):
+        self._smooth_alm = wpm_funcs.smooth_alm(self.l_smooth, self._exact_lmax)
+        return self._smooth_alm
+
+    @property
+    def smooth_alm_lmax(self):
+        self._smooth_alm_lmax = wpm_funcs.smooth_alm(self.l_smooth, self.lmax)
+        return self._smooth_alm_lmax
+    
+    @property
     def wlm(self):
         """Calculates spherical harmonic coefficients of the mask
 
@@ -336,8 +344,7 @@ class SphereMask:
             spin 0 alm of mask in healpix ordering
         """
 
-        if self.l_smooth == "auto":
-            self.l_smooth = self._exact_lmax
+      
 
         self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
         self._wlm *= self.smooth_alm
@@ -353,29 +360,35 @@ class SphereMask:
             spin 0 alm of mask in healpix ordering
         """
 
-        if self.l_smooth == "auto":
-            self.l_smooth = self._exact_lmax
+       
 
         self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
         self._wlm_lmax *= self.smooth_alm_lmax
 
         return self._wlm_lmax
 
+    def set_smoothed_mask(self):
+        wlm = self.wlm_lmax
+        self._wl = hp.sphtfunc.alm2cl(wlm)
+        smooth_mask = hp.sphtfunc.alm2map(wlm, self.nside)
+        self.smooth_mask = smooth_mask
+
+
     @property
     def wl(self):
         wlm = self.wlm_lmax
         self._wl = hp.sphtfunc.alm2cl(wlm)
-        mask_smooth = hp.sphtfunc.alm2map(wlm, self.nside)
-        self.smooth_mask = mask_smooth
-
+        
         return self._wl
 
     @property
     def eff_area(self):
-        mask_smooth = hp.sphtfunc.alm2map(self.wlm_lmax, self.nside)
-        self.smooth_mask = mask_smooth
-        self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(mask_smooth)
-        return self._eff_area
+        if hasattr(self,"smooth_mask"):
+            self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.smooth_mask)
+            return self._eff_area
+        else:
+            print("Warning: attempting effective area of unsmoothed mask, returning actual area...")
+            return self.area
 
     def initiate_w_arrs(self, cov_ell_buffer):
 
