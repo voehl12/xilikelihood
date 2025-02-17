@@ -15,7 +15,7 @@ cl_53 = rootfolder+"Cl_3x2pt_kids53.txt"
 cl_33 = rootfolder+"Cl_3x2pt_kids33.txt"
 cl_paths = (cl_33,cl_55,cl_53)
 cl_names = ('3x2pt_kids_33','3x2pt_kids_55','3x2pt_kids_53')
-batchsize = 1
+batchsize = 1000
 noise_contribs = ('default','default',None)
 seps_in_deg = [(1,2),(4, 6),(7,10)]
 
@@ -29,8 +29,15 @@ theory_cls = [
             for path, name, noise in zip(cl_paths, cl_names, noise_contribs)
         ]
 
-
-        
-
 xi_lmax = 30
-xi_sim_nD(theory_cls,[mask], jobnumber, seps_in_deg,lmin=0,lmax=xi_lmax,plot=False,save_pcl=True,ximode='namaster',batchsize=batchsize,simpath="/cluster/scratch/veoehl/xi_sims/")
+
+
+
+if jobnumber == 1:
+    # get pcl for comparison:
+    pcls = [Cov(mask, theorycl,exact_lmax=xi_lmax).cl2pseudocl() for theorycl in theory_cls]
+    plot = True
+else:
+    plot = False
+
+xi_sim_nD(theory_cls,[mask], jobnumber, seps_in_deg,lmin=0,lmax=xi_lmax,plot=plot,save_pcl=True,ximode='namaster',batchsize=batchsize,simpath="/cluster/scratch/veoehl/xi_sims/")
