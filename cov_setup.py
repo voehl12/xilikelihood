@@ -390,13 +390,11 @@ class Cov:
             self.p_bb = pclfile["pcl_bb"]
             self.p_eb = pclfile["pcl_eb"]
         else:
-            if self.mask.smooth_mask is None:
-                self.mask.wl
-                print("pseudo_cl: calculating wl to establish smoothed mask.")
+           
             m_llp_p, m_llp_m = self.mask.m_llp
-            if hasattr(self, "_noise_sigma"):
-                cl_e = self.theorycl.ee.copy() + self.noise_cl
-                cl_b = self.theorycl.bb.copy() + self.noise_cl
+            if hasattr(self.theorycl, "_noise_sigma"):
+                cl_e = self.theorycl.ee.copy() + self.theorycl.noise_cl
+                cl_b = self.theorycl.bb.copy() + self.theorycl.noise_cl
 
             else:
                 cl_e = self.theorycl.ee.copy()
