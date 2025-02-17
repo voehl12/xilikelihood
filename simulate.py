@@ -332,11 +332,11 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
         return cl_s  # cl_e, cl_b, cl_eb
     else:
         pcl_s = []
-        for i, field_i in enumerate(maps_TQU_list):
-            for j, field_j in reversed(list(enumerate(maps_TQU_list[: i + 1]))):
+        masked_fields = smooth_masks[:,None,:]*np.array(maps_TQU_list)
+        for i, field_i in enumerate(masked_fields):
+            for j, field_j in reversed(list(enumerate(masked_fields[: i + 1]))):
 
-                field_i = smooth_masks[i, None, :] * field_i
-                field_j = smooth_masks[j, None, :] * field_j
+                
                 pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
                     field_i,
                     field_j,
@@ -388,6 +388,9 @@ def xi_sim_nD(
         sim_mask = mask.mask
     else:
         sim_mask = mask.smooth_mask
+    
+    hp.mollview(sim_mask)
+    plt.savefig('mask.png')
     nside = mask.nside
     noises = [set_pixelsigma(cl, nside) for cl in theorycls if cl.sigma_e is not None]
     sigmaname = theorycls[0].sigmaname
@@ -421,11 +424,11 @@ def xi_sim_nD(
             toc = time.perf_counter()
             times.append(toc - tic)
         print(times, np.mean(times))
-        xis = np.array(xis)
+        xis = np.array(xis) # (n_batch,n_corr,2,n_angbins)
         pcls = np.array(pcls)
         if plot:
             plt.figure()
-            plt.hist(xis[:, 1, 0, 1], bins=30)
+            plt.hist(xis[:, 2, 0, 1], bins=30) 
             plt.savefig("sim_demo_{:d}.png".format(j))
             plt.figure()
             # plt.plot(np.arange(pcls.shape[-1]), np.array(pcls[:, 2, 0, :]).T)
