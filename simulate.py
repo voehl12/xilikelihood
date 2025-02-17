@@ -4,7 +4,7 @@ import numpy as np
 import healpy as hp
 
 # import pymaster as nmt
-#import treecorr
+# import treecorr
 
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
@@ -15,6 +15,7 @@ import helper_funcs
 from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable
 
 import glass.fields
+
 # glass          2023.8.dev10+g67a5721 /cluster/home/veoehl/glass
 import time
 
@@ -32,11 +33,9 @@ class TwoPointSimulation:
         lmax=None,
         healpix_datapath=None,
     ):
-        
+
         self.mask = mask
         self.theorycl = theorycl
-        
-        
 
         self.ximode = ximode
         self.batchsize = batchsize
@@ -65,13 +64,15 @@ class TwoPointSimulation:
         else:
             np.random.seed(seed=seed)
             maps = hp.sphtfunc.synfast(
-                (self.theorycl.nn, self.theorycl.ne, self.theorycl.ee, self.theorycl.bb), self.mask.nside, lmax=self.mask.lmax
+                (self.theorycl.nn, self.theorycl.ne, self.theorycl.ee, self.theorycl.bb),
+                self.mask.nside,
+                lmax=self.mask.lmax,
             )
             return maps
 
     def add_noise(self, maps, testing=False):
         if self.theorycl._sigma_e is not None:
-            self.pixelsigma = set_pixelsigma(self.theorycl,self.mask.nside)
+            self.pixelsigma = set_pixelsigma(self.theorycl, self.mask.nside)
         else:
             return maps
         rng = default_rng()
@@ -107,7 +108,7 @@ class TwoPointSimulation:
             cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb = hp.anafast(maps_TQU)
             return cl_e, cl_b, cl_eb
         else:
-            if hasattr(self.mask,"smooth_mask"):
+            if hasattr(self.mask, "smooth_mask"):
                 mask = self.mask.smooth_mask
             else:
                 mask = self.mask.mask
@@ -137,7 +138,7 @@ class TwoPointSimulation:
             command = "mkdir " + path
             os.system(command)
         self.simpath = path
-       
+
         if self.ximode == "namaster":
             prefactors = prep_prefactors(
                 self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax
@@ -169,7 +170,7 @@ class TwoPointSimulation:
                 self.simpath + "/job{:d}.npz".format(j),
                 mode=self.ximode,
                 theta=self.seps_in_deg,
-                lmax = self.lmax,
+                lmax=self.lmax,
                 lmin=lmin,
                 xip=np.array(xip),
                 xim=np.array(xim),
@@ -224,7 +225,9 @@ class TwoPointSimulation:
 
         elif self.ximode == "comp":
             cat_props = prep_cat_treecorr(self.mask.nside, self.mask.smooth_mask)
-            prefactors = prep_prefactors(self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax)
+            prefactors = prep_prefactors(
+                self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax
+            )
 
             maps_TQU = self.create_maps(seed=7)
             maps = self.add_noise(maps_TQU)
@@ -258,21 +261,20 @@ def create_maps_nD(gls=[], nside=256, lmax=None):
 
         return np.array(field_list)
 
-def set_pixelsigma(theorycl,nside):
-    if theorycl.sigma_e is not None:
-            if isinstance(theorycl.sigma_e, str):
-                pixelsigma = helper_funcs.get_noise_pixelsigma(nside)
 
-            elif isinstance(theorycl.sigma_e, tuple):
-                pixelsigma = helper_funcs.get_noise_pixelsigma(nside, theorycl.sigma_e
-                )
-            else:
-                raise RuntimeError(
-                    "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
-                )
+def set_pixelsigma(theorycl, nside):
+    if theorycl.sigma_e is not None:
+        if isinstance(theorycl.sigma_e, str):
+            pixelsigma = helper_funcs.get_noise_pixelsigma(nside)
+
+        elif isinstance(theorycl.sigma_e, tuple):
+            pixelsigma = helper_funcs.get_noise_pixelsigma(nside, theorycl.sigma_e)
+        else:
+            raise RuntimeError("sigma_e needs to be string for default or tuple (sigma_e,n_gal)")
     else:
         pixelsigma = None
     return pixelsigma
+
 
 def limit_noise(noisemap, nside: int, lmax: Optional[int] = None):
     almq = hp.map2alm(noisemap)
@@ -319,8 +321,7 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
     _type_
         _description_
     """
-    
-    
+
     if fullsky:
         cl_s = []
         for i, field_i in enumerate(maps_TQU_list):
@@ -333,7 +334,7 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
         pcl_s = []
         for i, field_i in enumerate(maps_TQU_list):
             for j, field_j in reversed(list(enumerate(maps_TQU_list[: i + 1]))):
-                
+
                 field_i = smooth_masks[i, None, :] * field_i
                 field_j = smooth_masks[j, None, :] * field_j
                 pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
@@ -344,7 +345,7 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
                     datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
                 )
 
-                pcl_s.append([pcl_e, pcl_b, pcl_eb])
+                pcl_s.append([pcl_e, pcl_b, pcl_eb])  # (n_croco, 3, n_ell)
 
         return np.array(pcl_s)
 
@@ -376,20 +377,19 @@ def xi_sim_nD(
 ):
     xis, pcls = [], []
     gls = np.array([cl.ee.copy() for cl in theorycls])
-    if not helper_funcs.check_property_equal(masks,"nside") or not helper_funcs.check_property_equal(masks,"eff_area"):
+    if not helper_funcs.check_property_equal(
+        masks, "nside"
+    ) or not helper_funcs.check_property_equal(masks, "eff_area"):
         raise RuntimeError("Different masks not implemented yet.")
-    
-    
+
     mask = masks[0]
-    if not hasattr(mask,"smooth_mask"):
+    if not hasattr(mask, "smooth_mask"):
         print("Warning: mask used for simulations is not smoothed!")
         sim_mask = mask.mask
     else:
         sim_mask = mask.smooth_mask
     nside = mask.nside
-    noises = [
-        set_pixelsigma(cl,nside) for cl in theorycls if cl.sigma_e is not None
-    ] 
+    noises = [set_pixelsigma(cl, nside) for cl in theorycls if cl.sigma_e is not None]
     sigmaname = theorycls[0].sigmaname
     foldername = "/croco_{}_{}_{}_llim_{}".format(
         theorycls[0].name, mask.name, sigmaname, str(lmax)
@@ -403,6 +403,7 @@ def xi_sim_nD(
     if ximode == "namaster":
         if lmax is None:
             lmax = mask.lmax
+
         prefactors = prep_prefactors(seps_in_deg, mask.wl, mask.lmax, mask.lmax)
         times = []
         for _i in range(batchsize):
@@ -416,7 +417,7 @@ def xi_sim_nD(
             all_masks = np.array([sim_mask for _ in range(len(maps))])
             pcl_all, xi_all = get_xi_namaster_nD(maps, all_masks, prefactors, lmax, lmin=0)
             xis.append(xi_all)
-            pcls.append(pcl_all)
+            pcls.append(pcl_all)  # (n_batch, n_corr, 3, n_ell)
             toc = time.perf_counter()
             times.append(toc - tic)
         print(times, np.mean(times))
@@ -426,6 +427,24 @@ def xi_sim_nD(
             plt.figure()
             plt.hist(xis[:, 1, 0, 1], bins=30)
             plt.savefig("sim_demo_{:d}.png".format(j))
+            plt.figure()
+            # plt.plot(np.arange(pcls.shape[-1]), np.array(pcls[:, 2, 0, :]).T)
+            plt.plot(
+                np.arange(pcls.shape[-1]),
+                np.mean(np.array(pcls[:, 2, 0, :]).T, axis=-1),
+                color="black",
+            )
+            plt.plot(
+                np.arange(pcls.shape[-1]),
+                np.mean(np.array(pcls[:, 1, 0, :]).T, axis=-1),
+                color="gray",
+            )
+            theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise.npz")
+            theorypcl55 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault.npz")
+            plt.plot(np.arange(pcls.shape[-1]), theorypcl53["pcl_ee"], color="red")
+            plt.plot(np.arange(pcls.shape[-1]), theorypcl55["pcl_ee"], color="blue")
+            plt.savefig("sim_demo_pcle_35_{:d}.png".format(j))
+
         np.savez(
             simpath + "/job{:d}.npz".format(j),
             mode=ximode,
