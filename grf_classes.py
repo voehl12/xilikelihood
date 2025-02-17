@@ -371,6 +371,8 @@ class SphereMask:
         wlm = self.wlm_lmax
         self._wl = hp.sphtfunc.alm2cl(wlm)
         smooth_mask = hp.sphtfunc.alm2map(wlm, self.nside)
+        smooth_mask[smooth_mask < 0] = 0
+        smooth_mask[smooth_mask > 1] = 1
         self.smooth_mask = smooth_mask
 
 
