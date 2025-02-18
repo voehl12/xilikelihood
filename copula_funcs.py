@@ -63,24 +63,27 @@ def covariance_to_correlation(cov_matrix):
 def gaussian_copula_density(cdfs, covariance_matrix):
     # Convert u and v to normal space
     cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
-    z = norm.ppf(cdfs_flat) # same shape as cdfs
+    z = norm.ppf(cdfs_flat)  # same shape as cdfs
 
-    
     corr_matrix = covariance_to_correlation(covariance_matrix)
     mean = np.zeros(len(corr_matrix))
-    mvn = multivariate_normal(mean=mean, cov=corr_matrix) # multivariate normal with right correlation structure
-    ppf_grid = np.meshgrid(z)
-    ppf_points = np.vstack(ppf_grid).T
-    mvariate_pdf = mvn.pdf(ppf_points) # evaluate mv normal at ppf points
+    mvn = multivariate_normal(
+        mean=mean, cov=corr_matrix
+    )  # multivariate normal with right correlation structure
+    ppf_grid = np.meshgrid(*z)
+    stacked_ppfgrid = np.stack(ppf_grid, axis=-1)
+    ppf_points = stacked_ppfgrid.reshape(-1, stacked_ppfgrid.shape[-1])
+    mvariate_pdf = mvn.pdf(ppf_points)  # evaluate mv normal at ppf points
 
-    
-    pdf = norm.pdf(z) # evaluate normal at the inverse cdf points
-    pdf_grid = np.meshgrid(pdf)
-    pdf_points = np.vstack(pdf_grid).T
+    pdf = norm.pdf(z)  # evaluate normal at the inverse cdf points
+    pdf_grid = np.meshgrid(*pdf)
+    pdf_points = np.stack(pdf_grid, axis=-1)  # stack the pdfs along new axis
+    pdf_points = pdf_points.reshape(-1, pdf_points.shape[-1])  # reshape to 2D array
 
     # Copula density
     copula_density = mvariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
+
 
 def gaussian_copula_density_2d(u, v, covariance_matrix):
     # Convert u and v to normal space
@@ -105,17 +108,24 @@ def gaussian_copula_density_2d(u, v, covariance_matrix):
     copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
+
 def joint_pdf(cdfs, pdfs, cov):
-    
-    pdfs_flat = pdfs.reshape(-1, pdfs.shape[-1])
-    pdf_meshgrid = np.meshgrid(*pdfs_flat)
-    pdf_points = np.vstack(pdf_meshgrid).T
+
+    pdfs_flat = pdfs.reshape(-1, pdfs.shape[-1])  # all pdfs stacked, two-dim array
+    pdf_meshgrid = np.meshgrid(
+        *pdfs_flat
+    )  # meshgrid of all pdfs -> evaluate one point by pdf_meshgrid[k, i, j, ...] where k is the coordinate of the kth dimension, and i,j,... are the indices of the meshgrid
+    stacked_meshgrid = np.stack(pdf_meshgrid, axis=-1)  # stack the meshgrid along new axis
+    pdf_points = stacked_meshgrid.reshape(
+        -1, stacked_meshgrid.shape[-1]
+    )  # reshape to 2D array, list of points in pdf space
 
     # Compute copula density
     copula_density = gaussian_copula_density(cdfs, cov)
 
     # Joint PDF
     return copula_density * np.prod(pdf_points, axis=1)
+
 
 def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     # Compute marginals
