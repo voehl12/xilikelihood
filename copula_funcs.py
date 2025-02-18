@@ -60,7 +60,29 @@ def covariance_to_correlation(cov_matrix):
     return corr_matrix
 
 
-def gaussian_copula_density(u, v, covariance_matrix):
+def gaussian_copula_density(cdfs, covariance_matrix):
+    # Convert u and v to normal space
+    cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
+    z = norm.ppf(cdfs_flat) # same shape as cdfs
+
+    
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    mean = np.zeros(len(corr_matrix))
+    mvn = multivariate_normal(mean=mean, cov=corr_matrix) # multivariate normal with right correlation structure
+    ppf_grid = np.meshgrid(z)
+    ppf_points = np.vstack(ppf_grid).T
+    mvariate_pdf = mvn.pdf(ppf_points) # evaluate mv normal at ppf points
+
+    
+    pdf = norm.pdf(z) # evaluate normal at the inverse cdf points
+    pdf_grid = np.meshgrid(pdf)
+    pdf_points = np.vstack(pdf_grid).T
+
+    # Copula density
+    copula_density = mvariate_pdf / (np.prod(pdf_points, axis=1))
+    return copula_density
+
+def gaussian_copula_density_2d(u, v, covariance_matrix):
     # Convert u and v to normal space
     z1 = norm.ppf(u)
     z2 = norm.ppf(v)
@@ -83,8 +105,19 @@ def gaussian_copula_density(u, v, covariance_matrix):
     copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
+def joint_pdf(cdfs, pdfs, cov):
+    
+    pdfs_flat = pdfs.reshape(-1, pdfs.shape[-1])
+    pdf_meshgrid = np.meshgrid(*pdfs_flat)
+    pdf_points = np.vstack(pdf_meshgrid).T
 
-def joint_pdf(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
+    # Compute copula density
+    copula_density = gaussian_copula_density(cdfs, cov)
+
+    # Joint PDF
+    return copula_density * np.prod(pdf_points, axis=1)
+
+def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     # Compute marginals
     u = cdf_X[1:-1]
     v = cdf_Y[1:-1]
