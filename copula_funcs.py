@@ -34,6 +34,9 @@ def pdf_to_cdf(xs, pdfs):
     xs_interp = xs_interp.reshape(xs.shape[0], xs.shape[1], -1)
     return cdfs, pdfs_interp, xs_interp
 
+def marginal_cdf_of_data(xs,pdf):
+    # returns nd cdf value of datapoint and pdf value in each dimension, index wrt x?
+    return cdfs[:,-1], pdf_data
 
 def covariance_to_correlation(cov_matrix):
     """
@@ -122,7 +125,8 @@ def joint_pdf(cdfs, pdfs, cov):
 
     # Compute copula density
     copula_density = gaussian_copula_density(cdfs, cov)
-
+    # this returns the full pdf, still needs to be adjusted to just evaluate at single points
+    # i.e. cdf is only needed for one point in each dimension, only integrate up to data point x, might be able to avoid loop and interpolation
     # Joint PDF
     return copula_density * np.prod(pdf_points, axis=1)
 
