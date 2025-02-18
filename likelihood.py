@@ -170,7 +170,7 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 10 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 5 * np.sqrt(self._variances)
         self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
@@ -306,34 +306,43 @@ class XiLikelihood:
             self._mean = self._means_lowell + self._means_highell
             highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs) # new xs and pdfs are interpolated
+        
+        
+        copula = copula_funcs.joint_pdf(
+        self._cdfs[1:],
+        self._pdfs[1:],
+        self._cov[1:,1:],
+        )
+        
+        
+        
+        
         fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
             3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
         )
         #bincenters, mean, errors, mu_estimate, cov_estimate
         configpath = "config_adjusted.ini"
-        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_30/"
+        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None/"
         config = postprocess_nd_likelihood.load_config(configpath)
+        
+        
+        
         diag_fig,diag_ax = plt.subplots()
         bincenters, mean, errors, mu_estimate, cov_estimate = (
             postprocess_nd_likelihood.load_and_bootstrap_sims_nd(
                 config, simspath, axes=(ax00, ax1, ax3), vmax=None,n_bootstrap=1000,diagnostic_ax=diag_ax
             )
         )
-
-        copula = copula_funcs.joint_pdf(
-            self._cdfs[1, 0],
-            self._cdfs[2, 0],
-            self._pdfs[1, 0],
-            self._pdfs[2, 0],
-            self._cov[1:,1:],
-        )
-        
         x_vals = self._xs[1, 0, 1:-1]
         y_vals = self._xs[2, 0, 1:-1]
         diag_ax.plot(x_vals,self._pdfs[1, 0,1:-1],label='xi55_analytic')
         diag_ax.plot(y_vals,self._pdfs[2, 0,1:-1],label='xi53_analytic')
         diag_ax.legend()
-        diag_fig.savefig('marginal_diagnostics_10000sqd.png')
+        diag_fig.savefig('marginal_diagnostics_10000sqd_fullell.png')
+
+     
+        
+        
         x_grid, y_grid = np.meshgrid(x_vals, y_vals)
         test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
         
@@ -369,7 +378,7 @@ class XiLikelihood:
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
         # fig.colorbar(exact_res, ax=ax02)
-        fig.savefig("comparison_copula_sims_fullell_10000deg2_lowell.png")
+        fig.savefig("comparison_copula_sims_10000deg2_fullell.png")
 
     # copula.evaluate(self._marginals, data)
     # pass
@@ -387,4 +396,4 @@ xi_likelihood = XiLikelihood(mask, redshift_bins, ang_bins_in_deg=ang_bins_in_de
 
 xi_likelihood.initiate_mask_specific()
 xi_likelihood.precompute_combination_matrices()
-xi_likelihood.likelihood(None, (paths, names, noises), highell=False)
+xi_likelihood.likelihood(None, (paths, names, noises), highell=True)
