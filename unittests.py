@@ -19,7 +19,7 @@ def test_cl_class():
 def test_wllpmmp(snapshot,tmp_path):
     import grf_classes
     mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=10)
-    path = tmp_path / "newtestwpm.npz"
+    path = tmp_path / "wpm.npz"
     w_arr = mask.w_arr(path=path)
     snapshot.check(w_arr)
 
@@ -49,16 +49,13 @@ def test_cov_xi(snapshot):
 
 def test_cov_diag():
     # check that the diagonal matches the pseudo-cl to 10%:
-    import cov_setup
+    import cov_setup, grf_classes
 
     exact_lmax = 10
-    cov = cov_setup.Cov(
-        exact_lmax,
-        [2],
-        clpath="Cl_3x2pt_kids55.txt",
-        circmaskattr=(1000, 256),  # l_smooth_mask=30
-    )
-    cov_array = cov.cov_alm_xi(pos_m=True)
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=exact_lmax)
+    theorycl = grf_classes.TheoryCl(767,clpath="Cl_3x2pt_kids55.txt")
+    cov = cov_setup.Cov(mask,theorycl,exact_lmax)
+    cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
 
     len_sub = exact_lmax + 1
