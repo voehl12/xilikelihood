@@ -129,8 +129,5 @@ def smooth_cl(l, l_smooth):
 def smooth_alm(l_smooth, lmax):
     l_array = [np.arange(i, lmax + 1) for i in range(lmax + 1)]
     l_array = np.concatenate(l_array, axis=0)
-    if l_smooth is None:
-        smoothing_arr = np.ones(len(l_array))
-    else:
-        smoothing_arr = smooth_gauss(l_array, l_smooth)
+    smoothing_arr = smooth_gauss(l_array, l_smooth)
     return smoothing_arr
