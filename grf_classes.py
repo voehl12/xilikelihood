@@ -347,7 +347,8 @@ class SphereMask:
       
 
         self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
-        self._wlm *= self.smooth_alm
+        if hasattr(self,'l_smooth'):
+            self._wlm *= self.smooth_alm
         return self._wlm
 
     @property
@@ -363,8 +364,10 @@ class SphereMask:
        
 
         self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
-        self._wlm_lmax *= self.smooth_alm_lmax
+        if hasattr(self,'l_smooth'):
+            self._wlm_lmax *= self.smooth_alm_lmax
 
+        
         return self._wlm_lmax
 
     def set_smoothed_mask(self):
@@ -458,8 +461,11 @@ class SphereMask:
             inds = (slice(0, 2), *inds)
             self.wpm_arr[inds] = [wp, wm]
 
-    def w_arr(self, cov_ell_buffer=0, verbose=True):
-        self.set_wpmpath(cov_ell_buffer)
+    def w_arr(self, cov_ell_buffer=0, verbose=True,path=None):
+        if path is None:
+            self.set_wpmpath(cov_ell_buffer)
+        else: 
+            self.wpm_path = path
         if self.check_w_arr():
             self.load_w_arr()
             return self._w_arr
