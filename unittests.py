@@ -16,25 +16,34 @@ def test_cl_class():
     new_cl = grf_classes.TheoryCl(30)
     assert np.allclose(new_cl.ee, np.zeros(31))
 
+def test_wllpmmp(snapshot,tmp_path):
+    import grf_classes
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=10)
+    path = tmp_path / "newtestwpm.npz"
+    w_arr = mask.w_arr(path=path)
+    snapshot.check(w_arr)
 
-def test_cov_xi():
-    import cov_setup
 
-    covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
-    cov_xip = covs["cov"]
-    circ_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=(1000, 256))
-    test_cov = circ_cov.cov_alm_xi(pos_m=True)
-    assert np.allclose(cov_xip, test_cov)
-
-    nomask_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=("fullsky", 256))
-    nomask_cov_array = nomask_cov.cov_alm_xi(pos_m=True)
+def test_cov_xi(snapshot):
+    import grf_classes,cov_setup
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=10)
+    full_mask = grf_classes.SphereMask(spins=[2],circmaskattr=("fullsky", 256),exact_lmax=10)
+    theorycl = grf_classes.TheoryCl(767,clpath="Cl_3x2pt_kids55.txt")
+    #covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
+    #cov_xip = covs["cov"]
+    circ_cov = cov_setup.Cov(mask,theorycl,10)
+    test_cov = circ_cov.cov_alm_xi()
+    #assert np.allclose(cov_xip, test_cov)
+    snapshot.check(test_cov)
+    nomask_cov = cov_setup.Cov(full_mask,theorycl,10)
+    nomask_cov_array = nomask_cov.cov_alm_xi()
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
     assert np.allclose(nomask_cov_array, diag_arr)
 
     nomask_cov.maskname = "disguised_fullsky"
     nomask_cov.set_covalmpath()
-    nomask_bruteforce_cov = nomask_cov.cov_alm_xi(pos_m=True)
+    nomask_bruteforce_cov = nomask_cov.cov_alm_xi()
     assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array))
 
 
@@ -391,4 +400,4 @@ def test_edgeworth_nd():
     compare_edgeworth_t_distribution(mu, Sigma, nu_values)
 
 
-test_edgeworth_nd()
+
