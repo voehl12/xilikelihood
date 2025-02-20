@@ -16,26 +16,29 @@ def test_cl_class():
     new_cl = grf_classes.TheoryCl(30)
     assert np.allclose(new_cl.ee, np.zeros(31))
 
-def test_wllpmmp(snapshot,tmp_path):
+
+def test_wllpmmp(snapshot, tmp_path):
     import grf_classes
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=10)
+
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
     path = tmp_path / "wpm.npz"
     w_arr = mask.w_arr(path=path)
-    snapshot.check(w_arr)
+    snapshot.check(w_arr, atol=1e-16)
 
 
 def test_cov_xi(snapshot):
-    import grf_classes,cov_setup
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=10)
-    full_mask = grf_classes.SphereMask(spins=[2],circmaskattr=("fullsky", 256),exact_lmax=10)
-    theorycl = grf_classes.TheoryCl(767,clpath="Cl_3x2pt_kids55.txt")
-    #covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
-    #cov_xip = covs["cov"]
-    circ_cov = cov_setup.Cov(mask,theorycl,10)
+    import grf_classes, cov_setup
+
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
+    full_mask = grf_classes.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
+    theorycl = grf_classes.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    # covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
+    # cov_xip = covs["cov"]
+    circ_cov = cov_setup.Cov(mask, theorycl, 10)
     test_cov = circ_cov.cov_alm_xi()
-    #assert np.allclose(cov_xip, test_cov)
-    snapshot.check(test_cov)
-    nomask_cov = cov_setup.Cov(full_mask,theorycl,10)
+    # assert np.allclose(cov_xip, test_cov)
+    snapshot.check(test_cov, atol=1e-16)
+    nomask_cov = cov_setup.Cov(full_mask, theorycl, 10)
     nomask_cov_array = nomask_cov.cov_alm_xi()
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
@@ -52,9 +55,9 @@ def test_cov_diag():
     import cov_setup, grf_classes
 
     exact_lmax = 10
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256),exact_lmax=exact_lmax)
-    theorycl = grf_classes.TheoryCl(767,clpath="Cl_3x2pt_kids55.txt")
-    cov = cov_setup.Cov(mask,theorycl,exact_lmax)
+    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
+    theorycl = grf_classes.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    cov = cov_setup.Cov(mask, theorycl, exact_lmax)
     cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
 
@@ -395,6 +398,3 @@ def test_edgeworth_nd():
     Sigma = np.array([[1, 0.5], [0.5, 1]])
     nu_values = [5, 10, 20, 50, 100]  # List of degrees of freedom to compare
     compare_edgeworth_t_distribution(mu, Sigma, nu_values)
-
-
-
