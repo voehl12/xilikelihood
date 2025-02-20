@@ -119,8 +119,7 @@ class TheoryCl:
         return self._sigma_e
 
     def set_noise_sigma(self):
-        
- 
+
         if self._sigma_e is not None:
             if isinstance(self._sigma_e, str):
                 self._noise_sigma = helper_funcs.get_noise_cl()
@@ -283,11 +282,9 @@ class SphereMask:
             else:
                 self.l_smooth_auto = False
                 self.l_smooth = l_smooth
-       
+
             self.set_smoothed_mask()
             self.name += "smoothl{}".format(str(self.l_smooth))
-
-    
 
     def read_maskfile(self):
         """Reads a fits file and sets mask properties accordingly"""
@@ -333,7 +330,7 @@ class SphereMask:
     def smooth_alm_lmax(self):
         self._smooth_alm_lmax = wpm_funcs.smooth_alm(self.l_smooth, self.lmax)
         return self._smooth_alm_lmax
-    
+
     @property
     def wlm(self):
         """Calculates spherical harmonic coefficients of the mask
@@ -344,11 +341,10 @@ class SphereMask:
             spin 0 alm of mask in healpix ordering
         """
 
-      
-
-        self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
-        if hasattr(self,'l_smooth'):
-            self._wlm *= self.smooth_alm
+        if hasattr(self, "l_smooth"):
+            self._wlm = hp.sphtfunc.map2alm(self.smooth_mask, lmax=self._exact_lmax)
+        else:
+            self._wlm = hp.sphtfunc.map2alm(self.mask, lmax=self._exact_lmax)
         return self._wlm
 
     @property
@@ -361,34 +357,38 @@ class SphereMask:
             spin 0 alm of mask in healpix ordering
         """
 
-       
-
-        self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
-        if hasattr(self,'l_smooth'):
-            self._wlm_lmax *= self.smooth_alm_lmax
-
-        
-        return self._wlm_lmax
+        if hasattr(self, "l_smooth"):
+            wlm_lmax = hp.sphtfunc.map2alm(self.smooth_mask, lmax=self.lmax)
+            indicator = np.zeros(self.lmax + 1)
+            indicator[: self.nside // 2 + 1] = (
+                1  # this has shown to be a good lmax for consistent conversion back to real space, still need the full array for other calculations later, therefore attaching zeros
+            )
+            self._wlm_lmax = hp.sphtfunc.almxfl(wlm_lmax, indicator)
+            return self._wlm_lmax
+        else:
+            self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
+            return self._wlm_lmax
 
     def set_smoothed_mask(self):
-        wlm = self.wlm_lmax
-        self._wl = hp.sphtfunc.alm2cl(wlm)
-        smooth_mask = hp.sphtfunc.alm2map(wlm, self.nside)
-        smooth_mask[smooth_mask < 0] = 0
-        smooth_mask[smooth_mask > 1] = 1
-        self.smooth_mask = smooth_mask
 
+        sigma = 1 / self.l_smooth * 300
+        smooth_mask = hp.sphtfunc.smoothing(
+            self.mask, sigma=np.abs(sigma), iter=50, use_pixel_weights=True
+        )
+        self.smooth_mask = smooth_mask
+        self._wlm_lmax = hp.sphtfunc.map2alm(smooth_mask, lmax=self.nside / 2)
+        self._wl = hp.sphtfunc.alm2cl(self._wlm_lmax)
 
     @property
     def wl(self):
         wlm = self.wlm_lmax
         self._wl = hp.sphtfunc.alm2cl(wlm)
-        
+
         return self._wl
 
     @property
     def eff_area(self):
-        if hasattr(self,"smooth_mask"):
+        if hasattr(self, "smooth_mask"):
             self._eff_area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.smooth_mask)
             return self._eff_area
         else:
@@ -461,10 +461,10 @@ class SphereMask:
             inds = (slice(0, 2), *inds)
             self.wpm_arr[inds] = [wp, wm]
 
-    def w_arr(self, cov_ell_buffer=0, verbose=True,path=None):
+    def w_arr(self, cov_ell_buffer=0, verbose=True, path=None):
         if path is None:
             self.set_wpmpath(cov_ell_buffer)
-        else: 
+        else:
             self.wpm_path = path
         if self.check_w_arr():
             self.load_w_arr()
