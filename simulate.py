@@ -442,8 +442,8 @@ def xi_sim_nD(
                 np.mean(np.array(pcls[:, 1, 0, :]).T, axis=-1),
                 color="gray",
             )
-            theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise.npz")
-            theorypcl55 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault.npz")
+            theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise_test.npz")
+            theorypcl55 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault_test.npz")
             plt.plot(np.arange(pcls.shape[-1]), theorypcl53["pcl_ee"], color="red")
             plt.plot(np.arange(pcls.shape[-1]), theorypcl55["pcl_ee"], color="blue")
             plt.savefig("sim_demo_pcle_35_{:d}.png".format(j))
