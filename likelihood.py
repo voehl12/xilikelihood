@@ -170,7 +170,7 @@ class XiLikelihood:
             cross_prods * cross_transposes, axis=(-2, -1)
         ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 10 * np.sqrt(self._variances)
+        self._ximax = self._means_lowell + 5 * np.sqrt(self._variances)
         self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
         eigvals_auto = np.linalg.eigvals(
             auto_prods
@@ -322,7 +322,7 @@ class XiLikelihood:
         )
         #bincenters, mean, errors, mu_estimate, cov_estimate
         configpath = "config_adjusted.ini"
-        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_30_newwpm/"
+        simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None_newwpm/"
         config = postprocess_nd_likelihood.load_config(configpath)
         
         
@@ -339,7 +339,7 @@ class XiLikelihood:
         diag_ax.plot(x_vals,self._pdfs[1, 0],label='xi55_analytic')
         diag_ax.plot(y_vals,self._pdfs[2, 0],label='xi53_analytic')
         diag_ax.legend()
-        diag_fig.savefig('marginal_diagnostics_10000sqd_lowell_newwpm.png')
+        diag_fig.savefig('marginal_diagnostics_10000sqd_fullell_newwpm.png')
 
      
         
@@ -379,7 +379,7 @@ class XiLikelihood:
         fig.colorbar(res_plot, ax=ax5)
         fig.colorbar(gauss_res, ax=ax6)
         # fig.colorbar(exact_res, ax=ax02)
-        fig.savefig("comparison_copula_sims_10000deg2_lowell_newwpm.png")
+        fig.savefig("comparison_copula_sims_10000deg2_fullell_newwpm.png")
 
     # copula.evaluate(self._marginals, data)
     # pass
@@ -397,4 +397,4 @@ xi_likelihood = XiLikelihood(mask, redshift_bins, ang_bins_in_deg=ang_bins_in_de
 
 xi_likelihood.initiate_mask_specific()
 xi_likelihood.precompute_combination_matrices()
-xi_likelihood.likelihood(None, (paths, names, noises), highell=False)
+xi_likelihood.likelihood(None, (paths, names, noises), highell=True)
