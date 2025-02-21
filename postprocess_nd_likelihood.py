@@ -33,7 +33,7 @@ def convert_nd_cf_to_pdf(config, highell_moms=None):
     return x_grid, pdf_grid
 
 
-def load_sims(config, simpath, njobs=1000):
+def load_sims(config, simpath,lmax,njobs=1000):
 
     params = config["Params"]
     exact_lmax = int(params["l_exact"])
@@ -42,7 +42,7 @@ def load_sims(config, simpath, njobs=1000):
     comb_n = get_comb_ns(config)
     # read_sims: fix to be flexible like in the config setup for more than 2 dimensions
     print("Loading simulations...")
-    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, 30)
+    allxis = file_handling.read_sims_nd(simpath, comb_n, angbins_in_deg[0], njobs, lmax)
 
     return allxis
 
@@ -132,10 +132,10 @@ def compare_to_gaussian(config):
     pass
 
 
-def load_and_bootstrap_sims_nd(config, simpath, axes=None, vmax=None,n_bootstrap=500,diagnostic_ax=None):
+def load_and_bootstrap_sims_nd(config, simpath, lmax,axes=None, vmax=None,n_bootstrap=500,diagnostic_ax=None):
     # finish nd version of this function
     
-    sims = load_sims(config, simpath, njobs=1000)
+    sims = load_sims(config, simpath, lmax,njobs=1000)
     #mu, cov = [2.46969325e-07, 2.36668073e-07], np.array([[2.74045020e-14, 1.31405333e-14], [1.31405333e-14, 1.12209365e-14]])
     #[2.46969325e-07 2.36668073e-07] [[2.74045020e-14, 1.31405333e-14], [1.31405333e-14, 1.12209365e-14]]
     #mvn = multivariate_normal(mean=mu, cov=cov)
