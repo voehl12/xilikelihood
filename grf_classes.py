@@ -358,12 +358,12 @@ class SphereMask:
         """
 
         if hasattr(self, "l_smooth"):
-            wlm_lmax = hp.sphtfunc.map2alm(self.smooth_mask, lmax=self.lmax)
-            indicator = np.zeros(self.lmax + 1)
-            indicator[: self.nside // 2 + 1] = (
-                1  # this has shown to be a good lmax for consistent conversion back to real space, still need the full array for other calculations later, therefore attaching zeros
-            )
-            self._wlm_lmax = hp.sphtfunc.almxfl(wlm_lmax, indicator)
+            self._wlm_lmax = hp.sphtfunc.map2alm(self.smooth_mask, lmax=self.nside // 2)
+            if self._exact_lmax > self.nside // 2:
+                ValueError(
+                    "Exact lmax exceeds mask bandlimit after smoothing, requires careful reconsideration of mask calculations (mixing matrices need to be filled up with zeros)."
+                )
+
             return self._wlm_lmax
         else:
             self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
@@ -376,8 +376,8 @@ class SphereMask:
             self.mask, sigma=np.abs(sigma), iter=50, use_pixel_weights=True
         )
         self.smooth_mask = smooth_mask
-        self._wlm_lmax = hp.sphtfunc.map2alm(smooth_mask, lmax=self.nside / 2)
-        self._wl = hp.sphtfunc.alm2cl(self._wlm_lmax)
+        self.wl
+        self.wlm
 
     @property
     def wl(self):
@@ -427,7 +427,7 @@ class SphereMask:
             allowed_l, wigners0 = wpm_funcs.prepare_wigners(0, L1, L2, M1, M2, self.buffer_lmax)
 
             wlm_l = wpm_funcs.get_wlm_l(
-                self._wlm_lmax, m, self.lmax, allowed_l
+                self._wlm_lmax, m, allowed_l
             )  # needs the lmax the wlm are calculated for.
             prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
             w0 = (-1) ** np.abs(M1) * np.sum(wigners0 * prefac * wlm_l)
@@ -438,7 +438,7 @@ class SphereMask:
             allowed_l, wp_l, wm_l = wpm_funcs.prepare_wigners(2, L1, L2, M1, M2, self.buffer_lmax)
 
             prefac = wpm_funcs.w_factor(allowed_l, L1, L2)
-            wlm_l = wpm_funcs.get_wlm_l(self._wlm_lmax, m, self.lmax, allowed_l)
+            wlm_l = wpm_funcs.get_wlm_l(self._wlm_lmax, m, allowed_l)
             wlm_l_large = np.where(np.abs((wlm_l)) > 1e-17, wlm_l, 0)
             wp = 0.5 * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wp_l)
             """ assert np.allclose(

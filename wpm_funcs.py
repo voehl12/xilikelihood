@@ -35,7 +35,8 @@ def prepare_wigners(spin, L1, L2, M1, M2, lmax):
         raise RuntimeError("Wigner 3j-symbols can only be calculated for spin 0 or 2 fields.")
 
 
-def get_wlm_l(wlm, m, lmax, allowed_l):
+def get_wlm_l(wlm, m, allowed_l):
+    lmax = hp.sphtfunc.Alm.getlmax(len(wlm))
     if m < 0:
         wlm_l = (-1) ** -m * np.conj(wlm[hp.sphtfunc.Alm.getidx(lmax, allowed_l, -m)])
     else:
@@ -95,13 +96,14 @@ def purified_wigner(l_arr, lp, lpp, purified=True):
         return wigners0 + wigners1 + wigners2
 
 
-def m_llp(wl, exact_lmax):
-    sum_buffer = 0
-    len_l = len(wl)
-    m_3d_pp = np.zeros((len_l, len_l, exact_lmax + sum_buffer + 1))
+def m_llp(wl, lmax):
+    wl_full = np.zeros(lmax + 1)
+    wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax + 1]
+
+    m_3d_pp = np.zeros((lmax, lmax, lmax + 1))
     m_3d_mm = np.zeros_like(m_3d_pp)
-    l = lp = np.arange(len_l)
-    lpp = np.arange(exact_lmax + sum_buffer + 1)
+    l = lp = np.arange(lmax + 1)
+    lpp = np.arange(lmax + 1)
 
     for cp, i in enumerate(lp):
         for cpp, j in enumerate(lpp):
@@ -109,7 +111,7 @@ def m_llp(wl, exact_lmax):
                 continue
             else:
                 wigners_l = purified_wigner(l, i, j, purified=False)
-                m_3d = (2 * i + 1) * (2 * j + 1) * wl[cpp] * np.square(wigners_l) / (4 * np.pi)
+                m_3d = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] * np.square(wigners_l) / (4 * np.pi)
                 m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
                 m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
 
