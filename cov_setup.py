@@ -350,7 +350,7 @@ class Cov:
     def set_char_string(self):
      
 
-        charstring = "_l{:d}_n{:d}_{}_{}_{}.npz".format(
+        charstring = "_l{:d}_n{:d}_{}_{}_{}_test.npz".format(
             self._exact_lmax,
             self.mask.nside,
             self.mask.name,
@@ -376,7 +376,7 @@ class Cov:
         pclpath = (
             self.working_dir
             + "/pcls/pcl"
-            + "_n{:d}_{}_{}_{}.npz".format(
+            + "_n{:d}_{}_{}_{}_test.npz".format(
                 self.mask.nside,
                 self.mask.name,
                 self.theorycl.name,
