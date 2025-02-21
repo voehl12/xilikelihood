@@ -373,7 +373,11 @@ class SphereMask:
 
         sigma = np.deg2rad(1 / self.l_smooth * 300)
         smooth_mask = hp.sphtfunc.smoothing(
-            self.mask, sigma=np.abs(sigma), iter=50, use_pixel_weights=True, datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
+            self.mask,
+            sigma=np.abs(sigma),
+            iter=50,
+            use_pixel_weights=True,
+            datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
         )
         self.smooth_mask = smooth_mask
         self.wl
@@ -381,10 +385,10 @@ class SphereMask:
 
     @property
     def wl(self):
-        wl = np.zeros(self.lmax+1)
+        wl = np.zeros(self.lmax + 1)
         wlm = self.wlm_lmax
         wl_bandlimited = hp.sphtfunc.alm2cl(wlm)
-        wl[:len(wl_bandlimited)] = wl_bandlimited
+        wl[: len(wl_bandlimited)] = wl_bandlimited
         self._wl = wl
 
         return self._wl
