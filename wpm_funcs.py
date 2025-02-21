@@ -97,10 +97,11 @@ def purified_wigner(l_arr, lp, lpp, purified=True):
 
 
 def m_llp(wl, lmax):
+    # take wl of any length, return mllp arrays to max given lmax
     wl_full = np.zeros(lmax + 1)
-    wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax + 1]
+    wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax+1]
 
-    m_3d_pp = np.zeros((lmax, lmax, lmax + 1))
+    m_3d_pp = np.zeros((lmax+1, lmax+1, lmax + 1))
     m_3d_mm = np.zeros_like(m_3d_pp)
     l = lp = np.arange(lmax + 1)
     lpp = np.arange(lmax + 1)

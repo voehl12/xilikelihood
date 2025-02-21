@@ -371,9 +371,9 @@ class SphereMask:
 
     def set_smoothed_mask(self):
 
-        sigma = 1 / self.l_smooth * 300
+        sigma = np.deg2rad(1 / self.l_smooth * 300)
         smooth_mask = hp.sphtfunc.smoothing(
-            self.mask, sigma=np.abs(sigma), iter=50, use_pixel_weights=True
+            self.mask, sigma=np.abs(sigma), iter=50, use_pixel_weights=True, datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
         )
         self.smooth_mask = smooth_mask
         self.wl
@@ -381,8 +381,11 @@ class SphereMask:
 
     @property
     def wl(self):
+        wl = np.zeros(self.lmax+1)
         wlm = self.wlm_lmax
-        self._wl = hp.sphtfunc.alm2cl(wlm)
+        wl_bandlimited = hp.sphtfunc.alm2cl(wlm)
+        wl[:len(wl_bandlimited)] = wl_bandlimited
+        self._wl = wl
 
         return self._wl
 
@@ -577,7 +580,7 @@ class SphereMask:
 
     def set_wpm_string(self, cov_ell_buffer):
 
-        charstring = "_l{:d}_n{:d}_{}.npz".format(
+        charstring = "_l{:d}_n{:d}_{}_test.npz".format(
             self._exact_lmax + cov_ell_buffer,
             self.nside,
             self.name,
@@ -594,7 +597,7 @@ class SphereMask:
         self.wpm_path = wpm_name
 
     def set_mllppath(self):
-        charstring = "_l{:d}_n{:d}_{}.npz".format(
+        charstring = "_l{:d}_n{:d}_{}_test.npz".format(
             self._exact_lmax,
             self.nside,
             self.name,
