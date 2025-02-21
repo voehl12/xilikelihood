@@ -19,16 +19,22 @@ def interpolate_along_last_axis(xs, pdfs, num_points=512):
     - pdfs_interp: Interpolated pdf values
     """
 
-    def interpolate_1d(x, pdf):
+    def interpolate_1d(xpdf):
+        xpdf = xpdf.reshape(2, -1)
+        x, pdf = xpdf[0], xpdf[1]
         interp = PchipInterpolator(x, pdf)
         x_vals = np.linspace(x[0], x[-1], num_points)
         pdf_vals = interp(x_vals)
-        return x_vals, pdf_vals
+        concat = np.concatenate((x_vals, pdf_vals), axis=-1)
+        return concat
+
+    concatenated_xpdf = np.concatenate((xs, pdfs), axis=-1)
 
     # Apply interpolation along the last axis
-    xs_interp, pdfs_interp = np.apply_along_axis(
-        lambda arr: interpolate_1d(arr[0], arr[1]), -1, np.stack((xs, pdfs), axis=-1)
-    )
+    xs_pdfs = np.apply_along_axis(interpolate_1d, -1, concatenated_xpdf)
+    xs_pdfs = xs_pdfs.reshape(*xs_pdfs.shape[:-1], 2, -1)
+    xs_interp = xs_pdfs[..., 0, :]
+    pdfs_interp = xs_pdfs[..., 1, :]
 
     return xs_interp, pdfs_interp
 
