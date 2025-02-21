@@ -5,38 +5,54 @@ from scipy.integrate import cumulative_trapezoid as cumtrapz
 import matplotlib.pyplot as plt
 
 
-def pdf_to_cdf(xs, pdfs):
-    plt.figure()
-    if xs.ndim > 2:
-        x_flat = xs.reshape(-1, xs.shape[-1])
-        pdf_flat = pdfs.reshape(-1, pdfs.shape[-1])
-    else:
-        x_flat = xs
-        pdf_flat = pdfs
-    cdfs, pdfs_interp, xs_interp = [], [], []
-    for x, pdf in zip(x_flat, pdf_flat):
-        interp = PchipInterpolator(x, pdf)
-        x_vals = np.linspace(x[0], x[-1], 512)
-        pdf_vals = interp(x_vals)
-        plt.plot(x_vals, pdf_vals)
-        cdf = cumtrapz(pdf_vals, x_vals, initial=0)
+def interpolate_along_last_axis(xs, pdfs, num_points=512):
+    """
+    Interpolates along the last axis of n-dimensional arrays using PchipInterpolator.
 
-        assert np.fabs(cdf[-1] - 1) < 1e-5, "CDF not normalized to 1"
-        cdf /= max(cdf)
-        cdfs.append(cdf)
-        pdfs_interp.append(pdf_vals)
-        xs_interp.append(x_vals)
-    cdfs = np.array(cdfs)
-    pdfs_interp = np.array(pdfs_interp)
-    xs_interp = np.array(xs_interp)
-    cdfs = cdfs.reshape(xs.shape[0], xs.shape[1], -1)
-    pdfs_interp = pdfs_interp.reshape(xs.shape[0], xs.shape[1], -1)
-    xs_interp = xs_interp.reshape(xs.shape[0], xs.shape[1], -1)
+    Parameters:
+    - xs: A numpy array of x values
+    - pdfs: A numpy array of pdf values
+    - num_points: Number of points for interpolation
+
+    Returns:
+    - xs_interp: Interpolated x values
+    - pdfs_interp: Interpolated pdf values
+    """
+
+    def interpolate_1d(x, pdf):
+        interp = PchipInterpolator(x, pdf)
+        x_vals = np.linspace(x[0], x[-1], num_points)
+        pdf_vals = interp(x_vals)
+        return x_vals, pdf_vals
+
+    # Apply interpolation along the last axis
+    xs_interp, pdfs_interp = np.apply_along_axis(
+        lambda arr: interpolate_1d(arr[0], arr[1]), -1, np.stack((xs, pdfs), axis=-1)
+    )
+
+    return xs_interp, pdfs_interp
+
+
+def pdf_to_cdf(xs, pdfs):
+    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs)
+    cdfs = cumtrapz(pdfs_interp, xs_interp, initial=0)
+
+    assert np.all(np.fabs(cdfs[:, :, -1] - 1) < 1e-5), "CDF not normalized to 1"
+    max_values = np.max(cdfs, axis=-1, keepdims=True)
+    cdfs /= max_values
+
     return cdfs, pdfs_interp, xs_interp
 
-def marginal_cdf_of_data(xs,pdf):
+
+def marginal_cdf_of_data(x_data, xs, pdf):
     # returns nd cdf value of datapoint and pdf value in each dimension, index wrt x?
-    return cdfs[:,-1], pdf_data
+    broadcasted_data = x_data[:, :, None]
+    data_inds = np.argmin(np.abs(xs - broadcasted_data), axis=-1)
+
+    # cdfs = cumtrapz(xs[])
+
+    return cdfs[:, -1], pdf_data
+
 
 def covariance_to_correlation(cov_matrix):
     """
