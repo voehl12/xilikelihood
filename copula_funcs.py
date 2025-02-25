@@ -6,18 +6,6 @@ import matplotlib.pyplot as plt
 
 
 def interpolate_along_last_axis(xs, pdfs, num_points=512):
-    """
-    Interpolates along the last axis of n-dimensional arrays using PchipInterpolator.
-
-    Parameters:
-    - xs: A numpy array of x values
-    - pdfs: A numpy array of pdf values
-    - num_points: Number of points for interpolation
-
-    Returns:
-    - xs_interp: Interpolated x values
-    - pdfs_interp: Interpolated pdf values
-    """
 
     def interpolate_1d(xpdf):
         xpdf = xpdf.reshape(2, -1)
@@ -50,12 +38,27 @@ def pdf_to_cdf(xs, pdfs):
     return cdfs, pdfs_interp, xs_interp
 
 
-def pdf_and_cdf_point_eval(x_data, xs, pdfs,cdfs):
+def get_values_from_indices(array_3d, indices_2d):
+    """
+    Accesses the values in a 3D array corresponding to the indices in a 2D array along the last axis.
+
+    Parameters:
+    - array_3d: A 3D numpy array (shape: (c, b, n))
+    - indices_2d: A 2D numpy array of indices (shape: (c, b))
+
+    Returns:
+    - values: A 2D numpy array of corresponding values (shape: (c, b))
+    """
+    values = np.take_along_axis(array_3d, indices_2d[..., np.newaxis], axis=-1).squeeze()
+    return values
+
+
+def pdf_and_cdf_point_eval(x_data, xs, pdfs, cdfs):
     # returns nd cdf value of datapoint and pdf value in each dimension, index wrt x?
     broadcasted_data = x_data[:, :, None]
     data_inds = np.argmin(np.abs(xs - broadcasted_data), axis=-1)
-    pdf_point = pdfs[data_inds]
-    cdf_point = cdfs[data_inds]
+    pdf_point = get_values_from_indices(pdfs, data_inds)
+    cdf_point = get_values_from_indices(cdfs, data_inds)
     return pdf_point, cdf_point
 
 
@@ -108,7 +111,8 @@ def gaussian_copula_density(cdfs, covariance_matrix):
     copula_density = mvariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
-def gaussian_copula_point_density(cdf_point,covariance_matrix):
+
+def gaussian_copula_point_density(cdf_point, covariance_matrix):
     z = norm.ppf(cdf_point)
     corr_matrix = covariance_to_correlation(covariance_matrix)
     mean = np.zeros(len(corr_matrix))
@@ -177,9 +181,9 @@ def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     return copula_density * np.prod(pdf_points, axis=1)
 
 
-def evaluate(x_data,xs,pdfs,cdfs, cov):
-    pdf_point, cdf_point = pdf_and_cdf_point_eval(x_data=x_data, xs=xs,pdfs=pdfs,cdfs=cdfs)
-    copula_density = gaussian_copula_point_density(cdf_point,cov)
+def evaluate(x_data, xs, pdfs, cdfs, cov):
+    pdf_point, cdf_point = pdf_and_cdf_point_eval(x_data=x_data, xs=xs, pdfs=pdfs, cdfs=cdfs)
+    copula_density = gaussian_copula_point_density(cdf_point, cov)
     return copula_density * np.prod(pdf_point)
 
 
@@ -187,52 +191,49 @@ def testing():
     copula = copula_funcs.joint_pdf(
         self._cdfs[1:],
         self._pdfs[1:],
-        self._cov[1:,1:],
-        )
-        
-        
-        
-        
+        self._cov[1:, 1:],
+    )
+
     fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
         3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
     )
-    #bincenters, mean, errors, mu_estimate, cov_estimate
+    # bincenters, mean, errors, mu_estimate, cov_estimate
     configpath = "config_adjusted.ini"
     simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None_newwpm/"
     config = postprocess_nd_likelihood.load_config(configpath)
-    
-    
-    
-    diag_fig,diag_ax = plt.subplots()
+
+    diag_fig, diag_ax = plt.subplots()
     sims_lmax = self.lmax if highell else self._exact_lmax
     bincenters, mean, errors, mu_estimate, cov_estimate = (
         postprocess_nd_likelihood.load_and_bootstrap_sims_nd(
-            config, simspath, sims_lmax,axes=(ax00, ax1, ax3), vmax=None,n_bootstrap=1000,diagnostic_ax=diag_ax
+            config,
+            simspath,
+            sims_lmax,
+            axes=(ax00, ax1, ax3),
+            vmax=None,
+            n_bootstrap=1000,
+            diagnostic_ax=diag_ax,
         )
     )
     x_vals = self._xs[1, 0]
     y_vals = self._xs[2, 0]
-    diag_ax.plot(x_vals,self._pdfs[1, 0],label='xi55_analytic')
-    diag_ax.plot(y_vals,self._pdfs[2, 0],label='xi53_analytic')
+    diag_ax.plot(x_vals, self._pdfs[1, 0], label="xi55_analytic")
+    diag_ax.plot(y_vals, self._pdfs[2, 0], label="xi53_analytic")
     diag_ax.legend()
-    diag_fig.savefig('marginal_diagnostics_10000sqd_fullell_newwpm.png')
+    diag_fig.savefig("marginal_diagnostics_10000sqd_fullell_newwpm.png")
 
-     
-        
-        
     x_grid, y_grid = np.meshgrid(x_vals, y_vals)
     test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
-    
+
     # x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
     vmax = np.max(copula)
     copula_grid = copula.reshape(x_grid.shape).T
-    interp = RegularGridInterpolator((x_vals[1:-1], y_vals[1:-1]), copula_grid[1:-1,1:-1], method="cubic")
+    interp = RegularGridInterpolator(
+        (x_vals[1:-1], y_vals[1:-1]), copula_grid[1:-1, 1:-1], method="cubic"
+    )
     # interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
     # marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
     # marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
-
-    
-    
 
     # grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
     gauss = self.gauss_compare().pdf(test_points)
@@ -256,5 +257,3 @@ def testing():
     fig.colorbar(gauss_res, ax=ax6)
     # fig.colorbar(exact_res, ax=ax02)
     fig.savefig("comparison_copula_sims_10000deg2_fullell_newwpm.png")
-
-    
