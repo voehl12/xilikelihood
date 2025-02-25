@@ -428,7 +428,7 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     ell = 2 * np.arange(lmin, lmax + 1) + 1
 
     xi_cov = np.full(cov_cl2.shape[:2] * len(angbins_in_deg), np.nan)
-    means = []
+    
     n, m = 0, 0
     for i in range(len(cov_cl2)):
         for k in range(len(angbins_in_deg)):
@@ -673,12 +673,12 @@ def batched_cf_1d(eigvals, max_vals, steps=1024):
     all_t0 = -0.5 * all_dt * (steps - 1)
     all_t = jnp.linspace(all_t0, -all_t0, steps - 1, axis=-1)
     t_evals = all_t[:, :, :, None] * eigvals[:, :, None, :]
-    cfs = jnp.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
+    cfs = jnp.prod(jnp.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
 
     return all_t, cfs
 
 
-batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(0, 1, 2))
+batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(2,))
 
 
 @jax.jit

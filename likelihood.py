@@ -172,6 +172,7 @@ class XiLikelihood:
         products = jnp.array(self._products.copy())
         cross_prods = products[self._is_cov_cross]
         auto_prods = products[~self._is_cov_cross]
+        del products
         auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
         self._variances = self._variances.at[~self._is_cov_cross].set(
             2 * jnp.sum(auto_prods * auto_transposes, axis=(-2, -1))
@@ -183,7 +184,7 @@ class XiLikelihood:
             jnp.sum(cross_prods * cross_transposes, axis=(-2, -1))
             + jnp.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         )  # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 5 * jnp.sqrt(self._variances)
+        self._ximax = jnp.array(self._means_lowell + 5 * jnp.sqrt(self._variances))
         self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
         print("retrieving auto eigenvalues...")
         eigvals_auto = calc_pdf.get_evs(auto_prods)
