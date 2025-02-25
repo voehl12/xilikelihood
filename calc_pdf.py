@@ -7,6 +7,8 @@ import time
 from os import environ
 from file_handling import check_for_file, load_cfs, load_pdfs
 import matplotlib.pyplot as plt
+import jax.numpy as jnp
+import jax
 
 
 def pdf_xi_1D(
@@ -667,13 +669,21 @@ def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
 
 def batched_cf_1d(eigvals, max_vals, steps=1024):
 
-    all_dt = 0.45 * 2 * np.pi / max_vals
+    all_dt = 0.45 * 2 * jnp.pi / max_vals
     all_t0 = -0.5 * all_dt * (steps - 1)
-    all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
+    all_t = jnp.linspace(all_t0, -all_t0, steps - 1, axis=-1)
     t_evals = all_t[:, :, :, None] * eigvals[:, :, None, :]
-    cfs = np.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
+    cfs = jnp.prod(np.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
 
     return all_t, cfs
+
+
+batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(0, 1, 2))
+
+
+@jax.jit
+def get_evs(prods):
+    return jnp.linalg.eigvals(prods)
 
 
 def get_cf_nD(tset, mset, cov):
@@ -703,13 +713,11 @@ def cf_to_pdf_1d(t, cf):
         x_array = np.fft.fftfreq(cf_array.shape[1]) * 2 * np.pi / dt[:, None]
         pdf_array *= dt[:, None] * np.exp(1j * x_array * t0[:, None]) / (2 * np.pi)
         xs, pdfs = [], []
-        
+
         for x, pdf in zip(x_array, pdf_array):
             x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
-            
-        
 
         pdfs = np.array(pdfs)
         xs = np.array(xs)
