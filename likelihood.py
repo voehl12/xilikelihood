@@ -85,7 +85,7 @@ class XiLikelihood:
         self._eff_area = self.mask.eff_area
 
     def prep_data_array(self):
-        return np.zeros((self._n_redshift_bin_combs,len(self._ang_bins_in_deg)))
+        return np.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
 
     def precompute_combination_matrices(self):
         prefactors = helper_funcs.prep_prefactors(
@@ -147,7 +147,11 @@ class XiLikelihood:
             self._prefactors, self._theory_cl, self.mask, lmin=0, lmax=self._exact_lmax
         )
         diff = einsum_means - self._means_lowell
-        assert np.all(np.abs(diff) < 1e-10), ("Means do not match", einsum_means, self._means_lowell)
+        assert np.all(np.abs(diff) < 1e-10), (
+            "Means do not match",
+            einsum_means,
+            self._means_lowell,
+        )
         # mean for each redshift bin combination and angular bin, shape (n_redshift_bin_combs, len(angular_bins))
         # var = 2 * np.sum(prod * np.transpose(prod))
 
@@ -284,7 +288,7 @@ class XiLikelihood:
     def gauss_compare(self):
         mean = self._mean.flatten()[1:]
         mvn = multivariate_normal(mean=mean, cov=self._cov[1:, 1:])
-        print('Calculated mean and cov: ')
+        print("Calculated mean and cov: ")
         print(mean, self._cov[1:, 1:])
         return mvn
 
@@ -300,7 +304,7 @@ class XiLikelihood:
 
         self._cov = self.get_covariance_matrix_lowell()
         self._mean = self._means_lowell
-        
+
         assert (
             np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
         ), "Variances do not match"
@@ -308,23 +312,9 @@ class XiLikelihood:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
             highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
-        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs) # new xs and pdfs are interpolated
-        
-        likelihood = copula_funcs.evaluate(data,self._xs,self._pdfs,self._cdfs,self._cov)
+        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
+            xs, pdfs
+        )  # new xs and pdfs are interpolated
+
+        likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov)
         return likelihood
-
-
-paths = ["Cl_3x2pt_kids33.txt", "Cl_3x2pt_kids55.txt", "Cl_3x2pt_kids53.txt"]
-names = ["3x2pt_kids_33", "3x2pt_kids_55", "3x2pt_kids_53"]
-noises = ["default", "default", None]
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
-z = np.linspace(0, 2, 100)
-nz = scipy.stats.norm.pdf(z, loc=1, scale=0.5)
-redshift_bins = [RedshiftBin(z, nz, 3), RedshiftBin(z, nz, 5)]
-ang_bins_in_deg = [(4, 6)]
-xi_likelihood = XiLikelihood(mask, redshift_bins, ang_bins_in_deg=ang_bins_in_deg, exact_lmax=30)
-data = xi_likelihood.prep_data_array()
-xi_likelihood.initiate_mask_specific()
-xi_likelihood.precompute_combination_matrices()
-likelihood = xi_likelihood.likelihood(data, (paths, names, noises), highell=True)
-print(likelihood)
