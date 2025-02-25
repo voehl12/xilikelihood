@@ -1,17 +1,17 @@
-
-import numpy as np 
+import numpy as np
 
 
 def clnames(s8):
     s8str = str(s8)
-    s8str = s8str.replace('.','p').lstrip('0')
-    s8name = 'S8'+s8str
+    s8str = s8str.replace(".", "p").lstrip("0")
+    s8name = "S8" + s8str
     clpath = "Cl_3x2pt_kids55_s8{}.txt".format(s8str)
     return clpath, s8name
 
 
 def cosmof(s8):
     import pyccl as ccl
+
     """
     function to generate vanilla cosmology with ccl given a value of S8
 
@@ -28,12 +28,14 @@ def cosmof(s8):
     omega_m = 0.31
     omega_b = 0.046
     omega_c = omega_m - omega_b
-    sigma8 = s8 * (omega_m / 0.3)**-0.5
-    cosmo = ccl.Cosmology(Omega_c = omega_c, Omega_b = omega_b, h = 0.7, sigma8 = sigma8, n_s = 0.97)
+    sigma8 = s8 * (omega_m / 0.3) ** -0.5
+    cosmo = ccl.Cosmology(Omega_c=omega_c, Omega_b=omega_b, h=0.7, sigma8=sigma8, n_s=0.97)
     return cosmo
-    
-def get_cl(cosmo,ell,nz_path):
+
+
+def get_cl(cosmo, ell, z_bins):
     import pyccl as ccl
+
     """
     generate 3x2pt c_ell given a ccl cosmology
 
@@ -51,26 +53,29 @@ def get_cl(cosmo,ell,nz_path):
     tuple
         cl in the order ee, ne, nn
     """
-    rbin = np.loadtxt(nz_path)
-    z, nz = rbin[:,0], rbin[:,1]
-    b = 1.5*np.ones_like(z)
-    lens = ccl.WeakLensingTracer(cosmo, dndz=(z, nz))
-    clu = ccl.NumberCountsTracer(cosmo, has_rsd=False, dndz=(z,nz), bias=(z,b))
-    ell = np.arange(2, 100000)
-    cl_ee = ccl.angular_cl(cosmo, lens, lens, ell)
-    cl_ne = ccl.angular_cl(cosmo,lens,clu,ell)
-    cl_nn = ccl.angular_cl(cosmo,clu,clu,ell)
-    return cl_ee,cl_ne,cl_nn
+    # rbin = np.loadtxt(nz_path)
+    bin1, bin2 = z_bins
+    z1, nz1 = bin1.z, bin1.nz
+    z2, nz2 = bin2.z, bin2.nz
+    # b = 1.5 * np.ones_like(z)
+    lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1))
+    lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2))
+    # clu = ccl.NumberCountsTracer(cosmo, has_rsd=False, dndz=(z, nz), bias=(z, b))
+    cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
+    # cl_ne = ccl.angular_cl(cosmo, lens, clu, ell)
+    # cl_nn = ccl.angular_cl(cosmo, clu, clu, ell)
+    return cl_ee
 
 
-def save_cl(cl,clpath):
-    cl_ee,cl_ne,cl_nn = cl
-    #np.savez(clpath, theory_ellmin=2,ee=cl_ee,ne=cl_ne,nn=cl_nn)
-    np.savetxt(clpath,(cl_ee,cl_ne,cl_nn),header='EE, nE, nn')
+def save_cl(cl, clpath):
+    cl_ee, cl_ne, cl_nn = cl
+    # np.savez(clpath, theory_ellmin=2,ee=cl_ee,ne=cl_ne,nn=cl_nn)
+    np.savetxt(clpath, (cl_ee, cl_ne, cl_nn), header="EE, nE, nn")
 
 
-def get_cl_s8(s8):
+def get_cl_s8(s8, z_bins):
     cosmo = cosmof(s8)
-    nzpath = 'data/KiDS_Nz_bin5.txt'
-    cl = get_cl(cosmo,np.arange(2,2000),nzpath)
+    # nzpath = "data/KiDS_Nz_bin5.txt"
+    ell = np.arange(2, 2000)
+    cl = get_cl(cosmo, ell, z_bins)
     return cl
