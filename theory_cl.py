@@ -1,4 +1,5 @@
 import numpy as np
+import pyccl as ccl
 
 
 def clnames(s8):
@@ -34,8 +35,6 @@ def cosmof(s8):
 
 
 def get_cl(cosmo, ell, z_bins):
-    import pyccl as ccl
-
     """
     generate 3x2pt c_ell given a ccl cosmology
 
@@ -64,7 +63,8 @@ def get_cl(cosmo, ell, z_bins):
     cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
     # cl_ne = ccl.angular_cl(cosmo, lens, clu, ell)
     # cl_nn = ccl.angular_cl(cosmo, clu, clu, ell)
-    return cl_ee
+    cl_ne = cl_nn = np.zeros_like(cl_ee)
+    return cl_ee, cl_ne, cl_nn
 
 
 def save_cl(cl, clpath):
@@ -73,7 +73,8 @@ def save_cl(cl, clpath):
     np.savetxt(clpath, (cl_ee, cl_ne, cl_nn), header="EE, nE, nn")
 
 
-def get_cl_s8(s8, z_bins):
+def get_cl_s8(cosmo, z_bins):
+    s8 = cosmo["s8"]
     cosmo = cosmof(s8)
     # nzpath = "data/KiDS_Nz_bin5.txt"
     ell = np.arange(2, 2000)
