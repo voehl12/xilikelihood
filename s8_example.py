@@ -22,7 +22,7 @@ redshift_filepaths = os.listdir(rs_directory)
 pattern = re.compile(r"TOMO(\d+)")
 nbins = [int(pattern.search(f).group(1)) for f in redshift_filepaths]
 redshift_bins = [
-    RedshiftBin(nbin=i, filepath=rs_directory + f) for i, f in zip(nbins, redshift_filepaths)
+    RedshiftBin(nbin=i, filepath=rs_directory + f) for i, f in zip(nbins, redshift_filepaths) if i > 3
 ]
 redshift_bins_sorted = sorted(redshift_bins, key=lambda x: x.nbin)
 
