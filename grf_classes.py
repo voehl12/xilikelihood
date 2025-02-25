@@ -21,10 +21,13 @@ class RedshiftBin:
     A class to store and handle redshift bins
     """
 
-    def __init__(self, z, nz, nbin, zmean=None, zsig=None):
+    def __init__(self, nbin, z=None, nz=None, zmean=None, zsig=None, filepath=None):
+        self.nbin = nbin
         self.z = z
         self.nz = nz
-        self.nbin = nbin
+        if filepath is not None:
+            zbin = np.loadtxt(filepath)
+            self.z, self.nz = zbin[:, 0], zbin[:, 1]
         if zmean is not None and zsig is not None:
             self.zmean = zmean
             self.zsig = zsig
@@ -45,7 +48,8 @@ class TheoryCl:
         theory_lmin=2,
         clname="test_cl",
         smooth_signal=None,
-        s8=None,
+        cosmo=None,
+        z_bins=None,
         working_dir=None,
     ):
         self.lmax = lmax
@@ -59,7 +63,8 @@ class TheoryCl:
         if working_dir is None:
             working_dir = os.getcwd()
         self.working_dir = working_dir
-        self.s8 = s8
+        self.cosmo = cosmo
+        self.z_bins = z_bins
         self.nn = None
         self.ee = None
         self.ne = None
@@ -73,32 +78,36 @@ class TheoryCl:
             self.load_cl()
             print("Loaded C_l with lmax = {:d}".format(self.lmax))
 
-        elif self.s8 is not None:
+        elif self.cosmo is not None:
             import theory_cl
 
-            self.clpath, self.name = theory_cl.clnames(self.s8)
-            if file_handling.check_for_file(self.clpath, kind="theory cl"):
-                self.read_clfile()
-                self.load_cl()
-                print("Loaded C_l with lmax = {:d}".format(self.lmax))
-            else:
-
-                cl = theory_cl.get_cl_s8(self.s8)
-                theory_cl.save_cl(cl, self.clpath)
-                cl = np.array(cl)
-                spectra = np.concatenate(
-                    (
-                        np.zeros((3, self.theory_lmin)),
-                        cl[:, : self.lmax - self.theory_lmin + 1],
-                    ),
-                    axis=1,
+            if self.z_bins is None:
+                print("Warning: no redshift bins provided, using default bins.")
+                bin1 = RedshiftBin(
+                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=1
                 )
+                bin2 = RedshiftBin(
+                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=2
+                )
+                self.z_bins = (bin1, bin2)
 
-                self.ee = spectra[0]
-                self.ne = spectra[1]
-                self.nn = spectra[2]
-                self.bb = np.zeros_like(self.ee)
-                self.eb = np.zeros_like(self.ee)
+            cl = theory_cl.get_cl_s8(self.cosmo, self.z_bins)
+
+            cl = np.array(cl)
+            spectra = np.concatenate(
+                (
+                    np.zeros((3, self.theory_lmin)),
+                    cl[:, : self.lmax - self.theory_lmin + 1],
+                ),
+                axis=1,
+            )
+
+            self.ee = spectra[0]
+            self.ne = spectra[1]
+            self.nn = spectra[2]
+            self.bb = np.zeros_like(self.ee)
+            self.eb = np.zeros_like(self.ee)
+            self.name = None
 
         else:
             print("Warning: no theory Cl provided, calculating with Cl=0")
@@ -322,6 +331,10 @@ class SphereMask:
         hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
 
     @property
+    def exact_lmax(self):
+        return self._exact_lmax
+
+    @property
     def smooth_alm(self):
         self._smooth_alm = wpm_funcs.smooth_alm(self.l_smooth, self._exact_lmax)
         return self._smooth_alm
@@ -376,7 +389,7 @@ class SphereMask:
             self.mask,
             sigma=np.abs(sigma),
             iter=50,
-            use_pixel_weights=True,
+            use_pixel_weights=False,
             datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
         )
         self.smooth_mask = smooth_mask
