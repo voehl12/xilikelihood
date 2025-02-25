@@ -66,7 +66,7 @@ class Cov:
         self._cov_ell_buffer = cov_ell_buffer
 
         self._cov_ell_buffer = cov_ell_buffer
-        #self.set_noise_pixelsigma()
+        # self.set_noise_pixelsigma()
         self.set_covalmpath()
 
     @property
@@ -81,7 +81,7 @@ class Cov:
         c_all[2, 2] = self.theorycl.nn.copy()[: lmax + 1]
         return c_all
 
-    def cov_alm_xi(self):
+    def cov_alm_xi(self, ischain=False):
         """
         Calculates covariance of pseudo-alm needed for the spin-2 correlation function xi+/-.
 
@@ -104,10 +104,10 @@ class Cov:
             "ReB",
             "ImB",
         ]
-        self.cov_alm = self.cov_alm_gen(alm_kinds, pos_m=True)
+        self.cov_alm = self.cov_alm_gen(alm_kinds, pos_m=True, ischain=ischain)
         return self.cov_alm
 
-    def cov_alm_gen(self, alm_kinds, pos_m=True, lmin=0):
+    def cov_alm_gen(self, alm_kinds, pos_m=True, lmin=0, ischain=False):
         """
         calculates covariance of pseudo-alm
 
@@ -143,7 +143,7 @@ class Cov:
 
         theory_cell = self.cell_cube(self._exact_lmax + buffer)
 
-        if self.check_cov():
+        if self.check_cov() and not ischain:
             self.load_cov()
             return self.cov_alm
         else:
@@ -179,7 +179,8 @@ class Cov:
             ), "cov_alm_gen: covariance matrix not symmetric"
 
             self.cov_alm = cov_matrix
-            self.save_cov()
+            if not ischain:
+                self.save_cov()
             return self.cov_alm
 
     def cov_fullsky(self, alm_inds, n_cov, theory_cell):
@@ -326,7 +327,9 @@ class Cov:
         self.cov_alm = covfile["cov"]
 
     def set_noise_pixelsigma(self):
-        print("pixelsigma in Cov: deprecated, setting pixelsigma is moved to simulations. and should not be needed here.")
+        print(
+            "pixelsigma in Cov: deprecated, setting pixelsigma is moved to simulations. and should not be needed here."
+        )
         if self.theorycl._sigma_e is not None:
             if isinstance(self.theorycl._sigma_e, str):
                 self.pixelsigma = helper_funcs.get_noise_pixelsigma(self.mask.nside)
@@ -348,7 +351,6 @@ class Cov:
                 pass
 
     def set_char_string(self):
-     
 
         charstring = "_l{:d}_n{:d}_{}_{}_{}_test.npz".format(
             self._exact_lmax,
@@ -368,42 +370,43 @@ class Cov:
         covname = self.working_dir + "/covariances/cov_xi" + charac
         self.covalm_path = covname
 
-    def cl2pseudocl(self):
+    def cl2pseudocl(self, ischain=False):
         # from namaster scientific documentation paper
-        if not os.path.isdir(self.working_dir + "/pcls"):
-            command = "mkdir " + self.working_dir + "/pcls"
-            os.system(command)
-        pclpath = (
-            self.working_dir
-            + "/pcls/pcl"
-            + "_n{:d}_{}_{}_{}_test.npz".format(
-                self.mask.nside,
-                self.mask.name,
-                self.theorycl.name,
-                self.theorycl.sigmaname,
+        if not ischain:
+            if not os.path.isdir(self.working_dir + "/pcls"):
+                command = "mkdir " + self.working_dir + "/pcls"
+                os.system(command)
+            pclpath = (
+                self.working_dir
+                + "/pcls/pcl"
+                + "_n{:d}_{}_{}_{}_test.npz".format(
+                    self.mask.nside,
+                    self.mask.name,
+                    self.theorycl.name,
+                    self.theorycl.sigmaname,
+                )
             )
-        )
 
-        if os.path.isfile(pclpath):
-            pclfile = np.load(pclpath)
-            self.p_ee = pclfile["pcl_ee"]
-            self.p_bb = pclfile["pcl_bb"]
-            self.p_eb = pclfile["pcl_eb"]
+            if os.path.isfile(pclpath):
+                pclfile = np.load(pclpath)
+                self.p_ee = pclfile["pcl_ee"]
+                self.p_bb = pclfile["pcl_bb"]
+                self.p_eb = pclfile["pcl_eb"]
+                return
+
+        m_llp_p, m_llp_m = self.mask.m_llp
+        if hasattr(self.theorycl, "_noise_sigma"):
+            cl_e = self.theorycl.ee.copy() + self.theorycl.noise_cl
+            cl_b = self.theorycl.bb.copy() + self.theorycl.noise_cl
+
         else:
-           
-            m_llp_p, m_llp_m = self.mask.m_llp
-            if hasattr(self.theorycl, "_noise_sigma"):
-                cl_e = self.theorycl.ee.copy() + self.theorycl.noise_cl
-                cl_b = self.theorycl.bb.copy() + self.theorycl.noise_cl
+            cl_e = self.theorycl.ee.copy()
+            cl_b = self.theorycl.bb.copy()
+        cl_eb = cl_be = cl_b
 
-            else:
-                cl_e = self.theorycl.ee.copy()
-                cl_b = self.theorycl.bb.copy()
-            cl_eb = cl_be = cl_b
-
-            self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
-            self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
-            self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
-
+        self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
+        self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+        self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
+        if not ischain:
             print("pseudo_cl: saving pseudo_cl...")
             np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb, pcl_eb=self.p_eb)
