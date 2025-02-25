@@ -10,6 +10,8 @@ from scipy.interpolate import griddata
 from scipy.interpolate import RegularGridInterpolator
 import postprocess_nd_likelihood
 from scipy.stats import norm, multivariate_normal
+import jax.numpy as jnp
+import jax
 
 
 class XiLikelihood:
@@ -53,7 +55,9 @@ class XiLikelihood:
             (self._redshift_bins[comb[0]], self._redshift_bins[comb[1]])
             for comb in self._numerical_redshift_bin_combinations
         ]
-        self._shot_noise = None  # shot noise for each redshift bin
+        self._shot_noise = [
+            None if val else "default" for val in self._is_cov_cross
+        ]  # shot noise for each redshift bin combination
         if exact_lmax is None:
             self._exact_lmax = mask.exact_lmax
         else:
@@ -105,7 +109,7 @@ class XiLikelihood:
         )[0] """
         # Ms for 2d likelihoods, all angular bin combinations
 
-    def initiate_theory_cl(self, paths, names, noises):
+    def initiate_theory_cl(self, cosmo):
         # get the theory Cl for the given cosmology
         # this is the part that needs to be changed for different likelihoods
         # should return a list of theoryCl instances
@@ -114,9 +118,10 @@ class XiLikelihood:
             TheoryCl(cosmology, redshift_bin_combination)
             for redshift_bin_combination in self.redshift_bin_combinations
         ]"""
+        noises = self._shot_noise
         theory_cl = [
-            TheoryCl(self.lmax, path, noise, clname=name)
-            for path, name, noise in zip(paths, names, noises)
+            TheoryCl(self.lmax, cosmo=cosmo, z_bins=bin_comb, sigma_e=noise)
+            for bin_comb, noise in zip(self.redshift_bin_combinations, noises)
         ]
         self._theory_cl = theory_cl
         return self._theory_cl
@@ -127,7 +132,7 @@ class XiLikelihood:
         #
 
         pseudo_alm_covs = [
-            Cov(self.mask, theory_cl, self._exact_lmax).cov_alm_xi()
+            Cov(self.mask, theory_cl, self._exact_lmax).cov_alm_xi(ischain=True)
             for theory_cl in self._theory_cl
         ]
         return pseudo_alm_covs
@@ -142,6 +147,7 @@ class XiLikelihood:
         )  # all angular bins eacn, all covariances
         # products is a 4D array with shape (n_redshift_bin_combs, len(angular_bins), len(cov), len(cov))
         # these means are not right yet, need to take care of the cross terms
+        print("Calculating 1d means...")
         einsum_means = np.einsum("cbll->cb", self._products.copy())
         self._means_lowell = calc_pdf.mean_xi_gaussian_nD(
             self._prefactors, self._theory_cl, self.mask, lmin=0, lmax=self._exact_lmax
@@ -158,49 +164,51 @@ class XiLikelihood:
     def _get_cfs_1d_lowell(self):
         # get the marginals for the full data vector
         # use products of combination matrix and pseudo alm covariance
-        self._variances = np.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
-        self._eigvals = np.zeros(
+        self._variances = jnp.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
+        self._eigvals = jnp.zeros(
             (self._n_redshift_bin_combs, len(self._ang_bins_in_deg), 2 * len(self._products[0, 0])),
             dtype=complex,
         )
-        products = self._products.copy()
+        products = jnp.array(self._products.copy())
         cross_prods = products[self._is_cov_cross]
         auto_prods = products[~self._is_cov_cross]
-        auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
-        self._variances[~self._is_cov_cross] = 2 * np.sum(
-            auto_prods * auto_transposes, axis=(-2, -1)
+        auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
+        self._variances = self._variances.at[~self._is_cov_cross].set(
+            2 * jnp.sum(auto_prods * auto_transposes, axis=(-2, -1))
         )
-        cross_transposes = np.transpose(cross_prods, (0, 1, 3, 2))
+        cross_transposes = jnp.transpose(cross_prods, (0, 1, 3, 2))
         cross_combs = self._numerical_redshift_bin_combinations[self._is_cov_cross]
         auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
-        self._variances[self._is_cov_cross] = np.sum(
-            cross_prods * cross_transposes, axis=(-2, -1)
-        ) + np.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
-        # no factor 2 because of the cross terms
-        self._ximax = self._means_lowell + 5 * np.sqrt(self._variances)
-        self._ximin = self._means_lowell - 5 * np.sqrt(self._variances)
-        eigvals_auto = np.linalg.eigvals(
-            auto_prods
-        )  # shape (n_redshift_bins, len(angular_bins),len(cov))
-        eigvals_auto_padded = np.pad(
+        self._variances = self._variances.at[self._is_cov_cross].set(
+            jnp.sum(cross_prods * cross_transposes, axis=(-2, -1))
+            + jnp.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
+        )  # no factor 2 because of the cross terms
+        self._ximax = self._means_lowell + 5 * jnp.sqrt(self._variances)
+        self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
+        print("retrieving auto eigenvalues...")
+        eigvals_auto = calc_pdf.get_evs(auto_prods)
+        # shape (n_redshift_bins, len(angular_bins),len(cov))
+        eigvals_auto_padded = jnp.pad(
             eigvals_auto, ((0, 0), (0, 0), (0, eigvals_auto.shape[-1])), "constant"
         )
-        self._eigvals[~self._is_cov_cross] = eigvals_auto_padded
+        self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
         cross_matrices = []
         for c, comb in enumerate(cross_combs):
             diag_elem = cross_prods[c]  # shape (len(angular_bins),len(cov),len(cov))
             off_diag_elem_1 = auto_prods[comb[0]]
             off_diag_elem_2 = auto_prods[comb[1]]
-            mat = 0.5 * np.block(
+            mat = 0.5 * jnp.block(
                 [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
             )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
             cross_matrices.append(mat)
-        self._cross_matrices = np.array(
+        self._cross_matrices = jnp.array(
             cross_matrices
         )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
-        eigvals_cross = np.linalg.eigvals(self._cross_matrices)
-        self._eigvals[self._is_cov_cross] = eigvals_cross
-        self._t_lowell, self._cfs_lowell = calc_pdf.batched_cf_1d(
+        print("retrieving cross eigenvalues...")
+        eigvals_cross = calc_pdf.get_evs(self._cross_matrices)
+        self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
+
+        self._t_lowell, self._cfs_lowell = calc_pdf.batched_cf_1d_jitted(
             self._eigvals, self._ximax, steps=4096
         )
         # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov))
@@ -297,8 +305,8 @@ class XiLikelihood:
         # don't forget to build in the factor 1/2 for the cross terms where always two m-cov products are used
         if highell:
             self._highell = True
-        cl_paths, names, noises = cosmology
-        self.initiate_theory_cl(cl_paths, names, noises)
+
+        self.initiate_theory_cl(cosmology)
         self._prepare_matrix_products()
         xs, pdfs = self.marginals
 
