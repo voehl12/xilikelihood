@@ -332,11 +332,10 @@ def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
         return cl_s  # cl_e, cl_b, cl_eb
     else:
         pcl_s = []
-        masked_fields = smooth_masks[:,None,:]*np.array(maps_TQU_list)
+        masked_fields = smooth_masks[:, None, :] * np.array(maps_TQU_list)
         for i, field_i in enumerate(masked_fields):
             for j, field_j in reversed(list(enumerate(masked_fields[: i + 1]))):
 
-                
                 pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
                     field_i,
                     field_j,
@@ -388,9 +387,9 @@ def xi_sim_nD(
         sim_mask = mask.mask
     else:
         sim_mask = mask.smooth_mask
-    
+
     hp.mollview(sim_mask)
-    plt.savefig('mask.png')
+    plt.savefig("mask.png")
     nside = mask.nside
     noises = [set_pixelsigma(cl, nside) for cl in theorycls if cl.sigma_e is not None]
     sigmaname = theorycls[0].sigmaname
@@ -424,11 +423,11 @@ def xi_sim_nD(
             toc = time.perf_counter()
             times.append(toc - tic)
         print(times, np.mean(times))
-        xis = np.array(xis) # (n_batch,n_corr,2,n_angbins)
+        xis = np.array(xis)  # (n_batch,n_corr,2,n_angbins)
         pcls = np.array(pcls)
         if plot:
             plt.figure()
-            plt.hist(xis[:, 2, 0, 1], bins=30) 
+            plt.hist(xis[:, 2, 0, 1], bins=30)
             plt.savefig("sim_demo_{:d}.png".format(j))
             plt.figure()
             # plt.plot(np.arange(pcls.shape[-1]), np.array(pcls[:, 2, 0, :]).T)
@@ -443,7 +442,9 @@ def xi_sim_nD(
                 color="gray",
             )
             theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise_test.npz")
-            theorypcl55 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault_test.npz")
+            theorypcl55 = np.load(
+                "pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault_test.npz"
+            )
             plt.plot(np.arange(pcls.shape[-1]), theorypcl53["pcl_ee"], color="red")
             plt.plot(np.arange(pcls.shape[-1]), theorypcl55["pcl_ee"], color="blue")
             plt.savefig("sim_demo_pcle_35_{:d}.png".format(j))
@@ -466,6 +467,7 @@ def xi_sim_nD(
                 pcl_b=np.array(pcls[:, :, 1]),
                 pcl_eb=np.array(pcls[:, :, 2]),
             )
+        return xis
 
 
 def prep_cat_treecorr(nside, mask=None):
