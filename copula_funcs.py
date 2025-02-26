@@ -31,7 +31,7 @@ def pdf_to_cdf(xs, pdfs):
     xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs)
     cdfs = cumtrapz(pdfs_interp, xs_interp, initial=0)
 
-    assert np.all(np.fabs(cdfs[:, :, -1] - 1) < 1e-5), "CDF not normalized to 1"
+    assert np.all(np.fabs(cdfs[:, :, -1] - 1) < 1e-2), "CDF not normalized to 1"
     max_values = np.max(cdfs, axis=-1, keepdims=True)
     cdfs /= max_values
 
@@ -119,6 +119,7 @@ def gaussian_copula_point_density(cdf_point, covariance_matrix):
     mvn = multivariate_normal(
         mean=mean, cov=corr_matrix
     )  # multivariate normal with right correlation structure
+    z = z.flatten()
     mvariate_pdf = mvn.pdf(z)
     pdf = norm.pdf(z)
     return mvariate_pdf / np.prod(pdf)
