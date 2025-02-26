@@ -486,7 +486,7 @@ class SphereMask:
             self.set_wpmpath(cov_ell_buffer)
         else:
             self.wpm_path = path
-        if self.check_w_arr():
+        if file_handling.check_for_file(self.wpm_path, kind="wpm"):
             self.load_w_arr()
             return self._w_arr
         if self.w0_arr is None and self.wpm_arr is None:
@@ -558,7 +558,7 @@ class SphereMask:
     @property
     def m_llp(self):
         self.set_mllppath()
-        if file_handling.check_for_file(self.mllp_path):
+        if file_handling.check_for_file(self.mllp_path, kind="mllp"):
             self.load_mllp_arr()
         else:
             m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
@@ -572,16 +572,6 @@ class SphereMask:
 
     def save_mllp_arr(self):
         np.savez(self.mllp_path, m_llp_p=self._m_llp[0], m_llp_m=self._m_llp[1])
-
-    def check_w_arr(self):
-        print("Checking for Wpm0 arrays... ", end="")
-        print(self.wpm_path)
-        if os.path.isfile(self.wpm_path):
-            print("Found.")
-            return True
-        else:
-            print("Not found.")
-            return False
 
     def load_w_arr(self):
         print("Loading Wpm0 arrays.")
