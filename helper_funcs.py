@@ -5,6 +5,8 @@ from scipy.special import eval_legendre
 from scipy.integrate import quad_vec
 from scipy.optimize import fsolve
 import wigner
+import jax.numpy as jnp
+import jax
 
 
 def get_noise_xi_cov(
@@ -210,19 +212,19 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     -------
     xips,xims: (batchsize,n_angbins) arrays
     """
-    pcls_e, pcls_b, pcls_eb = pcls
+    pcls_e, pcls_b, pcls_eb = pcls[0], pcls[1], pcls[2]
     if out_lmax is None:
         out_lmax = len(pcls_e[0]) - 1
-    l = 2 * np.arange(lmin, out_lmax + 1) + 1
-    p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
+    l = 2 * jnp.arange(lmin, out_lmax + 1) + 1
+    p_cl_prefactors_p, p_cl_prefactors_m = jnp.array(prefactors[:, 0]), jnp.array(prefactors[:, 1])
 
-    xips = np.sum(
+    xips = jnp.sum(
         p_cl_prefactors_p[None, :, lmin : out_lmax + 1]
         * l
         * (pcls_e[:, None, lmin : out_lmax + 1] + pcls_b[:, None, lmin : out_lmax + 1]),
         axis=-1,
     )
-    xims = np.sum(
+    xims = jnp.sum(
         p_cl_prefactors_m[None, :, lmin : out_lmax + 1]
         * l
         * (
@@ -234,6 +236,9 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     )
 
     return xips, xims
+
+
+pcls2xis_jit = jax.jit(pcls2xis, static_argnums=(2, 3))
 
 
 def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
@@ -283,26 +288,33 @@ def check_property_equal(instances, property_name):
     return all(getattr(instance, property_name) == first_value for instance in instances)
 
 
-def cl2pseudocl(mask, theorycl):
+def cl2pseudocl(mllp, theorycls):
     # from namaster scientific documentation paper
 
-    if mask.smooth_mask is None:
-        mask.wl
-        print("pseudo_cl: calculating wl to establish smoothed mask.")
-    m_llp_p, m_llp_m = mask.m_llp
-    if hasattr(theorycl, "_noise_sigma"):
-        cl_e = theorycl.ee.copy() + theorycl.noise_cl
-        cl_b = theorycl.bb.copy() + theorycl.noise_cl
+    cl_es, cl_bs = [], []
+    for theorycl in theorycls:
+        if hasattr(theorycl, "_noise_sigma"):
+            cl_e = theorycl.ee.copy() + theorycl.noise_cl
+            cl_b = theorycl.bb.copy() + theorycl.noise_cl
 
-    else:
-        cl_e = theorycl.ee.copy()
-        cl_b = theorycl.bb.copy()
+        else:
+            cl_e = theorycl.ee.copy()
+            cl_b = theorycl.bb.copy()
+        cl_es.append(cl_e)
+        cl_bs.append(cl_b)
+
+    mllp = jnp.array(mllp)
+    cl_es, cl_bs = jnp.array(cl_es), jnp.array(cl_bs)
+    p_ee, p_bb, p_eb = cl2pseudocl_einsum(mllp, cl_es, cl_bs)
+    return jnp.array([p_ee, p_bb, p_eb])
+
+
+@jax.jit
+def cl2pseudocl_einsum(mllp, cl_e, cl_b):
     cl_eb = cl_be = cl_b
-
-    p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
-    p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
-    p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
-
+    p_ee = jnp.einsum("lm,nm->nl", mllp[0], cl_e) + jnp.einsum("lm,nm->nl", mllp[1], cl_b)
+    p_bb = jnp.einsum("lm,nm->nl", mllp[1], cl_e) + jnp.einsum("lm,nm->nl", mllp[0], cl_b)
+    p_eb = jnp.einsum("lm,nm->nl", mllp[0], cl_eb) - jnp.einsum("lm,nm->nl", mllp[1], cl_be)
     return p_ee, p_bb, p_eb
 
 

@@ -426,9 +426,9 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     fsky = eff_area / 41253  # assume that all fields have at least similar enough fsky
     c_tot = cov_cl2[:, :, lmin : lmax + 1] / fsky
     ell = 2 * np.arange(lmin, lmax + 1) + 1
+    xi_cov_shape = tuple(dim * len(angbins_in_deg) for dim in cov_cl2.shape[:2])
+    xi_cov = np.full(xi_cov_shape, np.nan)
 
-    xi_cov = np.full(cov_cl2.shape[:2] * len(angbins_in_deg), np.nan)
-    
     n, m = 0, 0
     for i in range(len(cov_cl2)):
         for k in range(len(angbins_in_deg)):
@@ -449,18 +449,11 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     return xi_cov
 
 
-def mean_xi_gaussian_nD(prefactors, theory_cl_objects, mask, lmin=0, lmax=None, kind="p"):
+def mean_xi_gaussian_nD(prefactors, pseudo_cl, lmin=0, lmax=None, kind="p"):
+    pseudo_cl = jnp.array(pseudo_cl)
 
-    all_pcl = np.array(
-        [helper_funcs.cl2pseudocl(mask, cl_object) for cl_object in theory_cl_objects]
-    )
-    pcls_e, pcls_b, pcls_eb = all_pcl[:, 0], all_pcl[:, 1], all_pcl[:, 2]
-    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis(
-        (
-            pcls_e,
-            pcls_b,
-            pcls_eb,
-        ),
+    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis_jit(
+        pseudo_cl,
         prefactors,
         lmax,
         lmin=lmin,
@@ -479,11 +472,11 @@ def mean_xi_gaussian_nD(prefactors, theory_cl_objects, mask, lmin=0, lmax=None, 
     )
     assert np.allclose(pcl_mean_p[i], cl_mean_p, rtol=1e-1) """
     if kind == "p":
-        return pcl_means_p
+        return np.array(pcl_means_p)
     elif kind == "m":
-        return pcl_means_m
+        return np.array(pcl_means_m)
     else:
-        return pcl_means_p, pcl_means_m
+        return np.array(pcl_means_p), np.array(pcl_means_m)
 
 
 def cov_xi_nD(cov_objects):
@@ -707,7 +700,7 @@ def cf_to_pdf_1d(t, cf):
     if t.ndim > 1:
         t = t.reshape(-1, t.shape[-1])
         cf_array = cf.reshape(-1, cf.shape[-1])
-        pdf_array = np.fft.fft(cf_array, axis=1)
+        pdf_array = np.fft.fft(cf_array, axis=-1)
         dt = t[:, 1] - t[:, 0]  # assuming uniform spacing
         t0 = t[:, 0]
         x_array = np.fft.fftfreq(cf_array.shape[1]) * 2 * np.pi / dt[:, None]

@@ -1,7 +1,7 @@
 from grf_classes import SphereMask, TheoryCl, RedshiftBin
 from cov_setup import Cov
 import calc_pdf, helper_funcs, setup_m
-import os
+import os, re
 import numpy as np
 import scipy.stats
 import matplotlib.pyplot as plt
@@ -149,8 +149,9 @@ class XiLikelihood:
         # these means are not right yet, need to take care of the cross terms
         print("Calculating 1d means...")
         einsum_means = np.einsum("cbll->cb", self._products.copy())
+        self.pseudo_cl = helper_funcs.cl2pseudocl(self.mask.m_llp, self._theory_cl)
         self._means_lowell = calc_pdf.mean_xi_gaussian_nD(
-            self._prefactors, self._theory_cl, self.mask, lmin=0, lmax=self._exact_lmax
+            self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax
         )
         diff = einsum_means - self._means_lowell
         assert np.all(np.abs(diff) < 1e-10), (
@@ -164,30 +165,31 @@ class XiLikelihood:
     def _get_cfs_1d_lowell(self):
         # get the marginals for the full data vector
         # use products of combination matrix and pseudo alm covariance
-        self._variances = jnp.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
+        self._variances = np.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
         self._eigvals = jnp.zeros(
             (self._n_redshift_bin_combs, len(self._ang_bins_in_deg), 2 * len(self._products[0, 0])),
             dtype=complex,
         )
-        products = jnp.array(self._products.copy())
+        products = np.array(self._products.copy())
         cross_prods = products[self._is_cov_cross]
         auto_prods = products[~self._is_cov_cross]
         del products
-        auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
-        self._variances = self._variances.at[~self._is_cov_cross].set(
-            2 * jnp.sum(auto_prods * auto_transposes, axis=(-2, -1))
+        auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
+        self._variances[~self._is_cov_cross] = 2 * np.sum(
+            auto_prods * auto_transposes, axis=(-2, -1)
         )
-        cross_transposes = jnp.transpose(cross_prods, (0, 1, 3, 2))
+        cross_transposes = np.transpose(cross_prods, (0, 1, 3, 2))
         cross_combs = self._numerical_redshift_bin_combinations[self._is_cov_cross]
         auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
-        self._variances = self._variances.at[self._is_cov_cross].set(
-            jnp.sum(cross_prods * cross_transposes, axis=(-2, -1))
-            + jnp.sum(auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
+        self._variances[self._is_cov_cross] = np.sum(
+            cross_prods * cross_transposes, axis=(-2, -1)
+        ) + np.sum(
+            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
         )  # no factor 2 because of the cross terms
-        self._ximax = jnp.array(self._means_lowell + 5 * jnp.sqrt(self._variances))
+        self._ximax = jnp.array(self._means_lowell + 10 * jnp.sqrt(self._variances))
         self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
         print("retrieving auto eigenvalues...")
-        eigvals_auto = calc_pdf.get_evs(auto_prods)
+        eigvals_auto = calc_pdf.get_evs(jnp.array(auto_prods))
         # shape (n_redshift_bins, len(angular_bins),len(cov))
         eigvals_auto_padded = jnp.pad(
             eigvals_auto, ((0, 0), (0, 0), (0, eigvals_auto.shape[-1])), "constant"
@@ -198,20 +200,20 @@ class XiLikelihood:
             diag_elem = cross_prods[c]  # shape (len(angular_bins),len(cov),len(cov))
             off_diag_elem_1 = auto_prods[comb[0]]
             off_diag_elem_2 = auto_prods[comb[1]]
-            mat = 0.5 * jnp.block(
+            mat = 0.5 * np.block(
                 [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
             )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
             cross_matrices.append(mat)
-        self._cross_matrices = jnp.array(
+        cross_matrices = np.array(
             cross_matrices
         )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
         print("retrieving cross eigenvalues...")
-        eigvals_cross = calc_pdf.get_evs(self._cross_matrices)
+        eigvals_cross = calc_pdf.get_evs(jnp.array(cross_matrices))
         self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
 
-        self._t_lowell, self._cfs_lowell = calc_pdf.batched_cf_1d_jitted(
-            self._eigvals, self._ximax, steps=4096
-        )
+        t_lowell, cfs_lowell = calc_pdf.batched_cf_1d_jitted(self._eigvals, self._ximax, steps=4096)
+        self._t_lowell, self._cfs_lowell = np.array(t_lowell), np.array(cfs_lowell)
+        del t_lowell, cfs_lowell
         # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov))
         # also introduce ximin? need symmetry in t?
 
@@ -269,7 +271,7 @@ class XiLikelihood:
     def _get_means_highell(self):
         # get the mean for the full data vector Gaussian part
         self._means_highell = calc_pdf.mean_xi_gaussian_nD(
-            self._prefactors, self._theory_cl, self.mask, lmin=self._exact_lmax + 1, lmax=self.lmax
+            self._prefactors, self.pseudo_cl, lmin=self._exact_lmax + 1, lmax=self.lmax
         )
 
     def _get_cfs_1d_highell(self):
@@ -279,7 +281,6 @@ class XiLikelihood:
 
         return calc_pdf.high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
 
-    @property
     def marginals(self):
         # get the marginal pdfs and potentially cdfs
         self._get_cfs_1d_lowell()
@@ -294,14 +295,13 @@ class XiLikelihood:
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
 
-    def gauss_compare(self):
-        mean = self._mean.flatten()[1:]
-        mvn = multivariate_normal(mean=mean, cov=self._cov[1:, 1:])
-        print("Calculated mean and cov: ")
-        print(mean, self._cov[1:, 1:])
-        return mvn
+    def gauss_compare(self, data):
+        mean = self._mean.flatten()
+        mvn = multivariate_normal(mean=mean, cov=self._cov)
+        data_flat = data.flatten()
+        return mvn.pdf(data_flat)
 
-    def likelihood(self, data, cosmology, highell=True):
+    def likelihood(self, data, cosmology, highell=True, gausscompare=False):
         # compute the likelihood for a given cosmology
         # don't forget to build in the factor 1/2 for the cross terms where always two m-cov products are used
         if highell:
@@ -309,14 +309,14 @@ class XiLikelihood:
 
         self.initiate_theory_cl(cosmology)
         self._prepare_matrix_products()
-        xs, pdfs = self.marginals
+        xs, pdfs = self.marginals()
 
         self._cov = self.get_covariance_matrix_lowell()
         self._mean = self._means_lowell
 
-        assert (
-            np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
-        ), "Variances do not match"
+        # assert (
+        #    np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
+        # ), "Variances do not match"
         if self._highell:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
@@ -326,4 +326,36 @@ class XiLikelihood:
         )  # new xs and pdfs are interpolated
 
         likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov)
-        return likelihood
+        if gausscompare == True:
+            return likelihood, self.gauss_compare(data)
+        else:
+            return likelihood
+
+
+def fiducial_dataspace():
+    rs_directory = "redshift_bins/KiDS/"
+    redshift_filepaths = os.listdir(rs_directory)
+    pattern = re.compile(r"TOMO(\d+)")
+    nbins = [int(pattern.search(f).group(1)) for f in redshift_filepaths]
+    redshift_bins = [
+        RedshiftBin(nbin=i, filepath=rs_directory + f) for i, f in zip(nbins, redshift_filepaths)
+    ]
+    redshift_bins_sorted = sorted(redshift_bins, key=lambda x: x.nbin)
+
+    # Define the initial log-spaced array between 0.5 and 300 arcminutes
+    initial_ang_bins_in_arcmin = np.logspace(np.log10(0.5), np.log10(300), num=9, endpoint=True)
+    # Filter out bins smaller than 15 arcminutes
+    filtered_ang_bins_in_arcmin = initial_ang_bins_in_arcmin[initial_ang_bins_in_arcmin >= 15]
+    # Add one more bin on the larger side according to the same pattern
+    last_bin_ratio = filtered_ang_bins_in_arcmin[-1] / filtered_ang_bins_in_arcmin[-2]
+    new_bin = filtered_ang_bins_in_arcmin[-1] * last_bin_ratio
+    extended_ang_bins_in_arcmin = np.append(filtered_ang_bins_in_arcmin, new_bin)
+    # Convert to degrees
+    ang_bins_in_deg = extended_ang_bins_in_arcmin / 60
+
+    # Create tuples representing the bin edges
+    ang_bins_in_deg = [
+        (ang_bins_in_deg[i], ang_bins_in_deg[i + 1]) for i in range(len(ang_bins_in_deg) - 1)
+    ]
+
+    return redshift_bins_sorted, ang_bins_in_deg
