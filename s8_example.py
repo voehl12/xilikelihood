@@ -8,10 +8,10 @@ import os
 import matplotlib.pyplot as plt
 import re
 from simulate import xi_sim_nD
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 
 
-s8 = np.linspace(0.7, 0.9, 5)
+s8 = np.linspace(0.6, 1.0, 50)
 exact_lmax = 30
 fiducial_cosmo = {
     "H0": 70.0,  # Hubble constant
@@ -28,7 +28,7 @@ redshift_bins, ang_bins_in_deg = fiducial_dataspace()
 
 
 likelihood = XiLikelihood(
-    mask=mask, redshift_bins=redshift_bins[2:], ang_bins_in_deg=ang_bins_in_deg[:-1]
+    mask=mask, redshift_bins=redshift_bins[2:], ang_bins_in_deg=ang_bins_in_deg
 )
 
 data_shape = likelihood.prep_data_array()
@@ -46,7 +46,8 @@ sim = xi_sim_nD(
     batchsize=1,
 )
 mock_data = sim[0, :, 0, :]
-assert mock_data.shape == data_shape.shape, "Mock data shape does not match data shape"
+assert mock_data.shape == data_shape.shape, (mock_data.shape,data_shape.shape)
+
 likelihood.initiate_mask_specific()
 likelihood.precompute_combination_matrices()
 
@@ -56,6 +57,7 @@ for s in s8:
     cosmology = fiducial_cosmo.copy()
     cosmology["s8"] = s
     post, gauss_post = likelihood.likelihood(mock_data, cosmology, gausscompare=True)
+    print(post, gauss_post)
     posterior.append(post)
     gauss_posterior.append(gauss_post)
 posterior, gauss_posterior = np.array(posterior), np.array(gauss_posterior)
@@ -66,13 +68,16 @@ integral_gauss_post = cumtrapz(gauss_posterior, s8, initial=0)[-1]
 normalized_post = posterior / integral_post
 normalized_gauss_post = gauss_posterior / integral_gauss_post
 
-
-plt.plot(s8, normalized_post, color="blue", label="Posterior")
+plt.figure()
 plt.plot(s8, normalized_gauss_post, color="red", label="Gaussian Posterior")
 plt.xlabel("s8")
 plt.ylabel("Posterior")
 plt.legend()
-plt.savefig("s8_posterior.png")
+plt.savefig("s8_posterior_gauss.png")
 
-
-# %%
+plt.figure()
+plt.plot(s8, normalized_post, color="blue", label="Posterior")
+plt.xlabel("s8")
+plt.ylabel("Posterior")
+plt.legend()
+plt.savefig("s8_posterior_exact.png")
