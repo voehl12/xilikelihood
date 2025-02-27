@@ -186,7 +186,7 @@ class XiLikelihood:
         ) + np.sum(
             auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
         )  # no factor 2 because of the cross terms
-        self._ximax = jnp.array(self._means_lowell + 10 * jnp.sqrt(self._variances))
+        self._ximax = jnp.array(self._means_lowell + 40 * jnp.sqrt(self._variances))
         self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
         print("retrieving auto eigenvalues...")
         eigvals_auto = calc_pdf.get_evs(jnp.array(auto_prods))
