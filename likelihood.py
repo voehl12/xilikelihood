@@ -239,7 +239,7 @@ class XiLikelihood:
                             ]
                             sorted = [np.sort(comb)[::-1] for comb in all_combs]
                             cov_pos = [calc_pdf.get_cov_n(comb) for comb in sorted]
-                            # it does not make sense that idx is the same in both products here. This is inconsitent with the variances.
+                            # make this into a jax function? is quite slow...
                             self._cov_lowell[i, j] = np.sum(
                                 [
                                     np.sum(
@@ -291,7 +291,7 @@ class XiLikelihood:
             self._cfs = self._cfs_lowell * self._get_cfs_1d_highell()
         else:
             self._cfs = self._cfs_lowell
-
+        # need to build in a test here checking that the boundaries of the pdfs are converged to zero
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
 
