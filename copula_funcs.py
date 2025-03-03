@@ -227,9 +227,11 @@ def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
 
 def evaluate(x_data, xs, pdfs, cdfs, cov):
     pdf_point, cdf_point = pdf_and_cdf_point_eval(x_data=x_data, xs=xs, pdfs=pdfs, cdfs=cdfs)
-    pdf_point *= 10**-5  # scale down to avoid numerical issues
+    log_pdf_points = np.log(pdf_point)
+
     copula_density = gaussian_copula_point_density(cdf_point, cov)
-    return copula_density * np.prod(pdf_point)  # logsumexp?
+
+    return np.sum(log_pdf_points) + np.log(copula_density)
 
 
 def testing():
