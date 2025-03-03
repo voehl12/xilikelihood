@@ -711,7 +711,7 @@ def cf_to_pdf_1d(t, cf):
             x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
-
+        # TODO: build in a check that the pdfs are close to zero at the boundaries
         pdfs = np.array(pdfs)
         xs = np.array(xs)
         pdfs = pdfs.reshape(cf.shape)
