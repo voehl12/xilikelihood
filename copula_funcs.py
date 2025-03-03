@@ -5,11 +5,22 @@ from scipy.integrate import cumulative_trapezoid as cumtrapz
 import matplotlib.pyplot as plt
 
 
-def interpolate_along_last_axis(xs, pdfs, num_points=512):
+def interpolate_along_last_axis(xs, pdfs, num_points=512, thres=0.001):
     # only interpolate relevant part?
+
     def interpolate_1d(xpdf):
         xpdf = xpdf.reshape(2, -1)
         x, pdf = xpdf[0], xpdf[1]
+
+        # Only interpolate the relevant part of the PDF
+        len_relevant = 0
+        threshold = thres * np.max(pdf)
+        while len_relevant < len(x) // 2:
+            relevant_indices = pdf > threshold
+            len_relevant = np.sum(relevant_indices)
+            threshold *= 0.1
+        x, pdf = x[relevant_indices], pdf[relevant_indices]
+
         interp = PchipInterpolator(x, pdf)
         x_vals = np.linspace(x[0], x[-1], num_points)
         pdf_vals = interp(x_vals)
@@ -28,7 +39,7 @@ def interpolate_along_last_axis(xs, pdfs, num_points=512):
 
 
 def pdf_to_cdf(xs, pdfs):
-    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs)
+    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs, num_points=1024)
     cdfs = cumtrapz(pdfs_interp, xs_interp, initial=0)
 
     assert np.all(np.fabs(cdfs[:, :, -1] - 1) < 1e-2), "CDF not normalized to 1"
@@ -36,6 +47,38 @@ def pdf_to_cdf(xs, pdfs):
     cdfs /= max_values
 
     return cdfs, pdfs_interp, xs_interp
+
+
+def interpolate_and_evaluate(x_data, xs, pdfs):
+    """
+    Interpolates the given xs and pdfs and evaluates the PDF at the given points.
+
+    Parameters:
+    x_data (ndarray): 2D array of points where the PDF should be evaluated.
+    xs (ndarray): 3D array of x values corresponding to the pdfs (last axis along x).
+    pdfs (ndarray): 3D array of pdf values.
+
+
+    Returns:
+    ndarray: 2D array of evaluated PDF values at the given points.
+    """
+    # Flatten the first two dimensions
+    flat_xs = xs.reshape(-1, xs.shape[-1])
+    flat_pdfs = pdfs.reshape(-1, pdfs.shape[-1])
+    flat_points = x_data.reshape(-1)
+
+    # Create interpolators for each flattened pair of xs and pdfs
+    interpolators = [PchipInterpolator(flat_xs[i], flat_pdfs[i]) for i in range(flat_xs.shape[0])]
+
+    # Evaluate the interpolators at the flattened points
+    interpolated_point_evs = np.array(
+        [interpolators[i](flat_points[i]) for i in range(flat_points.shape[0])]
+    )
+
+    # Reshape the result back to the original 2D shape
+    interpolated_point_evs = interpolated_point_evs.reshape(x_data.shape)
+
+    return interpolated_point_evs
 
 
 def get_values_from_indices(array_3d, indices_2d):
@@ -55,10 +98,10 @@ def get_values_from_indices(array_3d, indices_2d):
 
 def pdf_and_cdf_point_eval(x_data, xs, pdfs, cdfs):
     # returns nd cdf value of datapoint and pdf value in each dimension, index wrt x?
-    broadcasted_data = x_data[:, :, None]
-    data_inds = np.argmin(np.abs(xs - broadcasted_data), axis=-1)
-    pdf_point = get_values_from_indices(pdfs, data_inds)
-    cdf_point = get_values_from_indices(cdfs, data_inds)
+    # broadcasted_data = x_data[:, :, None]
+    # data_inds = np.argmin(np.abs(xs - broadcasted_data), axis=-1)
+    pdf_point = interpolate_and_evaluate(x_data, xs, pdfs)
+    cdf_point = interpolate_and_evaluate(x_data, xs, cdfs)
     return pdf_point, cdf_point
 
 
@@ -186,7 +229,7 @@ def evaluate(x_data, xs, pdfs, cdfs, cov):
     pdf_point, cdf_point = pdf_and_cdf_point_eval(x_data=x_data, xs=xs, pdfs=pdfs, cdfs=cdfs)
     pdf_point *= 10**-5  # scale down to avoid numerical issues
     copula_density = gaussian_copula_point_density(cdf_point, cov)
-    return copula_density * np.prod(pdf_point)
+    return copula_density * np.prod(pdf_point)  # logsumexp?
 
 
 def testing():
