@@ -65,6 +65,7 @@ class XiLikelihood:
             if not helper_funcs.check_property_equal([self, self.mask], "_exact_lmax"):
                 raise RuntimeError("Exact lmax does not align for mask and likelihood.")
         self._highell = False
+        self.gaussian_covariance = None
 
     @property
     def ang_bins_in_deg(self):
@@ -129,7 +130,7 @@ class XiLikelihood:
     def _get_pseudo_alm_covariances(self):
         # get the pseudo alm covariances for the given mask
         # all redshift bin combinations, organized as in GLASS
-        #
+        # this loop could be mpi parallelized
 
         pseudo_alm_covs = [
             Cov(self.mask, theory_cl, self._exact_lmax).cov_alm_xi(ischain=True)
@@ -165,6 +166,8 @@ class XiLikelihood:
     def _get_cfs_1d_lowell(self):
         # get the marginals for the full data vector
         # use products of combination matrix and pseudo alm covariance
+        # the n eigenvalue retrievals could also be efficiently split to several cores
+        # also check newer jax version for gpu eigvals
         self._variances = np.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
         self._eigvals = jnp.zeros(
             (self._n_redshift_bin_combs, len(self._ang_bins_in_deg), 2 * len(self._products[0, 0])),
@@ -296,12 +299,18 @@ class XiLikelihood:
         return self._marginals
 
     def gauss_compare(self, data):
+        # should always use a fixed covariance, produce on initialization?
         mean = self._mean.flatten()
-        mvn = multivariate_normal(mean=mean, cov=self._cov)
+        if self.gaussian_covariance is None:
+            print('using cosmology dependendent covariance for gaussian likelihood!')
+            cov = self._cov
+        else:
+            cov = self.gaussian_covariance
+        mvn = multivariate_normal(mean=mean, cov=cov)
         data_flat = data.flatten()
-        return mvn.pdf(data_flat)
+        return np.log(mvn.pdf(data_flat))
 
-    def likelihood(self, data, cosmology, highell=True, gausscompare=False):
+    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False):
         # compute the likelihood for a given cosmology
         # don't forget to build in the factor 1/2 for the cross terms where always two m-cov products are used
         if highell:
@@ -320,12 +329,12 @@ class XiLikelihood:
         if self._highell:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-            highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
+            #highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
             xs, pdfs
         )  # new xs and pdfs are interpolated
 
-        likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov)
+        likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov) # returns log likelihood
         if gausscompare == True:
             return likelihood, self.gauss_compare(data)
         else:
