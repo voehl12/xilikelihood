@@ -9,9 +9,14 @@ import matplotlib.pyplot as plt
 import re
 from simulate import xi_sim_nD
 from scipy.integrate import cumulative_trapezoid as cumtrapz
+import sys
+from random import randint
+from time import time, sleep
 
+sleep(randint(1,5))
 
-s8 = np.linspace(0.6, 1.0, 50)
+jobnumber = int(sys.argv[1]) - 1
+s8 = np.linspace(0.5, 1.0, 200)
 exact_lmax = 30
 fiducial_cosmo = {
     "H0": 70.0,  # Hubble constant
@@ -21,23 +26,33 @@ fiducial_cosmo = {
 }
 
 
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
+mask = SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax, l_smooth=30)
 
 
 redshift_bins, ang_bins_in_deg = fiducial_dataspace()
 
 
 likelihood = XiLikelihood(
-    mask=mask, redshift_bins=redshift_bins[2:], ang_bins_in_deg=ang_bins_in_deg
+    mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg[:-1]
 )
 
 data_shape = likelihood.prep_data_array()
 theory_cls = likelihood.initiate_theory_cl(fiducial_cosmo)
+likelihood.initiate_mask_specific()
+likelihood.precompute_combination_matrices()
+likelihood._prepare_matrix_products()
+
+likelihood.get_covariance_matrix_lowell()
+likelihood.get_covariance_matrix_highell()
+
+gaussian_covariance = likelihood._cov_lowell + likelihood._cov_highell
+np.savez('gaussian_covariance.npz',cov=gaussian_covariance,s8=fiducial_cosmo['s8'])
+
 sim = xi_sim_nD(
     theory_cls,
     [mask],
     42,
-    ang_bins_in_deg,
+    ang_bins_in_deg[:-1],
     lmin=0,
     lmax=mask.lmax,
     plot=False,
@@ -46,38 +61,17 @@ sim = xi_sim_nD(
     batchsize=1,
 )
 mock_data = sim[0, :, 0, :]
+exit()
+mock_data = np.load("mock_data.npz")['data']
+gaussian_covariance = np.load('gaussian_covariance.npz')['cov']
+likelihood.gaussian_covariance = gaussian_covariance
 assert mock_data.shape == data_shape.shape, (mock_data.shape,data_shape.shape)
 
-likelihood.initiate_mask_specific()
-likelihood.precompute_combination_matrices()
 
 
-posterior, gauss_posterior = [], []
-for s in s8:
-    cosmology = fiducial_cosmo.copy()
-    cosmology["s8"] = s
-    post, gauss_post = likelihood.likelihood(mock_data, cosmology, gausscompare=True)
-    print(post, gauss_post)
-    posterior.append(post)
-    gauss_posterior.append(gauss_post)
-posterior, gauss_posterior = np.array(posterior), np.array(gauss_posterior)
-integral_post = cumtrapz(posterior, s8, initial=0)[-1]
-integral_gauss_post = cumtrapz(gauss_posterior, s8, initial=0)[-1]
 
-# Normalize the posteriors
-normalized_post = posterior / integral_post
-normalized_gauss_post = gauss_posterior / integral_gauss_post
 
-plt.figure()
-plt.plot(s8, normalized_gauss_post, color="red", label="Gaussian Posterior")
-plt.xlabel("s8")
-plt.ylabel("Posterior")
-plt.legend()
-plt.savefig("s8_posterior_gauss.png")
-
-plt.figure()
-plt.plot(s8, normalized_post, color="blue", label="Posterior")
-plt.xlabel("s8")
-plt.ylabel("Posterior")
-plt.legend()
-plt.savefig("s8_posterior_exact.png")
+cosmology = fiducial_cosmo.copy()
+cosmology["s8"] = s8[jobnumber]
+post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True)
+np.savez('/cluster/home/veoehl/2ptlikelihood/s8post_1000sqd_{:d}.npz'.format(jobnumber),exact=post,gauss=gauss_post,s8=s8[jobnumber])
