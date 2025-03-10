@@ -13,7 +13,7 @@ import sys
 from random import randint
 from time import time, sleep
 
-sleep(randint(1,5))
+sleep(randint(1, 5))
 
 jobnumber = int(sys.argv[1]) - 1
 s8 = np.linspace(0.5, 1.0, 200)
@@ -40,15 +40,15 @@ data_shape = likelihood.prep_data_array()
 theory_cls = likelihood.initiate_theory_cl(fiducial_cosmo)
 likelihood.initiate_mask_specific()
 likelihood.precompute_combination_matrices()
-likelihood._prepare_matrix_products()
+""" likelihood._prepare_matrix_products()
 
 likelihood.get_covariance_matrix_lowell()
 likelihood.get_covariance_matrix_highell()
 
 gaussian_covariance = likelihood._cov_lowell + likelihood._cov_highell
-np.savez('gaussian_covariance.npz',cov=gaussian_covariance,s8=fiducial_cosmo['s8'])
+np.savez('gaussian_covariance.npz',cov=gaussian_covariance,s8=fiducial_cosmo['s8']) """
 
-sim = xi_sim_nD(
+""" sim = xi_sim_nD(
     theory_cls,
     [mask],
     42,
@@ -61,17 +61,19 @@ sim = xi_sim_nD(
     batchsize=1,
 )
 mock_data = sim[0, :, 0, :]
-exit()
-mock_data = np.load("mock_data.npz")['data']
-gaussian_covariance = np.load('gaussian_covariance.npz')['cov']
+exit() """
+mock_data = np.load("mock_data_1000sqd.npz")["data"]
+gaussian_covariance = np.load("gaussian_covariance.npz")["cov"]
 likelihood.gaussian_covariance = gaussian_covariance
-assert mock_data.shape == data_shape.shape, (mock_data.shape,data_shape.shape)
-
-
-
+assert mock_data.shape == data_shape.shape, (mock_data.shape, data_shape.shape)
 
 
 cosmology = fiducial_cosmo.copy()
 cosmology["s8"] = s8[jobnumber]
 post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True)
-np.savez('/cluster/home/veoehl/2ptlikelihood/s8post_1000sqd_{:d}.npz'.format(jobnumber),exact=post,gauss=gauss_post,s8=s8[jobnumber])
+np.savez(
+    "/cluster/home/veoehl/2ptlikelihood/s8post_1000sqd_{:d}.npz".format(jobnumber),
+    exact=post,
+    gauss=gauss_post,
+    s8=s8[jobnumber],
+)
