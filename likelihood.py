@@ -12,6 +12,7 @@ import postprocess_nd_likelihood
 from scipy.stats import norm, multivariate_normal
 import jax.numpy as jnp
 import jax
+from multiprocessing import Pool
 
 
 class XiLikelihood:
@@ -211,7 +212,10 @@ class XiLikelihood:
             cross_matrices
         )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
         print("retrieving cross eigenvalues...")
+        """ with Pool() as pool:
+            eigvals_cross = pool.map(np.linalg.eigvals, cross_matrices) """
         eigvals_cross = calc_pdf.get_evs(jnp.array(cross_matrices))
+        eigvals_cross = jnp.array(eigvals_cross)
         self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
 
         t_lowell, cfs_lowell = calc_pdf.batched_cf_1d_jitted(self._eigvals, self._ximax, steps=4096)
@@ -302,7 +306,7 @@ class XiLikelihood:
         # should always use a fixed covariance, produce on initialization?
         mean = self._mean.flatten()
         if self.gaussian_covariance is None:
-            print('using cosmology dependendent covariance for gaussian likelihood!')
+            print("using cosmology dependendent covariance for gaussian likelihood!")
             cov = self._cov
         else:
             cov = self.gaussian_covariance
@@ -329,12 +333,14 @@ class XiLikelihood:
         if self._highell:
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-            #highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
+            # highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
             xs, pdfs
         )  # new xs and pdfs are interpolated
 
-        likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov) # returns log likelihood
+        likelihood = copula_funcs.evaluate(
+            data, self._xs, self._pdfs, self._cdfs, self._cov
+        )  # returns log likelihood
         if gausscompare == True:
             return likelihood, self.gauss_compare(data)
         else:
