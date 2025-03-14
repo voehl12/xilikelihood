@@ -66,7 +66,6 @@ def interpolate_and_evaluate(x_data, xs, pdfs):
     flat_xs = xs.reshape(-1, xs.shape[-1])
     flat_pdfs = pdfs.reshape(-1, pdfs.shape[-1])
     flat_points = x_data.reshape(-1)
-
     # Create interpolators for each flattened pair of xs and pdfs
     interpolators = [PchipInterpolator(flat_xs[i], flat_pdfs[i]) for i in range(flat_xs.shape[0])]
 
@@ -100,8 +99,9 @@ def pdf_and_cdf_point_eval(x_data, xs, pdfs, cdfs):
     # returns nd cdf value of datapoint and pdf value in each dimension, index wrt x?
     # broadcasted_data = x_data[:, :, None]
     # data_inds = np.argmin(np.abs(xs - broadcasted_data), axis=-1)
-    pdf_point = interpolate_and_evaluate(x_data, xs, pdfs)
     cdf_point = interpolate_and_evaluate(x_data, xs, cdfs)
+    pdf_point = interpolate_and_evaluate(x_data, xs, pdfs)
+    
     return pdf_point, cdf_point
 
 
@@ -163,9 +163,9 @@ def gaussian_copula_point_density(cdf_point, covariance_matrix):
         mean=mean, cov=corr_matrix
     )  # multivariate normal with right correlation structure
     z = z.flatten()
-    mvariate_pdf = mvn.pdf(z)
-    pdf = norm.pdf(z)
-    return mvariate_pdf / np.prod(pdf)
+    mvariate_pdf = mvn.logpdf(z)
+    pdf = norm.logpdf(z)
+    return mvariate_pdf - np.sum(pdf)
 
 
 def gaussian_copula_density_2d(u, v, covariance_matrix):
@@ -231,7 +231,7 @@ def evaluate(x_data, xs, pdfs, cdfs, cov):
 
     copula_density = gaussian_copula_point_density(cdf_point, cov)
 
-    return np.sum(log_pdf_points) + np.log(copula_density)
+    return np.sum(log_pdf_points) + copula_density
 
 
 def testing():

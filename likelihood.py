@@ -27,6 +27,7 @@ class XiLikelihood:
         ang_bins_in_deg,
         exact_lmax=None,
         lmax=None,
+        noise='default',
         working_dir=None,
     ):
         if working_dir is None:
@@ -57,7 +58,7 @@ class XiLikelihood:
             for comb in self._numerical_redshift_bin_combinations
         ]
         self._shot_noise = [
-            None if val else "default" for val in self._is_cov_cross
+            None if val else noise for val in self._is_cov_cross
         ]  # shot noise for each redshift bin combination
         if exact_lmax is None:
             self._exact_lmax = mask.exact_lmax
@@ -190,7 +191,7 @@ class XiLikelihood:
         ) + np.sum(
             auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
         )  # no factor 2 because of the cross terms
-        self._ximax = jnp.array(self._means_lowell + 40 * jnp.sqrt(self._variances))
+        self._ximax = jnp.array(self._means_lowell + 20 * jnp.sqrt(self._variances))
         self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
         print("retrieving auto eigenvalues...")
         eigvals_auto = calc_pdf.get_evs(jnp.array(auto_prods))
@@ -200,23 +201,23 @@ class XiLikelihood:
         )
         self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
         cross_matrices = []
-        for c, comb in enumerate(cross_combs):
-            diag_elem = cross_prods[c]  # shape (len(angular_bins),len(cov),len(cov))
-            off_diag_elem_1 = auto_prods[comb[0]]
-            off_diag_elem_2 = auto_prods[comb[1]]
-            mat = 0.5 * np.block(
-                [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
-            )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
-            cross_matrices.append(mat)
-        cross_matrices = np.array(
-            cross_matrices
-        )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
-        print("retrieving cross eigenvalues...")
-        """ with Pool() as pool:
-            eigvals_cross = pool.map(np.linalg.eigvals, cross_matrices) """
-        eigvals_cross = calc_pdf.get_evs(jnp.array(cross_matrices))
-        eigvals_cross = jnp.array(eigvals_cross)
-        self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
+        if len(cross_combs) > 0:
+            for c, comb in enumerate(cross_combs):
+                diag_elem = cross_prods[c]  # shape (len(angular_bins),len(cov),len(cov))
+                off_diag_elem_1 = auto_prods[comb[0]]
+                off_diag_elem_2 = auto_prods[comb[1]]
+                mat = 0.5 * np.block(
+                    [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
+                )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
+                cross_matrices.append(mat)
+            cross_matrices = np.array(
+                cross_matrices
+            )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
+            print("retrieving cross eigenvalues...")
+            
+            eigvals_cross = calc_pdf.get_evs(jnp.array(cross_matrices))
+            eigvals_cross = jnp.array(eigvals_cross)
+            self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
 
         t_lowell, cfs_lowell = calc_pdf.batched_cf_1d_jitted(self._eigvals, self._ximax, steps=4096)
         self._t_lowell, self._cfs_lowell = np.array(t_lowell), np.array(cfs_lowell)
@@ -312,7 +313,7 @@ class XiLikelihood:
             cov = self.gaussian_covariance
         mvn = multivariate_normal(mean=mean, cov=cov)
         data_flat = data.flatten()
-        return np.log(mvn.pdf(data_flat))
+        return mvn.logpdf(data_flat)
 
     def loglikelihood(self, data, cosmology, highell=True, gausscompare=False):
         # compute the likelihood for a given cosmology
@@ -337,6 +338,7 @@ class XiLikelihood:
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
             xs, pdfs
         )  # new xs and pdfs are interpolated
+        
 
         likelihood = copula_funcs.evaluate(
             data, self._xs, self._pdfs, self._cdfs, self._cov
