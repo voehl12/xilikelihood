@@ -10,7 +10,7 @@ def clnames(s8):
     return clpath, s8name
 
 
-def cosmof(s8):
+def prep_cosmo(params):
     import pyccl as ccl
 
     """
@@ -26,7 +26,8 @@ def cosmof(s8):
     object
         ccl vanilla cosmology
     """
-    omega_m = 0.31
+    s8 = params["s8"]
+    omega_m = params["omega_m"] #0.31
     omega_b = 0.046
     omega_c = omega_m - omega_b
     sigma8 = s8 * (omega_m / 0.3) ** -0.5
@@ -34,7 +35,8 @@ def cosmof(s8):
     return cosmo
 
 
-def get_cl(cosmo, ell, z_bins):
+
+def calc_cl(cosmo, ell, z_bins):
     """
     generate 3x2pt c_ell given a ccl cosmology
 
@@ -73,10 +75,9 @@ def save_cl(cl, clpath):
     np.savetxt(clpath, (cl_ee, cl_ne, cl_nn), header="EE, nE, nn")
 
 
-def get_cl_s8(cosmo, z_bins):
-    s8 = cosmo["s8"]
-    cosmo = cosmof(s8)
-    # nzpath = "data/KiDS_Nz_bin5.txt"
+
+def get_cl(params_dict, z_bins):
+    cosmo = prep_cosmo(params_dict)
     ell = np.arange(2, 2000)
-    cl = get_cl(cosmo, ell, z_bins)
+    cl = calc_cl(cosmo, ell, z_bins)
     return cl
