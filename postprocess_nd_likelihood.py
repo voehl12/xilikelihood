@@ -216,6 +216,13 @@ def get_marginal_likelihoods(x_grid, pdf_grid):
 def normalize_pdfs():
     pass
 
+def exp_norm_mean(x,posterior,reg=350):
+    posterior = np.array(posterior) - reg
+    posterior = np.exp(posterior)
+    integral = np.trapz(posterior[~np.isnan(posterior)], x=x[~np.isnan(posterior)])
+    normalized_post = posterior / integral
+    mean = np.trapz(x[~np.isnan(posterior)] * normalized_post[~np.isnan(posterior)], x=x[~np.isnan(posterior)])
+    return normalized_post, mean
 
 def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
     """Produce n bootstrap samples of data of the statistic given by func.
