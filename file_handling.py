@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import helper_funcs
+import glob
 
 
 class File:
@@ -140,3 +141,40 @@ def read_sims_nd(filepath, corr_num, angbin, njobs, lmax, kind="xip"):
     print(missing_string)
     print(len(missing))
     return np.array([allxi1, allxi2])
+
+
+def read_posterior_files(pattern):
+    """
+    Reads files matching a given pattern and appends their values to lists.
+
+    Parameters:
+    - pattern: A string pattern to match files (e.g., 's8posts/s8post_*.npz').
+
+    Returns:
+    - A dictionary containing lists of values extracted from the files.
+    """
+    gauss_posteriors, exact_posteriors, s8, means, combs, available = [], [], [], [], [], []
+    
+    # Use glob to find files matching the pattern
+    files = glob.glob(pattern)
+    
+    for file in files:
+        try:
+            posts = np.load(file)
+            gauss_post, exact_post = posts['gauss'], posts['exact']
+            gauss_posteriors.append(gauss_post)
+            exact_posteriors.append(exact_post)
+            s8.append(posts['s8'])
+            #means.append(posts['means'])
+            #combs.append(posts['comb'])
+            available.append(True)
+        except Exception as e:
+            print(f"Error reading file {file}: {e}")
+            available.append(False)
+    
+    return {
+        "gauss_posteriors": np.array(gauss_posteriors).flatten(),
+        "exact_posteriors": np.array(exact_posteriors).flatten(),
+        "s8": np.array(s8).flatten(),
+        "available": available
+    }
