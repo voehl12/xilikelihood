@@ -143,7 +143,7 @@ class Cov:
 
         theory_cell = self.cell_cube(self._exact_lmax + buffer)
 
-        if self.check_cov() and not ischain:
+        if not ischain and self.check_cov():
             self.load_cov()
             return self.cov_alm
         else:
@@ -299,8 +299,8 @@ class Cov:
                     pos_x = (len_2D * j, len_2D * (j + 1))
                     cov_matrix[pos_y[0] : pos_y[1], pos_x[0] : pos_x[1]] = cov_2D
                     # clear some memory:
-                    # del cov_2D
-                    # gc.collect()
+                    del cov_2D
+                    #gc.collect()
                     # print("cov_masked: finished part {:d}/{:d}.".format(int(part), int(numparts)))
                     part += 1
         toc = time.perf_counter()
@@ -352,7 +352,7 @@ class Cov:
 
     def set_char_string(self):
 
-        charstring = "_l{:d}_n{:d}_{}_{}_{}_test.npz".format(
+        charstring = "_l{:d}_n{:d}_{}_{}_{}.npz".format(
             self._exact_lmax,
             self.mask.nside,
             self.mask.name,
@@ -379,7 +379,7 @@ class Cov:
             pclpath = (
                 self.working_dir
                 + "/pcls/pcl"
-                + "_n{:d}_{}_{}_{}_test.npz".format(
+                + "_n{:d}_{}_{}_{}.npz".format(
                     self.mask.nside,
                     self.mask.name,
                     self.theorycl.name,

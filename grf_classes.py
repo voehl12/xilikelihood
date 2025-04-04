@@ -3,11 +3,16 @@ import healpy as hp
 import wpm_funcs, cov_funcs
 import pickle
 import os.path
+import os
 from sys import getsizeof
 import file_handling
 import time
 import scipy.stats
 import helper_funcs
+
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 
 def save_maskobject(maskobject, dir=""):
@@ -91,7 +96,7 @@ class TheoryCl:
                 )
                 self.z_bins = (bin1, bin2)
 
-            cl = theory_cl.get_cl_s8(self.cosmo, self.z_bins)
+            cl = theory_cl.get_cl(self.cosmo, self.z_bins)
 
             cl = np.array(cl)
             spectra = np.concatenate(
@@ -587,7 +592,7 @@ class SphereMask:
 
     def set_wpm_string(self, cov_ell_buffer):
 
-        charstring = "_l{:d}_n{:d}_{}_test.npz".format(
+        charstring = "_l{:d}_n{:d}_{}.npz".format(
             self._exact_lmax + cov_ell_buffer,
             self.nside,
             self.name,
@@ -604,7 +609,7 @@ class SphereMask:
         self.wpm_path = wpm_name
 
     def set_mllppath(self):
-        charstring = "_l{:d}_n{:d}_{}_test.npz".format(
+        charstring = "_l{:d}_n{:d}_{}.npz".format(
             self._exact_lmax,
             self.nside,
             self.name,
