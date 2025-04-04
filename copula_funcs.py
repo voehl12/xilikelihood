@@ -3,7 +3,25 @@ from scipy.stats import norm, multivariate_normal
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 import matplotlib.pyplot as plt
+from scipy.linalg import eigh
+#import cupy as cp
 
+
+def get_eigenvalues_with_cupy(matrix):
+    # Convert JAX array to NumPy array
+    np_matrix = np.array(matrix)
+    
+    # Convert NumPy array to CuPy array
+    cupy_matrix = cp.array(np_matrix)
+    
+    # Compute eigenvalues using CuPy
+    eigenvalues, _ = cp.linalg.eig(cupy_matrix)
+    
+    # Convert CuPy array back to NumPy array
+    np_eigenvalues = cp.asnumpy(eigenvalues)
+    
+    
+    return np_eigenvalues
 
 def interpolate_along_last_axis(xs, pdfs, num_points=512, thres=0.001):
     # only interpolate relevant part?
@@ -15,7 +33,7 @@ def interpolate_along_last_axis(xs, pdfs, num_points=512, thres=0.001):
         # Only interpolate the relevant part of the PDF
         len_relevant = 0
         threshold = thres * np.max(pdf)
-        while len_relevant < len(x) // 2:
+        while len_relevant < len(x) // 3:
             relevant_indices = pdf > threshold
             len_relevant = np.sum(relevant_indices)
             threshold *= 0.1
@@ -154,10 +172,31 @@ def gaussian_copula_density(cdfs, covariance_matrix):
     copula_density = mvariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
+def get_well_conditioned_matrix(corr_matrix, min_eigenvalue=5e-4):
+    eigvals, eigvecs = eigh(corr_matrix)
+    eigvals = np.maximum(eigvals, min_eigenvalue)  # Clip small eigenvalues
+    return eigvecs @ np.diag(eigvals) @ eigvecs.T  # Reconstruct matrix
+
+
+def test_correlation_matrix(matrix, iscov=False):
+    if iscov:
+        corr_matrix = covariance_to_correlation(matrix)
+    else:
+        corr_matrix = matrix
+    cond_number = np.linalg.cond(corr_matrix)
+    print('Condition number of correlation matrix: {:.2f}'.format(cond_number))
+    if cond_number > 1e4:
+        print('Regularizing...')
+        corr_matrix = get_well_conditioned_matrix(corr_matrix)
+        new_cond = np.linalg.cond(corr_matrix)
+        print('New condition number of correlation matrix: {:.2f}'.format(new_cond))
+    return corr_matrix
 
 def gaussian_copula_point_density(cdf_point, covariance_matrix):
     z = norm.ppf(cdf_point)
     corr_matrix = covariance_to_correlation(covariance_matrix)
+    corr_matrix = test_correlation_matrix(corr_matrix)
+    
     mean = np.zeros(len(corr_matrix))
     mvn = multivariate_normal(
         mean=mean, cov=corr_matrix
@@ -225,7 +264,56 @@ def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     return copula_density * np.prod(pdf_points, axis=1)
 
 
-def evaluate(x_data, xs, pdfs, cdfs, cov):
+
+def cov_subset(cov, subset, num_angs):
+    """
+    Extracts a subset of the covariance matrix based on the provided indices.
+
+    Parameters:
+    - cov: The covariance matrix (shape: (rs_combs * ang, rs_combs * ang)).
+    - subset: A list of (rs_combs, ang) tuples specifying the dimensions to extract.
+
+    Returns:
+    - A reduced covariance matrix corresponding to the specified subset.
+    """
+    # Convert the subset of indices to flat indices
+    flat_indices = [rs_comb * num_angs + ang for rs_comb, ang in subset]
+    return cov[np.ix_(flat_indices, flat_indices)]
+
+def data_subset(data, subset):
+    rs_combs_indices, ang_indices = zip(*subset)
+    
+    data = data[rs_combs_indices, ang_indices]
+    return data
+
+
+def evaluate(x_data, xs, pdfs, cdfs, cov,subset=None):
+    """
+    Evaluates the joint PDF at a given data point using the Gaussian copula.
+
+    Parameters:
+    - x_data: The data point to evaluate (shape: (rs_combs, ang)).
+    - xs: The x-values of the PDFs (shape: (rs_combs, ang, n)).
+    - pdfs: The PDF values (shape: (rs_combs, ang, n)).
+    - cdfs: The CDF values (shape: (rs_combs, ang, n)).
+    - cov: The covariance matrix (shape: (rs_combs * ang, rs_combs * ang)).
+    - subset: A list of (rs_combs, ang) tuples specifying the dimensions to evaluate. If None, all dimensions are used.
+
+    Returns:
+    - The log joint PDF value.
+    """
+    
+    if subset is not None:
+        # Select the subset of dimensions
+        
+        num_angs = pdfs.shape[1]
+        x_data = data_subset(x_data, subset)
+        xs = data_subset(xs, subset)
+        pdfs = data_subset(pdfs, subset)
+        cdfs = data_subset(cdfs, subset)
+        # Extract the covariance matrix for the subset
+        cov = cov_subset(cov, subset, num_angs)
+        # Reduce the covariance matrix to the subset
     pdf_point, cdf_point = pdf_and_cdf_point_eval(x_data=x_data, xs=xs, pdfs=pdfs, cdfs=cdfs)
     log_pdf_points = np.log(pdf_point)
 
