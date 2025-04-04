@@ -2,6 +2,11 @@ from grf_classes import SphereMask, TheoryCl, RedshiftBin
 from cov_setup import Cov
 import calc_pdf, helper_funcs, setup_m
 import os, re
+
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+
 import numpy as np
 import scipy.stats
 import matplotlib.pyplot as plt
@@ -12,7 +17,12 @@ import postprocess_nd_likelihood
 from scipy.stats import norm, multivariate_normal
 import jax.numpy as jnp
 import jax
+
+
+#print(jax.devices())
 from multiprocessing import Pool
+import gc
+
 
 
 class XiLikelihood:
@@ -52,6 +62,8 @@ class XiLikelihood:
             self._numerical_redshift_bin_combinations[:, 0]
             != self._numerical_redshift_bin_combinations[:, 1]
         )
+
+        self.n_cov_cross = np.sum(self._is_cov_cross)
 
         self.redshift_bin_combinations = [
             (self._redshift_bins[comb[0]], self._redshift_bins[comb[1]])
@@ -162,6 +174,8 @@ class XiLikelihood:
             einsum_means,
             self._means_lowell,
         )
+        del covs, einsum_means, diff
+        #gc.collect()
         # mean for each redshift bin combination and angular bin, shape (n_redshift_bin_combs, len(angular_bins))
         # var = 2 * np.sum(prod * np.transpose(prod))
 
@@ -170,12 +184,14 @@ class XiLikelihood:
         # use products of combination matrix and pseudo alm covariance
         # the n eigenvalue retrievals could also be efficiently split to several cores
         # also check newer jax version for gpu eigvals
+        #os.environ["CUDA_VISIBLE_DEVICES"] = "1"
         self._variances = np.zeros((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
         self._eigvals = jnp.zeros(
             (self._n_redshift_bin_combs, len(self._ang_bins_in_deg), 2 * len(self._products[0, 0])),
             dtype=complex,
         )
-        products = np.array(self._products.copy())
+        products = self._products.view()
+        products.flags.writeable = False
         cross_prods = products[self._is_cov_cross]
         auto_prods = products[~self._is_cov_cross]
         del products
@@ -191,16 +207,19 @@ class XiLikelihood:
         ) + np.sum(
             auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
         )  # no factor 2 because of the cross terms
-        self._ximax = jnp.array(self._means_lowell + 20 * jnp.sqrt(self._variances))
+        self._ximax = jnp.array(self._means_lowell + 40 * jnp.sqrt(self._variances))
         self._ximin = self._means_lowell - 5 * jnp.sqrt(self._variances)
         print("retrieving auto eigenvalues...")
-        eigvals_auto = calc_pdf.get_evs(jnp.array(auto_prods))
+        auto_prods = jnp.array(auto_prods)
+        #eigvals_auto = copula_funcs.get_eigenvalues_with_cupy(auto_prods)
+        eigvals_auto, _ = jnp.linalg.eig(auto_prods)
+        #eigvals_auto = np.linalg.eigvals(auto_prods)
         # shape (n_redshift_bins, len(angular_bins),len(cov))
         eigvals_auto_padded = jnp.pad(
             eigvals_auto, ((0, 0), (0, 0), (0, eigvals_auto.shape[-1])), "constant"
         )
         self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
-        cross_matrices = []
+        cross_eigvals = []
         if len(cross_combs) > 0:
             for c, comb in enumerate(cross_combs):
                 diag_elem = cross_prods[c]  # shape (len(angular_bins),len(cov),len(cov))
@@ -208,20 +227,33 @@ class XiLikelihood:
                 off_diag_elem_2 = auto_prods[comb[1]]
                 mat = 0.5 * np.block(
                     [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
-                )  # shape (len(angular_bins),2*len(cov), 2*len(cov))
-                cross_matrices.append(mat)
-            cross_matrices = np.array(
-                cross_matrices
+                )  # shape (len(angular_bins), 2*len(cov), 2*len(cov))
+                print("retrieving cross eigenvalues...")
+                eigvals = np.linalg.eigvals(mat)
+                cross_eigvals.append(eigvals)
+            cross_eigvals = jnp.array(
+                cross_eigvals
             )  # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
-            print("retrieving cross eigenvalues...")
             
-            eigvals_cross = calc_pdf.get_evs(jnp.array(cross_matrices))
-            eigvals_cross = jnp.array(eigvals_cross)
-            self._eigvals = self._eigvals.at[self._is_cov_cross].set(eigvals_cross)
+           
+            #eigvals_cross = copula_funcs.get_eigenvalues_with_cupy(cross_matrices)
+            #eigvals_cross,_ = jnp.linalg.eig(cross_matrices)
+            #eigvals_cross = np.linalg.eigvals(cross_matrices)
+            del diag_elem, off_diag_elem_1, off_diag_elem_2, mat
+            #eigvals_cross = jnp.array(eigvals_cross)
+            self._eigvals = self._eigvals.at[self._is_cov_cross].set(cross_eigvals)
 
         t_lowell, cfs_lowell = calc_pdf.batched_cf_1d_jitted(self._eigvals, self._ximax, steps=4096)
+        #t_lowell.block_until_ready()
+        #cfs_lowell.block_until_ready()
         self._t_lowell, self._cfs_lowell = np.array(t_lowell), np.array(cfs_lowell)
+        del auto_prods, cross_prods, cross_transposes
+        del eigvals_auto_padded, eigvals_auto
         del t_lowell, cfs_lowell
+        gc.collect()
+        
+        
+        #gc.collect() 
         # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov))
         # also introduce ximin? need symmetry in t?
 
@@ -294,8 +326,6 @@ class XiLikelihood:
         self._get_cfs_1d_lowell()
 
         if self._highell:
-            self.get_covariance_matrix_highell()
-            self._get_means_highell()
             self._cfs = self._cfs_lowell * self._get_cfs_1d_highell()
         else:
             self._cfs = self._cfs_lowell
@@ -303,48 +333,73 @@ class XiLikelihood:
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
 
-    def gauss_compare(self, data):
+    def gauss_compare(self, data,data_subset=None):
         # should always use a fixed covariance, produce on initialization?
-        mean = self._mean.flatten()
+        mean = self._mean
         if self.gaussian_covariance is None:
             print("using cosmology dependendent covariance for gaussian likelihood!")
             cov = self._cov
         else:
             cov = self.gaussian_covariance
+        if data_subset is not None:
+            num_angs = data.shape[1]
+            data = copula_funcs.data_subset(data, data_subset)
+            cov = copula_funcs.cov_subset(cov, data_subset,num_angs)
+            mean = copula_funcs.data_subset(mean, data_subset)
+
+        mean = mean.flatten()
         mvn = multivariate_normal(mean=mean, cov=cov)
         data_flat = data.flatten()
         return mvn.logpdf(data_flat)
 
-    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False):
+    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False,data_subset=None):
+        #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         # compute the likelihood for a given cosmology
         # don't forget to build in the factor 1/2 for the cross terms where always two m-cov products are used
         if highell:
             self._highell = True
 
         self.initiate_theory_cl(cosmology)
+        
         self._prepare_matrix_products()
-        xs, pdfs = self.marginals()
+        
 
         self._cov = self.get_covariance_matrix_lowell()
+
         self._mean = self._means_lowell
 
         # assert (
         #    np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
         # ), "Variances do not match"
         if self._highell:
+            self.get_covariance_matrix_highell()
+            self._get_means_highell()
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
             # highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
+        
+        xs, pdfs = self.marginals()
         self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
             xs, pdfs
         )  # new xs and pdfs are interpolated
-        
 
+        # Save all PDFs over xs for testing
+        for i in range(self._pdfs.shape[0]):
+            for j in range(self._pdfs.shape[1]):
+                plt.plot(self._xs[i, j], self._pdfs[i, j], label=f"PDF {i}-{j}")
+        plt.xlabel("x")
+        plt.ylabel("PDF")
+        plt.title(f"PDFs over xs (s8={cosmology['s8']})")
+        plt.legend()
+        plot_filename = os.path.join(self.working_dir, f"pdfs_s8_{cosmology['s8']:.3f}.png")
+        plt.savefig(plot_filename)
+        plt.close()
+        
         likelihood = copula_funcs.evaluate(
-            data, self._xs, self._pdfs, self._cdfs, self._cov
+            data, self._xs, self._pdfs, self._cdfs, self._cov,subset=data_subset
         )  # returns log likelihood
         if gausscompare == True:
-            return likelihood, self.gauss_compare(data)
+            return likelihood, self.gauss_compare(data,data_subset=data_subset)
         else:
             return likelihood
 
