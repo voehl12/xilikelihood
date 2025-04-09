@@ -4,7 +4,7 @@ import os
 from scipy.stats import norm
 import configparser
 import calc_pdf
-from helper_funcs import pcls2xis, prep_prefactors
+from helper_funcs import pcls2xis, prep_prefactors, compute_kernel
 import traceback
 import matplotlib.colors as colors
 import numpy as np
@@ -312,3 +312,49 @@ def plot_gauss(ax,x,mu,cov,color,label=None,linestyle='dashed'):
 
 
 
+def plot_kernels(pcl,prefactors,save_path=None,ang_bins=None):
+    """
+    Plot the elements of the sum against l.
+    """
+    kernel_xip, kernel_xim = compute_kernel(pcl, prefactors, out_lmax=None, lmin=0)
+    # normalize by maximum value of each:
+    kernel_xip = kernel_xip / np.max(kernel_xip, axis=-1)[:, None]
+    kernel_xim = kernel_xim / np.max(kernel_xim, axis=-1)[:, None]
+    l = np.arange(kernel_xip.shape[-1])
+    # Plot each angular bin
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    colors = plt.cm.RdBu([0,0.2,0.9])
+    # Plot xip kernel
+    if ang_bins is not None:
+        labels = [r'$\bar{{\theta}} = [ {:.1f}^{{\circ}}, {:.1f}^{{\circ}}]$'.format(*ang_bins[i]) for i in range(len(kernel_xip))]
+    else:
+        labels = [f"Angular bin {i}" for i in range(len(kernel_xip))]
+        
+    for i, element in enumerate(kernel_xip):
+        axes[0].plot(l, element.T, label=labels[i], color=colors[i])
+    axes[0].set_xlabel(r"$\ell$")
+    axes[0].set_ylabel(r"$\xi^+$ Kernel")
+    axes[0].legend()
+    axes[0].legend(frameon=False)
+    axes[0].set_xscale('log')
+    axes[0].set_xlim(2,767)
+    
+    # Plot xim kernel
+    for i, element in enumerate(kernel_xim):
+        axes[1].plot(l, element.T, label=labels[i], color=colors[i])
+    axes[1].set_xlabel(r"$\ell$")
+    axes[1].yaxis.set_label_position("right")
+    axes[1].yaxis.tick_right()
+    axes[1].set_ylabel(r"$\xi^-$ Kernel")
+    axes[1].set_xscale('log')
+    axes[1].set_xlim(2,767)
+    
+
+    # Adjust layout and save/show the plot
+    fig.subplots_adjust(hspace=0,wspace=0.05)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"Plot saved to {save_path}")
+    else:
+        plt.show()
