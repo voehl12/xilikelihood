@@ -149,7 +149,20 @@ def prep_prefactors(angs_in_deg, wl, norm_lmax, out_lmax):
     return prefactors_arr
 
 
-def pcl2xi(pcl, prefactors, out_lmax, lmin=0):
+
+def compute_kernel(pcl, prefactors, out_lmax=None, lmin=0):
+    
+    pcl_e, pcl_b, pcl_eb = pcl
+    if out_lmax is None:
+        out_lmax = len(pcl_e) - 1
+    l = 2 * np.arange(lmin, out_lmax + 1) + 1
+    p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
+    kernel_xip = p_cl_prefactors_p[:, lmin : out_lmax + 1] * l * (pcl_e[lmin : out_lmax + 1] + pcl_b[lmin : out_lmax + 1])
+    kernel_xim = p_cl_prefactors_m[:, lmin : out_lmax + 1] * l * (pcl_e[lmin : out_lmax + 1] - pcl_b[lmin : out_lmax + 1] - 2j * pcl_eb[lmin : out_lmax + 1])
+    return kernel_xip, kernel_xim
+
+
+def pcl2xi(pcl, prefactors, out_lmax=None, lmin=0):
     """
     _summary_
 
@@ -169,27 +182,10 @@ def pcl2xi(pcl, prefactors, out_lmax, lmin=0):
     _type_
         _description_
     """
-    pcl_e, pcl_b, pcl_eb = pcl
-    l = 2 * np.arange(lmin, out_lmax + 1) + 1
-    p_cl_prefactors_p, p_cl_prefactors_m = prefactors[:, 0], prefactors[:, 1]
-
-    xip = np.sum(
-        p_cl_prefactors_p[:, lmin : out_lmax + 1]
-        * l
-        * (pcl_e[lmin : out_lmax + 1] + pcl_b[lmin : out_lmax + 1]),
-        axis=-1,
-    )
-    xim = np.sum(
-        p_cl_prefactors_m[:, lmin : out_lmax + 1]
-        * l
-        * (
-            pcl_e[lmin : out_lmax + 1]
-            - pcl_b[lmin : out_lmax + 1]
-            - 2j * pcl_eb[lmin : out_lmax + 1]
-        ),
-        axis=-1,
-    )
-
+    
+    kernel_xip, kernel_xim = compute_kernel(pcl, prefactors, out_lmax, lmin)
+    xip = np.sum(kernel_xip, axis=-1)
+    xim = np.sum(kernel_xim, axis=-1)
     return xip, xim
 
 
@@ -218,6 +214,7 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     l = 2 * jnp.arange(lmin, out_lmax + 1) + 1
     p_cl_prefactors_p, p_cl_prefactors_m = jnp.array(prefactors[:, 0]), jnp.array(prefactors[:, 1])
 
+    
     xips = jnp.sum(
         p_cl_prefactors_p[None, :, lmin : out_lmax + 1]
         * l
