@@ -113,6 +113,7 @@ class TheoryCl:
             self.bb = np.zeros_like(self.ee)
             self.eb = np.zeros_like(self.ee)
             self.name = None
+            self.clpath = 'fromscratch'
 
         else:
             print("Warning: no theory Cl provided, calculating with Cl=0")
@@ -388,7 +389,6 @@ class SphereMask:
             return self._wlm_lmax
 
     def set_smoothed_mask(self):
-
         sigma = np.deg2rad(1 / self.l_smooth * 300)
         smooth_mask = hp.sphtfunc.smoothing(
             self.mask,
