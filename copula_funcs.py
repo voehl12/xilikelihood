@@ -6,6 +6,56 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 #import cupy as cp
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+def validate_pdfs(pdfs, xs, cdfs=None):
+    """
+    Perform checks on the PDFs to ensure they are valid.
+
+    Parameters
+    ----------
+    pdfs : ndarray
+        Array of PDFs.
+    xs : ndarray
+        Array of x-values corresponding to the PDFs.
+    cdfs : ndarray, optional
+        Array of CDFs corresponding to the PDFs. If provided, checks monotonicity.
+
+    Logs warnings if any issues are found.
+    """
+    for i in range(pdfs.shape[0]):  # Loop over redshift combinations
+        for j in range(pdfs.shape[1]):  # Loop over angular bins
+            pdf = pdfs[i, j, :]
+            x = xs[i, j, :]
+
+            # Check normalization
+            integral = np.trapz(pdf, x)
+            if not np.isclose(integral, 1.0, atol=1e-3):
+                logger.warning(f"PDF {i}-{j} is not normalized: integral={integral}")
+
+            # Check non-negativity
+            if np.any(pdf < 0):
+                logger.warning(f"PDF {i}-{j} has negative values.")
+
+            # Check domain coverage
+            if x[0] > np.min(x) or x[-1] < np.max(x):
+                logger.warning(f"PDF {i}-{j} does not cover the expected domain.")
+
+            # Check CDF monotonicity (if CDFs are provided)
+            if cdfs is not None:
+                cdf = cdfs[i, j, :]
+                if not np.all(np.diff(cdf) >= 0):
+                    logger.warning(f"CDF {i}-{j} is not monotonic.")
+
+            # Check if PDF drops to zero at domain boundaries (relative to max value)
+            max_pdf = np.max(pdf)
+            if not (np.isclose(pdf[0], 0, atol=1e-3 * max_pdf) and np.isclose(pdf[-1], 0, atol=1e-3 * max_pdf)):
+                logger.warning(f"PDF {i}-{j} does not drop to zero at domain boundaries (relative to max value).")
+
+    logger.info("All PDFs have been checked.")
+
 
 def get_eigenvalues_with_cupy(matrix):
     # Convert JAX array to NumPy array
@@ -184,12 +234,12 @@ def test_correlation_matrix(matrix, iscov=False):
     else:
         corr_matrix = matrix
     cond_number = np.linalg.cond(corr_matrix)
-    print('Condition number of correlation matrix: {:.2f}'.format(cond_number))
+    logger.info('Condition number of correlation matrix: {:.2f}'.format(cond_number))
     if cond_number > 1e4:
-        print('Regularizing...')
+        logger.warning('Regularizing...')
         corr_matrix = get_well_conditioned_matrix(corr_matrix)
         new_cond = np.linalg.cond(corr_matrix)
-        print('New condition number of correlation matrix: {:.2f}'.format(new_cond))
+        logger.info('New condition number of correlation matrix: {:.2f}'.format(new_cond))
     return corr_matrix
 
 def gaussian_copula_point_density(cdf_point, covariance_matrix):
