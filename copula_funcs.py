@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.stats import norm, multivariate_normal
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, UnivariateSpline
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
@@ -89,7 +89,7 @@ def interpolate_along_last_axis(xs, pdfs, num_points=512, thres=0.001):
             threshold *= 0.1
         x, pdf = x[relevant_indices], pdf[relevant_indices]
 
-        interp = PchipInterpolator(x, pdf)
+        interp = UnivariateSpline(x, pdf,k=3, s=0)
         x_vals = np.linspace(x[0], x[-1], num_points)
         pdf_vals = interp(x_vals)
         concat = np.concatenate((x_vals, pdf_vals), axis=-1)
