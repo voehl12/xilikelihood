@@ -13,7 +13,8 @@ import sys
 from random import randint
 from time import time, sleep
 from postprocess_nd_likelihood import exp_norm_mean
-from calc_pdf import get_cov_n
+from calc_pdf import get_cov_n,get_combs
+from copula_funcs import data_subset, cov_subset
 
 #sleep(randint(1, 5))
 
@@ -25,7 +26,7 @@ fiducial_cosmo = {
     "s8": 0.8,  # Amplitude of matter fluctuations
 }
 
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
+mask = SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax, l_smooth=30)
 
 
 redshift_bins, ang_bins_in_deg = fiducial_dataspace()
@@ -33,16 +34,9 @@ ang_bins_in_deg = ang_bins_in_deg[:-1]
 likelihood = XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,noise=None)
 
-mock_data_path = "mock_data_10000sqd_nonoise.npz"
-gaussian_covariance_path = "gaussian_covariance_10000sqd_nonoise.npz"
+mock_data_path = "mock_data_1000sqd_nonoise.npz"
+gaussian_covariance_path = "gaussian_covariance_1000sqd_nonoise.npz"
 
-#mock_data = np.load("fiducial_data_10000sqd_nonoise.npz")["data"]
-#gaussian_covariance = np.load("gaussian_covariance_nonoise.npz")["cov"]
-#create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
-
-mock_data = np.load(mock_data_path)["data"]
-print(mock_data.shape)
-gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
 
 
 def posterior_from_1d_autocorr(jobnumber):
@@ -78,10 +72,12 @@ def posterior_from_1d_autocorr(jobnumber):
     post, gauss_post = likelihood.loglikelihood(mockdata, cosmology, gausscompare=True)
     assert np.allclose(likelihood._mean,mockdata,rtol=1e-6), (likelihood._mean, mockdata)
     for s in s8:
+        start_time = time()
         print(s)
         cosmology["s8"] = s
         post, gauss_post = likelihood.loglikelihood(mockdata, cosmology, gausscompare=True)
-        
+        iteration_time = time() - start_time
+        print(f"Iteration for s8={s} took {iteration_time:.2f} seconds")
         posts.append(post)
         gauss_posts.append(gauss_post)
 
@@ -90,7 +86,7 @@ def posterior_from_1d_autocorr(jobnumber):
 
 
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}.npz".format(jobnumber),
+        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_1000sqd_fiducial_nonoise_1dcomb_{:d}_auto.npz".format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,
@@ -161,18 +157,40 @@ def posterior_from_1d_croco(jobnumber,ns8=200):
     this_pair = pairs[jobnumber]
     croco_bin = this_pair[0]
     ang_bin = this_pair[1]
-    likelihood.initiate_mask_specific()
-    likelihood.precompute_combination_matrices()
+    croco = get_combs(croco_bin)
+    auto1, auto2 = (croco[0], croco[0]), (croco[1], croco[1])
+    rs_combs = (get_cov_n(croco),get_cov_n(auto1),get_cov_n(auto2))
+    print(croco,rs_combs)
+    rs_bins = [redshift_bins[croco[0]], redshift_bins[croco[1]]]
+    ang_bin_in_deg = [ang_bins_in_deg[ang_bin]]
+    print(rs_bins, ang_bin_in_deg)
+    # create a new likelihood object with the new redshift and angular separation bins
+    likelihood_local = XiLikelihood(
+            mask=mask, redshift_bins=rs_bins, ang_bins_in_deg=ang_bin_in_deg,noise=None)
+    
+    
+    
+    likelihood_local.initiate_mask_specific()
+    likelihood_local.precompute_combination_matrices()
+    data_shape = likelihood_local.prep_data_array().shape
     cosmology = fiducial_cosmo.copy()
-    likelihood.gaussian_covariance = gaussian_covariance
+    num_angs = len(ang_bins_in_deg)
+    subset_from_full_datavector = [(rs_combs[i],ang_bin) for i in range(len(rs_combs))]
+    mockdata = data_subset(mock_data,subset_from_full_datavector)
+    mockdata = mockdata.reshape(data_shape)
+    likelihood_local.gaussian_covariance = cov_subset(gaussian_covariance,subset_from_full_datavector,num_angs)
+    print(mockdata.shape,mockdata)
+    print(likelihood_local.gaussian_covariance.shape,likelihood_local.gaussian_covariance)
+    subset = [(2, 0)] #always the croco, only one ang bin
     posts, gauss_posts = [], []
-    post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True)
-    assert np.allclose(likelihood._mean,mock_data,rtol=1e-6), (likelihood._mean, mock_data)
+    #post, gauss_post = likelihood_local.loglikelihood(mock_data, cosmology, gausscompare=True)
+    
     for s in s8:
-        print(s)
+        start_time = time()
         cosmology["s8"] = s
-        post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True,data_subset=[(croco_bin,ang_bin)])
-        
+        post, gauss_post = likelihood_local.loglikelihood(mockdata, cosmology, gausscompare=True, data_subset=subset)
+        iteration_time = time() - start_time
+        print(f"Iteration for s8={s} took {iteration_time:.2f} seconds")
         posts.append(post)
         gauss_posts.append(gauss_post)
 
@@ -180,7 +198,7 @@ def posterior_from_1d_croco(jobnumber,ns8=200):
     post_gauss, mean_gauss = exp_norm_mean(s8,gauss_posts,reg=20)
 
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz".format(jobnumber),
+        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_1000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz".format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,
@@ -243,6 +261,14 @@ def posterior_from_nd(jobnumber):
 
 
   
-
 #create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
-posterior_from_subset(jobnumber)
+
+#mock_data = np.load("fiducial_data_10000sqd_nonoise.npz")["data"]
+#gaussian_covariance = np.load("gaussian_covariance_nonoise.npz")["cov"]
+#create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
+
+mock_data = np.load(mock_data_path)["data"]
+print(mock_data.shape)
+gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
+#create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
+posterior_from_1d_croco(jobnumber)
