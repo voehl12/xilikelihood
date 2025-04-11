@@ -1,7 +1,8 @@
 import pytest
 import numpy as np
 from likelihood import XiLikelihood
-from grf_classes import SphereMask, TheoryCl, RedshiftBin
+from grf_classes import SphereMask,RedshiftBin
+from theory_cl import TheoryCl
 from cov_setup import Cov
 
 @pytest.fixture
@@ -44,3 +45,32 @@ def test_get_cfs_1d_lowell(likelihood_instance, regtest):
     regtest.write(f"cfs_lowell:\n{cfs_lowell}\n")
     regtest.write(f"ximax:\n{ximax}\n")
     regtest.write(f"ximin:\n{ximin}\n")
+
+def test_initiate_theory_cl(likelihood_instance, snapshot, regtest):
+    # Define cosmological parameters
+    cosmo_params = {'omega_m': 0.31, 's8': 0.8}
+
+    # Call the method
+    likelihood_instance.initiate_theory_cl(cosmo_params)
+
+    # Capture outputs
+    theory_cl = likelihood_instance._theory_cl
+
+    # Assert that theory_cl is a list of objects with expected attributes
+    assert isinstance(theory_cl, list), "theory_cl should be a list"
+    assert len(theory_cl) > 0, "theory_cl should not be empty"
+    for cl in theory_cl:
+        assert hasattr(cl, 'lmax'), "Each theory_cl object should have an 'lmax' attribute"
+        assert hasattr(cl, 'cosmo'), "Each theory_cl object should have a 'cosmo' attribute"
+        assert cl.cosmo == cosmo_params, "Cosmological parameters should match the input"
+        assert hasattr(cl, 'ee'), "Each theory_cl object should have an 'ee' attribute"
+        assert hasattr(cl, 'sigma_e'), "Each theory_cl object should have a 'sigma_e' attribute"
+        assert cl.sigma_e == likelihood_instance.noise, "sigma_e should match the noise value"
+
+        # Write sigma_e to the regression test snapshot
+        regtest.write(f"sigma_e for TheoryCl instance:\n{cl.sigma_e}\n")
+
+        # Snapshot test for the 'ee' array
+        snapshot.check(cl.ee)
+
+
