@@ -1,4 +1,5 @@
 import os
+import logging
 
 import numpy as np
 import healpy as hp
@@ -19,6 +20,10 @@ import glass.fields
 # glass          2023.8.dev10+g67a5721 /cluster/home/veoehl/glass
 import time
 
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 class TwoPointSimulation:
     # inherits theory c_ell and mask stuff, use properties to set up simulations (not for single simulation)
@@ -36,15 +41,17 @@ class TwoPointSimulation:
 
         self.mask = mask
         self.theorycl = theorycl
-
         self.ximode = ximode
+        foldername = "{}_{}_{}_{}".format(self.theorycl.name, self.mask.name, self.theorycl.sigmaname, self.ximode)
+        
+        
         self.batchsize = batchsize
         if simpath is None:
             current = os.getcwd()
-            if not os.path.isdir(current + "/simulations"):
-                command = "mkdir simulations"
-                os.system(command)
-            self.simpath = current + "/simulations"
+            sim_folder = os.path.join(current, "simulations", foldername)  # Ensure full path
+            logger.info(f"Simulation folder: {sim_folder}")
+            os.makedirs(sim_folder, exist_ok=True)  # Ensure both folders exist
+            self.simpath = sim_folder
         else:
             self.simpath = simpath
         self.seps_in_deg = seps_in_deg
@@ -71,7 +78,7 @@ class TwoPointSimulation:
             return maps
 
     def add_noise(self, maps, testing=False):
-        if self.theorycl._sigma_e is not None:
+        if self.theorycl.sigma_e is not None:
             self.pixelsigma = set_pixelsigma(self.theorycl, self.mask.nside)
         else:
             return maps
@@ -117,8 +124,7 @@ class TwoPointSimulation:
                 maps_TQU_masked,
                 iter=5,
                 use_pixel_weights=True,
-                datapath=self.healpix_datapath,
-                # "/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
+                datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
             )
             return pcl_e, pcl_b, pcl_eb
 
@@ -132,12 +138,7 @@ class TwoPointSimulation:
 
     def xi_sim_1D(self, j, lmin=0, plot=False, save_pcl=False, pixwin=False):
         xip, xim, pcls = [], [], []
-        foldername = "/{}_{}_{}_{}".format(self.clname, self.maskname, self.sigmaname, self.ximode)
-        path = self.simpath + foldername
-        if not os.path.isdir(path):
-            command = "mkdir " + path
-            os.system(command)
-        self.simpath = path
+     
 
         if self.ximode == "namaster":
             prefactors = prep_prefactors(
@@ -149,10 +150,7 @@ class TwoPointSimulation:
             else:
                 pixwin_p = None
             for _i in range(self.batchsize):
-                print(
-                    "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
-                    end="\r",
-                )
+                logger.info(f"Simulating xip and xim......{_i / self.batchsize * 100:.1f}%")
                 maps_TQU = self.create_maps()
                 maps = self.add_noise(maps_TQU)
                 pcl, xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin, pixwin_p=pixwin_p)
@@ -189,10 +187,7 @@ class TwoPointSimulation:
 
             cat_props = prep_cat_treecorr(self.mask.nside, self.mask.smooth_mask)
             for _i in range(self.batchsize):
-                print(
-                    "Simulating xip and xim......{:4.1f}%".format(_i / self.batchsize * 100),
-                    end="\r",
-                )
+                logger.info(f"Simulating xip and xim......{_i / self.batchsize * 100:.1f}%")
                 maps_TQU = self.create_maps()
                 maps = self.add_noise(maps_TQU)
                 xi_p, xi_m, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
@@ -229,6 +224,7 @@ class TwoPointSimulation:
                 self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax
             )
 
+            logger.info("Running comparison mode simulation.")
             maps_TQU = self.create_maps(seed=7)
             maps = self.add_noise(maps_TQU)
             xi_p_t, xi_m_t, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
@@ -361,7 +357,6 @@ def get_xi_namaster_nD(maps_TQU_list, smooth_masks, prefactors, lmax, lmin=0):
 
 
 def xi_sim_nD(
-    # also pass only mask entity and theorycl entities, no need for Cov?
     theorycls,
     masks,
     j,
@@ -372,7 +367,8 @@ def xi_sim_nD(
     save_pcl=False,
     ximode="namaster",
     batchsize=1,
-    simpath="simulations/",
+    simpath="simulations",
+    runname="glasssim"
 ):
     xis, pcls = [], []
     gls = np.array([cl.ee.copy() for cl in theorycls])
@@ -383,25 +379,26 @@ def xi_sim_nD(
 
     mask = masks[0]
     if not hasattr(mask, "smooth_mask"):
-        print("Warning: mask used for simulations is not smoothed!")
+        logger.warning("Mask used for simulations is not smoothed!")
         sim_mask = mask.mask
     else:
         sim_mask = mask.smooth_mask
 
+    logger.info("Saving mask visualization to mask.png")
     hp.mollview(sim_mask)
     plt.savefig("mask.png")
     nside = mask.nside
     noises = [set_pixelsigma(cl, nside) for cl in theorycls if cl.sigma_e is not None]
+    if len(noises) == 0:
+        noises = None
     sigmaname = theorycls[0].sigmaname
-    foldername = "/croco_{}_{}_{}_llim_{}".format(
-        theorycls[0].name, mask.name, sigmaname, str(lmax)
+    foldername = "croco_{}_{}_{}_llim_{}".format(
+        runname, mask.name, sigmaname, str(lmax)
     )
-    path = simpath + foldername
-    if not os.path.isdir(path):
-        command = "mkdir " + path
-        os.system(command)
+    path = os.path.join(simpath, foldername)
+    os.makedirs(path, exist_ok=True)  # Ensure both folders exist
     simpath = path
-
+    logger.info(f"Simulation folder: {simpath}")
     if ximode == "namaster":
         if lmax is None:
             lmax = mask.lmax
@@ -410,10 +407,7 @@ def xi_sim_nD(
         times = []
         for _i in range(batchsize):
             tic = time.perf_counter()
-            print(
-                "Simulating xip and xim......{:4.1f}%".format(_i / batchsize * 100),
-                end="\r",
-            )
+            logger.info(f"Simulating xip and xim......{_i / batchsize * 100:.1f}%")
             maps_TQU_list = create_maps_nD(gls, nside)
             maps = add_noise_nD(maps_TQU_list, nside, sigmas=noises)
             all_masks = np.array([sim_mask for _ in range(len(maps))])
@@ -422,7 +416,7 @@ def xi_sim_nD(
             pcls.append(pcl_all)  # (n_batch, n_corr, 3, n_ell)
             toc = time.perf_counter()
             times.append(toc - tic)
-        print(times, np.mean(times))
+        logger.info(f"Simulation times: {times}, Average time: {np.mean(times)}")
         xis = np.array(xis)  # (n_batch,n_corr,2,n_angbins)
         pcls = np.array(pcls)
         if plot:
