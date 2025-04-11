@@ -33,7 +33,20 @@ ang_bins_in_deg = ang_bins_in_deg[:-1]
 likelihood = XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,noise=None)
 
+mock_data_path = "mock_data_10000sqd_nonoise.npz"
+gaussian_covariance_path = "gaussian_covariance_10000sqd_nonoise.npz"
+
+#mock_data = np.load("fiducial_data_10000sqd_nonoise.npz")["data"]
+#gaussian_covariance = np.load("gaussian_covariance_nonoise.npz")["cov"]
+#create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
+
+mock_data = np.load(mock_data_path)["data"]
+print(mock_data.shape)
+gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
+
+
 def posterior_from_1d_autocorr(jobnumber):
+    # jobnumber gives redshift-bin, angular separation bin pair, so as many jobs as there are redshift bins times angular separation bins are recommended.
     if jobnumber < 5:
         s8 = np.linspace(0.7, 0.9, 200)
     elif jobnumber < 10:
@@ -87,7 +100,7 @@ def posterior_from_1d_autocorr(jobnumber):
 
 def create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None):
     """Create mock data for the likelihood analysis."""
-    # Create a mock data vector with the same shape as the covariance matrix
+    
     theory_cls = likelihood.initiate_theory_cl(fiducial_cosmo)
     likelihood.initiate_mask_specific()
     likelihood.precompute_combination_matrices()
@@ -175,7 +188,37 @@ def posterior_from_1d_croco(jobnumber,ns8=200):
         comb=[croco_bin,ang_bin]
     )
 
-  
+def posterior_from_subset(jobnumber,ns8=200):
+    # jobnumber gives prior region for s8, so as many jobs as there are splits are recommended.
+    #  # get posterior from several subcombinations of data, need to determine which ones
+    # focus on large angular scales, only large scales, only small scales?
+    all_rs_combs = np.arange(likelihood._n_redshift_bin_combs)
+    crocos = np.argwhere(likelihood._is_cov_cross).flatten()
+    autos = np.argwhere(~likelihood._is_cov_cross).flatten()
+    largest_bin = len(ang_bins_in_deg) - 1
+    subset = [(rs,largest_bin) for rs in autos]
+    s8_prior = np.linspace(0.4, 1.2, ns8)
+    split_prior = np.array_split(s8_prior, 100)
+    this_s8_prior = split_prior[jobnumber]
+    cosmology = fiducial_cosmo.copy()
+    likelihood.initiate_mask_specific()
+    likelihood.precompute_combination_matrices()
+    likelihood.gaussian_covariance = gaussian_covariance
+    posts, gauss_posts = [], []
+    for s8 in this_s8_prior:
+        print(s8)
+        cosmology["s8"] = s8
+        post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True,data_subset=subset)
+        posts.append(post)
+        gauss_posts.append(gauss_post)
+    
+    np.savez(
+        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_largescales_autos_{:d}.npz".format(jobnumber),
+        exact=posts,
+        gauss=gauss_posts,
+        s8=this_s8_prior,)
+
+
 def posterior_from_nd(jobnumber):
     s8_prior = np.linspace(0.75,0.85, 200)
     split_prior = np.array_split(s8_prior, 100)
@@ -199,24 +242,7 @@ def posterior_from_nd(jobnumber):
     )
 
 
-
-mock_data_path = "mock_data_10000sqd_nonoise.npz"
-gaussian_covariance_path = "gaussian_covariance_10000sqd_nonoise.npz"
-
-#mock_data = np.load("fiducial_data_10000sqd_nonoise.npz")["data"]
-#gaussian_covariance = np.load("gaussian_covariance_nonoise.npz")["cov"]
-
-
-
-
-
-
-#create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
-
-mock_data = np.load(mock_data_path)["data"]
-gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
-
   
 
 #create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None)
-posterior_from_nd(jobnumber)
+posterior_from_subset(jobnumber)
