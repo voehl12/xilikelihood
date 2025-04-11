@@ -25,34 +25,65 @@ def validate_pdfs(pdfs, xs, cdfs=None):
 
     Logs warnings if any issues are found.
     """
+    def plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, issue):
+        plt.figure(figsize=(10, 5))
+
+        # Plot PDF
+        plt.subplot(1, 2, 1)
+        plt.plot(x, pdf, label=f"PDF {i}-{j}")
+        plt.title(f"Problematic PDF {i}-{j}: {issue}")
+        plt.xlabel("x")
+        plt.ylabel("PDF")
+        plt.legend()
+        plt.grid(True)
+
+        # Plot CDF if available
+        if cdf is not None:
+            plt.subplot(1, 2, 2)
+            plt.plot(x, cdf, label=f"CDF {i}-{j}")
+            plt.title(f"CDF {i}-{j}")
+            plt.xlabel("x")
+            plt.ylabel("CDF")
+            plt.legend()
+            plt.grid(True)
+
+        plt.tight_layout()
+        plt.savefig(f"problematic_pdf_cdf_{i}_{j}.png")
+        plt.close()
+
     for i in range(pdfs.shape[0]):  # Loop over redshift combinations
         for j in range(pdfs.shape[1]):  # Loop over angular bins
             pdf = pdfs[i, j, :]
             x = xs[i, j, :]
+            cdf = cdfs[i, j, :] if cdfs is not None else None
 
             # Check normalization
             integral = np.trapz(pdf, x)
             if not np.isclose(integral, 1.0, atol=1e-3):
                 logger.warning(f"PDF {i}-{j} is not normalized: integral={integral}")
+                plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, "Not Normalized")
 
             # Check non-negativity
             if np.any(pdf < 0):
                 logger.warning(f"PDF {i}-{j} has negative values.")
+                plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, "Negative Values")
 
             # Check domain coverage
             if x[0] > np.min(x) or x[-1] < np.max(x):
                 logger.warning(f"PDF {i}-{j} does not cover the expected domain.")
+                plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, "Domain Coverage Issue")
 
             # Check CDF monotonicity (if CDFs are provided)
             if cdfs is not None:
-                cdf = cdfs[i, j, :]
                 if not np.all(np.diff(cdf) >= 0):
                     logger.warning(f"CDF {i}-{j} is not monotonic.")
+                    plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, "Non-Monotonic CDF")
 
             # Check if PDF drops to zero at domain boundaries (relative to max value)
             max_pdf = np.max(pdf)
             if not (np.isclose(pdf[0], 0, atol=1e-3 * max_pdf) and np.isclose(pdf[-1], 0, atol=1e-3 * max_pdf)):
                 logger.warning(f"PDF {i}-{j} does not drop to zero at domain boundaries (relative to max value).")
+                plot_problematic_pdf_and_cdf(x, pdf, cdf, i, j, "Boundary Issue")
 
     logger.info("All PDFs have been checked.")
 
