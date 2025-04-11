@@ -1,4 +1,5 @@
-from grf_classes import SphereMask, TheoryCl, RedshiftBin
+from grf_classes import SphereMask, RedshiftBin
+from theory_cl import TheoryCl, prepare_theory_cl_inputs, generate_theory_cl
 from cov_setup import Cov
 import calc_pdf, helper_funcs, setup_m
 import os, re
@@ -60,25 +61,17 @@ class XiLikelihood:
         self._ang_bins_in_deg = ang_bins_in_deg
         self._redshift_bins = redshift_bins
         self._n_redshift_bins = len(self._redshift_bins)
-        self._numerical_redshift_bin_combinations = calc_pdf.generate_combinations(
-            self._n_redshift_bins
-        )
+        (
+            self._numerical_redshift_bin_combinations,
+            self.redshift_bin_combinations,
+            self._is_cov_cross,
+            self._shot_noise,
+        ) = prepare_theory_cl_inputs(redshift_bins, noise)
+
         self._n_redshift_bin_combs = len(self._numerical_redshift_bin_combinations)
 
-        self._is_cov_cross = (
-            self._numerical_redshift_bin_combinations[:, 0]
-            != self._numerical_redshift_bin_combinations[:, 1]
-        )
-
-        self.n_cov_cross = np.sum(self._is_cov_cross)
-
-        self.redshift_bin_combinations = [
-            (self._redshift_bins[comb[0]], self._redshift_bins[comb[1]])
-            for comb in self._numerical_redshift_bin_combinations
-        ]
-        self._shot_noise = [
-            None if val else noise for val in self._is_cov_cross
-        ]  # shot noise for each redshift bin combination
+        
+        self.noise = noise
         if exact_lmax is None:
             self._exact_lmax = mask.exact_lmax
         else:
@@ -139,19 +132,8 @@ class XiLikelihood:
 
     def initiate_theory_cl(self, cosmo):
         # get the theory Cl for the given cosmology
-        # this is the part that needs to be changed for different likelihoods
-        # should return a list of theoryCl instances
-        # redshift bin combinations is a list of two tuples of reshift bins, each redshift bin is a tuple z,nz
-        """theory_cl = [
-            TheoryCl(cosmology, redshift_bin_combination)
-            for redshift_bin_combination in self.redshift_bin_combinations
-        ]"""
-        noises = self._shot_noise
-        theory_cl = [
-            TheoryCl(self.lmax, cosmo=cosmo, z_bins=bin_comb, sigma_e=noise)
-            for bin_comb, noise in zip(self.redshift_bin_combinations, noises)
-        ]
-        self._theory_cl = theory_cl
+        self._theory_cl = generate_theory_cl(self.lmax, self.redshift_bin_combinations, self._shot_noise, cosmo)
+    
         return self._theory_cl
 
     def _get_pseudo_alm_covariances(self):
