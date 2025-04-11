@@ -1,7 +1,8 @@
 import numpy as np
 import cov_funcs, helper_funcs
 import os.path
-from grf_classes import TheoryCl, SphereMask
+from grf_classes import SphereMask
+from theory_cl import TheoryCl
 from sys import getsizeof
 import gc
 import time
