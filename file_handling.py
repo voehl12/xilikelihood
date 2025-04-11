@@ -2,6 +2,7 @@ import os
 import numpy as np
 import helper_funcs
 import glob
+import re  # Import regular expressions
 
 
 class File:
@@ -143,12 +144,13 @@ def read_sims_nd(filepath, corr_num, angbin, njobs, lmax, kind="xip"):
     return np.array([allxi1, allxi2])
 
 
-def read_posterior_files(pattern):
+def read_posterior_files(pattern, regex=None):
     """
     Reads files matching a given pattern and appends their values to lists.
 
     Parameters:
     - pattern: A string pattern to match files (e.g., 's8posts/s8post_*.npz').
+    - regex: A regular expression to further filter matched files (optional).
 
     Returns:
     - A dictionary containing lists of values extracted from the files.
@@ -158,23 +160,29 @@ def read_posterior_files(pattern):
     # Use glob to find files matching the pattern
     files = glob.glob(pattern)
     
+    # If a regex is provided, filter files using it
+    if regex:
+        files = [f for f in files if re.search(regex, f)]
+    
     for file in files:
         try:
             posts = np.load(file)
             gauss_post, exact_post = posts['gauss'], posts['exact']
-            gauss_posteriors.append(gauss_post)
-            exact_posteriors.append(exact_post)
-            s8.append(posts['s8'])
-            #means.append(posts['means'])
-            #combs.append(posts['comb'])
+            gauss_posteriors.append(gauss_post.flatten())
+            exact_posteriors.append(exact_post.flatten())
+            s8.append(posts['s8'].flatten())
+            means.append(posts['means'])
+            combs.append(posts['comb'])
             available.append(True)
         except Exception as e:
             print(f"Error reading file {file}: {e}")
             available.append(False)
     
     return {
-        "gauss_posteriors": np.array(gauss_posteriors).flatten(),
-        "exact_posteriors": np.array(exact_posteriors).flatten(),
-        "s8": np.array(s8).flatten(),
+        "gauss_posteriors": np.array(gauss_posteriors),
+        "exact_posteriors": np.array(exact_posteriors),
+        "s8": np.array(s8),
+        "means": np.array(means),
+        "combs": np.array(combs),
         "available": available
     }
