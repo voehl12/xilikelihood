@@ -1,5 +1,5 @@
-from grf_classes import SphereMask, RedshiftBin
-from theory_cl import TheoryCl, prepare_theory_cl_inputs, generate_theory_cl
+from grf_classes import RedshiftBin
+from theory_cl import prepare_theory_cl_inputs, generate_theory_cl
 from cov_setup import Cov
 import calc_pdf, helper_funcs, setup_m
 import os, re
