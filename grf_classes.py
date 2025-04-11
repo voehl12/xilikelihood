@@ -40,146 +40,7 @@ class RedshiftBin:
         self.name = "bin{:d}".format(nbin)
 
 
-class TheoryCl:
-    """
-    A class to read, create, store and handle 2D theory power spectra
-    """
 
-    def __init__(
-        self,
-        lmax,
-        clpath=None,
-        sigma_e=None,
-        theory_lmin=2,
-        clname="test_cl",
-        smooth_signal=None,
-        cosmo=None,
-        z_bins=None,
-        working_dir=None,
-    ):
-        self.lmax = lmax
-        print("lmax has been set to {:d}.".format(self.lmax))
-        self.smooth_signal = smooth_signal
-        self.ell = np.arange(self.lmax + 1)
-        self.len_l = len(self.ell)
-        self.theory_lmin = theory_lmin
-        self.name = clname
-        self.clpath = clpath  # if clpath is set, s8 will be ignored.
-        if working_dir is None:
-            working_dir = os.getcwd()
-        self.working_dir = working_dir
-        self.cosmo = cosmo
-        self.z_bins = z_bins
-        self.nn = None
-        self.ee = None
-        self.ne = None
-        self.bb = None
-        self.eb = None
-        self._sigma_e = sigma_e
-        self.set_noise_sigma()
-
-        if self.clpath is not None:
-            self.read_clfile()
-            self.load_cl()
-            print("Loaded C_l with lmax = {:d}".format(self.lmax))
-
-        elif self.cosmo is not None:
-            import theory_cl
-
-            if self.z_bins is None:
-                print("Warning: no redshift bins provided, using default bins.")
-                bin1 = RedshiftBin(
-                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=1
-                )
-                bin2 = RedshiftBin(
-                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=2
-                )
-                self.z_bins = (bin1, bin2)
-
-            cl = theory_cl.get_cl(self.cosmo, self.z_bins)
-
-            cl = np.array(cl)
-            spectra = np.concatenate(
-                (
-                    np.zeros((3, self.theory_lmin)),
-                    cl[:, : self.lmax - self.theory_lmin + 1],
-                ),
-                axis=1,
-            )
-
-            self.ee = spectra[0]
-            self.ne = spectra[1]
-            self.nn = spectra[2]
-            self.bb = np.zeros_like(self.ee)
-            self.eb = np.zeros_like(self.ee)
-            self.name = None
-            self.clpath = 'fromscratch'
-
-        else:
-            print("Warning: no theory Cl provided, calculating with Cl=0")
-            self.set_cl_zero()
-
-        if self.smooth_signal is not None:
-            smooth_ell = self.smooth_signal
-            self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
-            self.ee *= self.smooth_array
-            self.nn *= self.smooth_array
-            self.ne *= self.smooth_array
-            self.bb *= self.smooth_array
-            self.name += "_smooth{:d}".format(smooth_ell)
-            print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
-
-    @property
-    def sigma_e(self):
-        return self._sigma_e
-
-    def set_noise_sigma(self):
-
-        if self._sigma_e is not None:
-            if isinstance(self._sigma_e, str):
-                self._noise_sigma = helper_funcs.get_noise_cl()
-                self.sigmaname = "noise" + self._sigma_e
-
-            elif isinstance(self._sigma_e, tuple):
-                self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
-                self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
-
-            else:
-                raise RuntimeError(
-                    "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
-                )
-            self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
-            if self.smooth_signal is not None:
-                self.noise_cl *= self.smooth_array
-        else:
-            self.sigmaname = "nonoise"
-            try:
-                del self._noise_sigma
-
-            except:
-                pass
-
-    def read_clfile(self):
-        self.raw_spectra = np.loadtxt(self.clpath)
-
-    def load_cl(self):
-        # cl files should also eventually become npz files with ee, ne, nn saved seperately, ell
-        spectra = np.concatenate(
-            (
-                np.zeros((3, self.theory_lmin)),
-                self.raw_spectra[:, : self.lmax - self.theory_lmin + 1],
-            ),
-            axis=1,
-        )
-        self.ee = spectra[0]
-        self.ne = spectra[1]
-        self.nn = spectra[2]
-        self.bb = np.zeros_like(self.ee)
-        self.eb = np.zeros_like(self.ee)
-
-    def set_cl_zero(self):
-        self.name = "none"
-        self.ee = self.ne = self.nn = np.zeros(self.len_l)
 
 
 class SphereMask:
@@ -340,7 +201,7 @@ class SphereMask:
     def exact_lmax(self):
         return self._exact_lmax
 
-    @property
+    """     @property
     def smooth_alm(self):
         self._smooth_alm = wpm_funcs.smooth_alm(self.l_smooth, self._exact_lmax)
         return self._smooth_alm
@@ -349,7 +210,7 @@ class SphereMask:
     def smooth_alm_lmax(self):
         self._smooth_alm_lmax = wpm_funcs.smooth_alm(self.l_smooth, self.lmax)
         return self._smooth_alm_lmax
-
+    """
     @property
     def wlm(self):
         """Calculates spherical harmonic coefficients of the mask
@@ -394,7 +255,7 @@ class SphereMask:
             self.mask,
             sigma=np.abs(sigma),
             iter=50,
-            use_pixel_weights=False,
+            use_pixel_weights=True,
             datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
         )
         self.smooth_mask = smooth_mask
