@@ -1,5 +1,4 @@
 import numpy as np
-import plotting
 import calc_pdf
 import configparser
 import file_handling
@@ -184,22 +183,49 @@ def load_and_bootstrap_sims_nd(config, simpath, lmax,axes=None, vmax=None,n_boot
     return bincenters, mean, errors, mu_estimate, cov_estimate
 
 
-def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax):
+def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False):
 
     bincenters_x, bincenters_y = bincenters
-    X, Y = np.meshgrid(bincenters_x, bincenters_y, indexing="ij")
+    X, Y = np.meshgrid(bincenters_x, bincenters_y)
+    exact_grid = interp((Y,X))
+    
+    if log:
+        diff_hist = sim_mean - exact_grid
+        rel_res = diff_hist
+    else:
+        diff_hist = (sim_mean - exact_grid)
+        rel_res = diff_hist / sim_std
+    print("Mean deviation from simulations: {} std".format(np.mean(np.fabs(rel_res))))
 
-    exact_grid = interp((X, Y))
-    diff_hist = np.fabs(sim_mean - exact_grid)
-    exact = axes[1].contourf(X, Y, exact_grid, levels=100, vmax=vmax)
-    rel_res = diff_hist / sim_std
-    print("Mean deviation from simulations: {} std".format(np.mean(rel_res)))
-    rel_res_plot = axes[2].contourf(X, Y, rel_res, levels=100, vmax=10)
+    # Display values per pixel using a heatmap
+    im = axes.pcolormesh(bincenters_x, bincenters_y,
+        rel_res, 
+        shading="auto", 
+        #extent=(bincenters_x[0], bincenters_x[-1], bincenters_y[0], bincenters_y[-1]),
+        cmap="coolwarm", 
+        vmin=-vmax, 
+        vmax=vmax
+    )
+    #im2 = axes.contour(bincenters_x, bincenters_y,exact_grid,cmap='gray',levels=5)
 
-    """ for ax in axes:
-        ax.set_xlim(0.3e-6, 3e-6)
-        ax.set_ylim(0, 1.8e-6) """
-    return axes, rel_res_plot
+    return im
+
+    # Add a discrete colorbar with steps of 5
+    #cbar = plt.colorbar(im, ax=axes, ticks=np.arange(-vmax, vmax + 5, 5))
+    #cbar.set_label("Relative Residuals (std)")
+
+    """ # Annotate pixel values on the heatmap
+    for i in range(len(bincenters_x) - 1):
+        for j in range(len(bincenters_y) - 1):
+            axes.text(
+                bincenters_x[i] + (bincenters_x[1] - bincenters_x[0]) / 2,
+                bincenters_y[j] + (bincenters_y[1] - bincenters_y[0]) / 2,
+                f"{rel_res[i, j]:.2f}",
+                color="black",
+                ha="center",
+                va="center",
+                fontsize=6
+            ) """
 
 
 def get_marginal_likelihoods(x_grid, pdf_grid):
@@ -217,12 +243,43 @@ def normalize_pdfs():
     pass
 
 def exp_norm_mean(x,posterior,reg=350):
-    posterior = np.array(posterior) - reg
+    
+    posterior = np.array(posterior)
+    posterior = posterior - reg
     posterior = np.exp(posterior)
-    integral = np.trapz(posterior[~np.isnan(posterior)], x=x[~np.isnan(posterior)])
-    normalized_post = posterior / integral
-    mean = np.trapz(x[~np.isnan(posterior)] * normalized_post[~np.isnan(posterior)], x=x[~np.isnan(posterior)])
-    return normalized_post, mean
+    diffs = np.diff(posterior)
+    nonan_diffs = diffs[~np.isnan(diffs)]
+    extended_diffs = np.append(diffs, 0)
+    
+    median_diffs = np.median(np.fabs(nonan_diffs))
+    threshold = 500 * median_diffs
+    
+    
+    cond = ~np.isnan(posterior) & (np.fabs(extended_diffs) < threshold)
+    if np.sum(cond) == 0:
+        raise ValueError("No values in posterior satisfy the condition for normalization.")
+    integral = np.trapz(posterior[cond], x=x[cond])
+    if not np.isfinite(integral) or integral <= 0:
+        
+        debugfig, ax = plt.subplots()
+        ax.plot(x, posterior)
+        ax.set_yscale("log")
+        ax.set_title("Posterior not finite or integral <= 0")
+        debugfig.savefig("posterior_not_finite.png")
+        plt.close(debugfig)
+        raise ValueError("Integral of posterior is not finite or less than or equal to zero.")
+    # check convergence
+    conditioned_posterior = posterior[cond]
+    conditioned_x = x[cond]
+    endvalues = conditioned_posterior[0]/np.max(conditioned_posterior), conditioned_posterior[-1]/np.max(conditioned_posterior)
+    #print(endvalues)
+    if endvalues[0] > 0.1 or endvalues[1] > 0.1:
+        print("Warning: Posterior does not converge to zero at the edges.")
+        print("End values:", endvalues)
+    normalized_post = conditioned_posterior / integral
+    mean = np.trapz(conditioned_x * normalized_post, x=conditioned_x)
+    std = np.sqrt(np.trapz((conditioned_x-mean)**2 * normalized_post, x=conditioned_x))
+    return conditioned_x, normalized_post, mean, std
 
 def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
     """Produce n bootstrap samples of data of the statistic given by func.
@@ -269,3 +326,13 @@ def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
             samples[i] = func(data[idx_array], axis=axis, **func_kwargs)
     print()
     return samples
+
+
+def bootstrap_statistic_2d(data, binedges=None,axis=0):
+        x,y = data
+        f = np.histogram2d(
+            x,y,
+            bins=binedges,
+            density=True,
+        )
+        return f[0].T
