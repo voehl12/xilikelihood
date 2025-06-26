@@ -2,7 +2,7 @@
 import numpy as np
 import scipy
 from likelihood import XiLikelihood, fiducial_dataspace
-from grf_classes import SphereMask
+from mask_props import SphereMask
 from theory_cl import RedshiftBin
 import os
 import matplotlib.pyplot as plt

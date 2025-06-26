@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from likelihood import XiLikelihood
-from grf_classes import SphereMask
+from mask_props import SphereMask
 from theory_cl import TheoryCl, RedshiftBin
 
 @pytest.fixture

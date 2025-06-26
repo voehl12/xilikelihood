@@ -21,10 +21,10 @@ def test_palm_matching():
 def test_cl_class():
     from scipy.special import j0
     import scipy.integrate as integrate
-    import grf_classes
+    import mask_props
     import matplotlib.pyplot as plt
 
-    new_cl = grf_classes.TheoryCl(30, path="Cl_3x2pt_kids55.txt")
+    new_cl = theory_cl.TheoryCl(30, path="Cl_3x2pt_kids55.txt")
 
     assert np.allclose(new_cl.ee, np.zeros(31)), "Something wrong with zero Cl assignment"
 
@@ -87,11 +87,11 @@ def noise_test():
 def noise_corrs():
     
     import simulate
-    import grf_classes
+    import mask_props
     import matplotlib.pyplot as plt
 
     nside = 256
-    kids55_cl = grf_classes.TheoryCl(3 * nside - 1, path="Cl_3x2pt_kids55.txt")
+    kids55_cl = theory_cl.TheoryCl(3 * nside - 1, path="Cl_3x2pt_kids55.txt")
 
     bins = [(n / 10, (n + 1) / 10) for n in range(1, 100)]
     maskareas = [1000, 4000, 10000, "fullsky"]
@@ -100,7 +100,7 @@ def noise_corrs():
     i = 0
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
     for m in maskareas:
-        circ_mask = grf_classes.SphereMask([2], circmaskattr=(m, nside))
+        circ_mask = mask_props.SphereMask([2], circmaskattr=(m, nside))
         color = "C{:d}".format(i)
         i += 1
         for ls, lm in enumerate(scalecuts):
@@ -173,7 +173,7 @@ def noise_corrs():
 
 
 def noise_correlation_analytical():
-    from grf_classes import SphereMask
+    from mask_props import SphereMask
     from theory_cl import TheoryCl
     from cov_setup import Cov
     from helper_funcs import prep_prefactors, pcl2xi
@@ -195,13 +195,13 @@ def noise_correlation_analytical():
 
 
 def test_xip_pdf():
-    import calc_pdf, grf_classes
+    import calc_pdf, mask_props, theory_cl
     import matplotlib.pyplot as plt
 
     angbin = (1, 2)
     lmax = 30
-    mask = grf_classes.SphereMask([2], circmaskattr=(1000, 256), lmax=lmax)
-    kids55_cl = grf_classes.TheoryCl(lmax, path="Cl_3x2pt_kids55.txt")
+    mask = mask_props.SphereMask([2], circmaskattr=(1000, 256), lmax=lmax)
+    kids55_cl = theory_cl.TheoryCl(lmax, path="Cl_3x2pt_kids55.txt")
     x, pdf, norm, mean = calc_pdf.pdf_xi_1D(
         angbin,
         c_ell_object=kids55_cl,
@@ -237,14 +237,14 @@ def test_xip_pdf():
 
 
 def test_gaussian_cov(theta, binmin_in_arcmin, binmax_in_arcmin, noise_apo=False):
-    import grf_classes, setup_cov
+    import mask_props, setup_cov
 
     import matplotlib.pyplot as plt
 
     nside = 256
     lmax = 30
     lmin = 0
-    kids55_cl = grf_classes.TheoryCl(lmax, path="Cl_3x2pt_kids55.txt")
+    kids55_cl = theory_cl.TheoryCl(lmax, path="Cl_3x2pt_kids55.txt")
 
     maskarea = 1000
     fsky = maskarea / 41253
@@ -410,7 +410,7 @@ def gauss_exact_comp():
 
 
 def cov_object_test(cov_object, angbin, ax, lims=(0, 2e-5)):
-    import calc_pdf, grf_classes
+    import calc_pdf
 
     import scipy.stats as stats
 
@@ -482,7 +482,7 @@ def plot_exactvsgaussian():
 
 def plot_skewness():
     from cov_setup import Cov
-    import calc_pdf, grf_classes
+    import calc_pdf
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
     import plotting
@@ -702,7 +702,7 @@ def sim_ana_comp():
     from cov_setup import Cov
     import calc_pdf
     import helper_funcs
-    from plotting import read_pcl_sims
+    from file_handling import read_pcl_sims
     import healpy as hp
     mask_smooth_l = 30
     lmin = 0
@@ -766,7 +766,7 @@ def sim_ana_comp():
 
 def lowell_comp():
     from cov_setup import Cov
-    import calc_pdf, grf_classes
+    import calc_pdf, mask_props
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
     import plotting
@@ -855,7 +855,7 @@ def lowell_comp():
 def norm_testing():
     from scipy.special import eval_legendre
     from scipy.integrate import quad_vec, quad
-    from grf_classes import SphereMask
+    from mask_props import SphereMask
     norm_lmax = 767
     lower,upper = np.radians(4),np.radians(6)
     norm_l = np.arange(norm_lmax + 1)
@@ -875,7 +875,7 @@ def norm_testing():
 
 def plot_full_likelihood():
     from cov_setup import Cov
-    import calc_pdf, grf_classes
+    import calc_pdf
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
     import plotting

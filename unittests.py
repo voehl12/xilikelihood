@@ -11,27 +11,27 @@ def test_palm_matching():
 
 
 def test_cl_class():
-    import grf_classes
+    import theory_cl
 
-    new_cl = grf_classes.TheoryCl(30)
+    new_cl = theory_cl.TheoryCl(30)
     assert np.allclose(new_cl.ee, np.zeros(31))
 
 
 def test_wllpmmp(snapshot, tmp_path):
-    import grf_classes
+    import mask_props
 
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
+    mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
     path = tmp_path / "wpm.npz"
     w_arr = mask.w_arr(path=path)
     snapshot.check(w_arr, atol=1e-16)
 
 
 def test_cov_xi(snapshot):
-    import grf_classes, cov_setup
+    import mask_props, cov_setup, theory_cl
 
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
-    full_mask = grf_classes.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
-    theorycl = grf_classes.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
+    full_mask = mask_props.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
+    theorycl = theory_cl.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
     # covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
     # cov_xip = covs["cov"]
     circ_cov = cov_setup.Cov(mask, theorycl, 10)
@@ -52,11 +52,11 @@ def test_cov_xi(snapshot):
 
 def test_cov_diag():
     # check that the diagonal matches the pseudo-cl to 10%:
-    import cov_setup, grf_classes
+    import cov_setup, mask_props, theory_cl
 
     exact_lmax = 10
-    mask = grf_classes.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
-    theorycl = grf_classes.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
+    theorycl = theory_cl.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
     cov = cov_setup.Cov(mask, theorycl, exact_lmax)
     cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
