@@ -7,8 +7,6 @@ import os
 from sys import getsizeof
 import file_handling
 import time
-import scipy.stats
-import helper_funcs
 
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
