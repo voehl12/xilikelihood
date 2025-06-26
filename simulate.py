@@ -460,6 +460,7 @@ def xi_sim_nD(
                 pcl_e=np.array(pcls[:, :, 0]),
                 pcl_b=np.array(pcls[:, :, 1]),
                 pcl_eb=np.array(pcls[:, :, 2]),
+                prefactors = prefactors,
             )
         return xis
 
