@@ -67,14 +67,15 @@ def wigners_on_array(l1, l2, m1, m2, lmax):
         return wigners
 
 
-def purified_wigner(l_arr, lp, lpp, purified=True):
+def wigners(l_arr, lp, lpp, purified=False):
     lmax = l_arr[-1]
 
     wigners2 = np.zeros(len(l_arr))
 
     wigners0 = wigners_on_array(lp, lpp, -2, 0, lmax)
+    wigners00 = wigners_on_array(lp, lpp, 0, 0, lmax)
     if purified == False:
-        return wigners0
+        return wigners0, wigners00
     else:
         if lpp >= 1:
             prefac1 = 2 * np.sqrt(
@@ -94,29 +95,49 @@ def purified_wigner(l_arr, lp, lpp, purified=True):
             wigners2 *= prefac2
 
         return wigners0 + wigners1 + wigners2
+    
+def wigners_2(l_arr, lp, lpp):
+    lmax = l_arr[-1]
+    wigners0 = wigners_on_array(lp, lpp, -2, 0, lmax)
+    return wigners0
+
+def wigners_0(l_arr, lp, lpp):
+    lmax = l_arr[-1]
+    wigners00 = wigners_on_array(lp, lpp, 0, 0, lmax)
+    return wigners00
 
 
-def m_llp(wl, lmax):
+
+def m_llp(wl, lmax, spin0=False):
     # take wl of any length, return mllp arrays to max given lmax
     wl_full = np.zeros(lmax + 1)
     wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax+1]
 
     m_3d_pp = np.zeros((lmax+1, lmax+1, lmax + 1))
     m_3d_mm = np.zeros_like(m_3d_pp)
+    m_3d_zero = np.zeros_like(m_3d_pp)
     l = lp = np.arange(lmax + 1)
     lpp = np.arange(lmax + 1)
 
     for cp, i in enumerate(lp):
         for cpp, j in enumerate(lpp):
             if i < 2:
+                # skip the first two rows for spin 2
                 continue
             else:
-                wigners_l = purified_wigner(l, i, j, purified=False)
-                m_3d = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] * np.square(wigners_l) / (4 * np.pi)
+                prefac = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] / (4 * np.pi)
+                wigners_l = wigners_2(l, i, j)
+                m_3d = prefac * np.square(wigners_l)
                 m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
                 m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
-
-    return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1)
+                if spin0:
+                    wigners0_l = wigners_0(l, i, j)
+                    m_3d_zero[:, cp, cpp] = prefac * np.square(wigners0_l)
+                
+    if not spin0:
+        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1) 
+    else:
+        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1), np.sum(m_3d_zero, axis=-1) 
 
 
 def smooth_gauss(l, l_smooth):
