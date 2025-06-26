@@ -54,23 +54,27 @@ def pdf_xi_1D(
         _description_
     """
     exact_lmax = cov_objects[0].exact_lmax
-    maskname = cov_objects[0].maskname
+    maskname = cov_objects[0].mask.name
     x_arr = np.zeros((len(ang_bins_in_deg), steps - 1))
     pdf_arr = np.zeros((len(ang_bins_in_deg), steps - 1))
     stat_arr = np.zeros(((len(ang_bins_in_deg), 3)))
     t_s, cf_res, cf_ims, ximax_s, cf_angs = [], [], [], [], []
+    if cov_objects[0].theorycl.sigma_e is None:
+        noise = 'nonoise'
+    else:
+        noise = ''
     if not high_ell_extension:
         ext = "_noext"
     else:
         ext = ""
-    pdfname = "pdfs/pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}{}.npz".format(
-        kind, *comb, exact_lmax, maskname, cov_objects[0].clname, ext
+    pdfname = "pdfs/pdfs_xi{}_{:d}_{:d}_l{:d}_{}_{}{}{}.npz".format(
+        kind, *comb, exact_lmax, maskname, cov_objects[0].theorycl.name, noise,ext
     )
     print("Setting pdf name: {}".format(pdfname))
     # there might be a bug as to how pdfs are added to the pdf file when there was a file with extension before
     pdffile = False
     cfname = "cf_xi{}_{:d}_{:d}_l{:d}_{}_{}.npz".format(
-        kind, *comb, exact_lmax, maskname, cov_objects[0].clname
+        kind, *comb, exact_lmax, maskname, cov_objects[0].theorycl.name
     )
     cffile = False
 
@@ -117,18 +121,18 @@ def pdf_xi_1D(
                     cov = cov_xi_nD(cov_objects)
                     cov_flag = True
                     prefactors_all = helper_funcs.prep_prefactors(
-                        ang_bins_in_deg, cov_objects[0].wl, cov_objects[0].lmax, cov_objects[0].lmax
+                        ang_bins_in_deg, cov_objects[0].mask.wl, cov_objects[0].mask.lmax, cov_objects[0].mask.lmax
                     )
                     for cov_object in cov_objects:
                         cov_object.cl2pseudocl()
 
                     cov_index = get_cov_pos(comb)
                     cov_ref = get_cov_triang(cov_objects)[cov_index[0]][cov_index[1]]
-                    mean, cov_estimate = cov_xi_gaussian_nD(
-                        [cov_ref], [(0, 0)], [bin_in_deg], lmax=cov_ref.exact_lmax
+                    cov_estimate = cov_xi_gaussian_nD(
+                        [cov_ref.theorycl], [(0, 0)], [bin_in_deg],cov_ref.mask.eff_area, lmax=cov_ref.mask.lmax
                     )
                     xip_estimate, _ = helper_funcs.pcl2xi(
-                        (cov_ref.p_ee, cov_ref.p_bb, cov_ref.p_eb), prefactors_all, cov_ref.lmax
+                        (cov_ref.p_ee, cov_ref.p_bb, cov_ref.p_eb), prefactors_all, cov_ref.mask.lmax
                     )
 
                 if type(bin_in_deg) is tuple:
@@ -300,6 +304,10 @@ def get_cov_triang(cov_objects):
 
 
 def generate_combinations(n):
+    raise DeprecationWarning(
+        "generate_combinations is deprecated, use comb_mapper in theory_cl. "
+        "This will be removed in a future version."
+    )
     combinations = []
     for i in range(n):
         for j in range(i, -1, -1):
@@ -316,6 +324,10 @@ def get_cov_pos(comb):
 
 
 def get_cov_n(comb):
+    raise DeprecationWarning(
+        "get_cov_n is deprecated, use comb_mapper in theory_cl. "
+        "This will be removed in a future version."
+    )
     row, column = get_cov_pos(comb)
     if row == 0:
         return 0
@@ -326,6 +338,10 @@ def get_cov_n(comb):
 
 
 def get_combs(cov_n):
+    raise DeprecationWarning(
+        "get_combs is deprecated, use comb_mapper in theory_cl. "
+        "This will be removed in a future version."
+    )
     row = -1
     sum_rows = 0
     while sum_rows < cov_n:
@@ -452,7 +468,7 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
 def mean_xi_gaussian_nD(prefactors, pseudo_cl, lmin=0, lmax=None, kind="p"):
     pseudo_cl = jnp.array(pseudo_cl)
 
-    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis_jit(
+    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis(
         pseudo_cl,
         prefactors,
         lmax,
@@ -521,8 +537,11 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
         characteristic function of the Gaussian extension on the same t grid as the low ell part
     """
 
-    mean, cov = cov_xi_gaussian_nD([cov_object], [(0, 0)], [angbin], lmin=cov_object.exact_lmax + 1)
-
+    cov = cov_xi_gaussian_nD([cov_object.theorycl], [(0, 0)], [angbin], cov_object.mask.eff_area,lmin=cov_object.exact_lmax + 1)
+    prefactors = helper_funcs.prep_prefactors(
+            [angbin], cov_object.mask.wl, cov_object.mask.lmax, cov_object.mask.lmax
+        )
+    mean = mean_xi_gaussian_nD(prefactors,(cov_object.p_ee, cov_object.p_bb, cov_object.p_eb), lmin=cov_object.exact_lmax + 1,lmax=cov_object.exact_lmax, kind="p")
     mean = mean[0]
     cov = cov[0, 0]
 
