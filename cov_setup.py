@@ -60,7 +60,10 @@ class Cov:
         self.mask = mask
         self.theorycl = theorycl
         self._exact_lmax = exact_lmax
-        helper_funcs.check_property_equal([self, self.mask], "_exact_lmax")
+        if not helper_funcs.check_property_equal([self, self.mask], "_exact_lmax"):
+            raise RuntimeError(
+                "Cov: exact_lmax of mask and cov class not equal. Please check."
+            )
 
         self._lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
 
@@ -141,9 +144,7 @@ class Cov:
         """
 
         buffer = self._cov_ell_buffer
-
         theory_cell = self.cell_cube(self._exact_lmax + buffer)
-
         if not ischain and self.check_cov():
             self.load_cov()
             return self.cov_alm
@@ -254,6 +255,7 @@ class Cov:
         """
         tic = time.perf_counter()
         buffer = self._cov_ell_buffer
+
         if self.mask._precomputed:
             w_arr = self.mask._w_arr
         else:
@@ -395,7 +397,7 @@ class Cov:
                 self.p_eb = pclfile["pcl_eb"]
                 return
 
-        m_llp_p, m_llp_m = self.mask.m_llp
+        
         if hasattr(self.theorycl, "_noise_sigma"):
             cl_e = self.theorycl.ee.copy() + self.theorycl.noise_cl
             cl_b = self.theorycl.bb.copy() + self.theorycl.noise_cl
@@ -404,10 +406,19 @@ class Cov:
             cl_e = self.theorycl.ee.copy()
             cl_b = self.theorycl.bb.copy()
         cl_eb = cl_be = cl_b
+        if self.mask.spin0 == True:
+            m_llp_p, m_llp_m, m_llp_z = self.mask.m_llp
+            self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
+            self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+            self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
+            self.p_tt = np.einsum("lm,m->l", m_llp_z, cl_e)
+        else:
+            m_llp_p, m_llp_m = self.mask.m_llp
+            self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
+            self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
+            self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
 
-        self.p_ee = np.einsum("lm,m->l", m_llp_p, cl_e) + np.einsum("lm,m->l", m_llp_m, cl_b)
-        self.p_bb = np.einsum("lm,m->l", m_llp_m, cl_e) + np.einsum("lm,m->l", m_llp_p, cl_b)
-        self.p_eb = np.einsum("lm,m->l", m_llp_p, cl_eb) - np.einsum("lm,m->l", m_llp_m, cl_be)
+
         if not ischain:
             print("pseudo_cl: saving pseudo_cl...")
             np.savez(pclpath, pcl_ee=self.p_ee, pcl_bb=self.p_bb, pcl_eb=self.p_eb)
