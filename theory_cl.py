@@ -3,8 +3,25 @@ import pyccl as ccl
 import os
 import helper_funcs
 import wpm_funcs
-from grf_classes import RedshiftBin
-import calc_pdf
+
+
+class RedshiftBin:
+    """
+    A class to store and handle redshift bins
+    """
+
+    def __init__(self, nbin, z=None, nz=None, zmean=None, zsig=None, filepath=None):
+        self.nbin = nbin
+        self.z = z
+        self.nz = nz
+        if filepath is not None:
+            zbin = np.loadtxt(filepath)
+            self.z, self.nz = zbin[:, 0], zbin[:, 1]
+        if zmean is not None and zsig is not None:
+            self.zmean = zmean
+            self.zsig = zsig
+            self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
+        self.name = "bin{:d}".format(nbin)
 
 class TheoryCl:
     """
@@ -42,7 +59,7 @@ class TheoryCl:
         self.bb = None
         self.eb = None
         self._sigma_e = sigma_e
-        self.set_noise_sigma()
+        
 
         if self.clpath is not None:
             self.read_clfile()
@@ -95,6 +112,8 @@ class TheoryCl:
             self.name += "_smooth{:d}".format(smooth_ell)
             print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
 
+        self.set_noise_sigma()
+
     @property
     def sigma_e(self):
         return self._sigma_e
@@ -127,6 +146,7 @@ class TheoryCl:
 
     def read_clfile(self):
         self.raw_spectra = np.loadtxt(self.clpath)
+        
 
     def load_cl(self):
         # cl files should also eventually become npz files with ee, ne, nn saved seperately, ell
@@ -146,6 +166,8 @@ class TheoryCl:
     def set_cl_zero(self):
         self.name = "none"
         self.ee = self.ne = self.nn = np.zeros(self.len_l)
+        self.bb = np.zeros_like(self.ee)
+        self.eb = np.zeros_like(self.ee)
 
 
 
@@ -229,6 +251,40 @@ def get_cl(params_dict, z_bins):
     cl = calc_cl(cosmo, ell, z_bins)
     return cl
 
+class BinCombinationMapper:
+    def __init__(self, max_n):
+        """
+        Initialize the mapper with a maximum value for combinations.
+        """
+        self.index_to_comb = {}
+        self.comb_to_index = {}
+        self.combinations = []
+        index = 0
+        for i in range(max_n):
+            for j in range(i, -1, -1):
+                self.index_to_comb[index] = (i, j)
+                self.comb_to_index[(i, j)] = index
+                self.combinations.append([i, j])
+                index += 1
+        self.combinations = np.array(self.combinations)
+
+    def get_combination(self, index):
+        """
+        Retrieve the combination corresponding to the given index.
+        """
+        return self.index_to_comb.get(index, None)
+
+    def get_index(self, combination):
+        """
+        Retrieve the index corresponding to the given combination.
+        """
+        return self.comb_to_index.get(combination, None)
+    
+   
+
+
+
+
 
 def prepare_theory_cl_inputs(redshift_bins, noise):
     """
@@ -245,8 +301,8 @@ def prepare_theory_cl_inputs(redshift_bins, noise):
     - shot_noise: List of noise values for each redshift bin combination.
     """
     n_redshift_bins = len(redshift_bins)
-    numerical_combinations = calc_pdf.generate_combinations(n_redshift_bins)
-
+    mapper = BinCombinationMapper(n_redshift_bins)
+    numerical_combinations = mapper.combinations
     # Create redshift bin combinations
     redshift_bin_combinations = [
         (redshift_bins[comb[0]], redshift_bins[comb[1]])
@@ -259,7 +315,7 @@ def prepare_theory_cl_inputs(redshift_bins, noise):
     # Assign noise values
     shot_noise = [None if val else noise for val in is_cov_cross]
 
-    return numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise
+    return numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper
 
 def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo):
     """
