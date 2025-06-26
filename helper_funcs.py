@@ -191,22 +191,24 @@ def pcl2xi(pcl, prefactors, out_lmax=None, lmin=0):
 
 def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     """
-    _summary_
+    Generate xi+ and xi- from pseudo-Cl data.
 
     Parameters
     ----------
     pcls : numpy array
-        (3,batchsize,lmax+1)
+        (3, batchsize, lmax+1) ; batchsize can also be number of correlations
+        if array is 4-dim (3, batchsize, n_corr, lmax+1) it is assumed that the batchsize is the first dimension
+        and the second dimension is the number of correlations.
     prefactors : np.array
-        array with bin or angle prefactors from prep_prefactors (i.e. an (len(angles),2,out_lmax) array)
+        Array with bin or angle prefactors from prep_prefactors (i.e., an (len(angles), 2, out_lmax) array).
     out_lmax : int
-        lmax to which sum over pcl is taken
+        lmax to which sum over pcl is taken.
     lmin : int, optional
-        _description_, by default 0
+        Minimum l value, by default 0.
 
     Returns
     -------
-    xips,xims: (batchsize,n_angbins) arrays
+    xips, xims: (batchsize, n_angbins) arrays
     """
     pcls_e, pcls_b, pcls_eb = pcls[0], pcls[1], pcls[2]
     if out_lmax is None:
@@ -214,23 +216,44 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     l = 2 * jnp.arange(lmin, out_lmax + 1) + 1
     p_cl_prefactors_p, p_cl_prefactors_m = jnp.array(prefactors[:, 0]), jnp.array(prefactors[:, 1])
 
+    if pcls_e.ndim == 2:
+        xips = jnp.sum(
+            p_cl_prefactors_p[None, :, lmin : out_lmax + 1]
+            * l
+            * (pcls_e[:, None, lmin : out_lmax + 1] + pcls_b[:, None, lmin : out_lmax + 1]),
+            axis=-1,
+        )
+        xims = jnp.sum(
+            p_cl_prefactors_m[None, :, lmin : out_lmax + 1]
+            * l
+            * (
+                pcls_e[:, None, lmin : out_lmax + 1]
+                - pcls_b[:, None, lmin : out_lmax + 1]
+                - 2j * pcls_eb[:, None, lmin : out_lmax + 1]
+            ),
+            axis=-1,
+        )
+    elif pcls_e.ndim == 3:
+        xips = jnp.sum(
+            p_cl_prefactors_p[None,None, :, lmin : out_lmax + 1]
+            * l
+            * (pcls_e[:, :, None, lmin : out_lmax + 1] + pcls_b[:, :, None, lmin : out_lmax + 1]),
+            axis=-1,
+        )
+        xims = jnp.sum(
+            p_cl_prefactors_m[None, None,:, lmin : out_lmax + 1]
+            * l
+            * (
+                pcls_e[:, :, None, lmin : out_lmax + 1]
+                - pcls_b[:, :, None, lmin : out_lmax + 1]
+                - 2j * pcls_eb[:, :, None, lmin : out_lmax + 1]
+            ),
+            axis=-1,
+        )
+    else:
+        print("pcls2xis: pcls has to be 2 or 3 dimensional, returning 1d pcl2xi")
+        return pcl2xi(pcls, prefactors, out_lmax, lmin)
     
-    xips = jnp.sum(
-        p_cl_prefactors_p[None, :, lmin : out_lmax + 1]
-        * l
-        * (pcls_e[:, None, lmin : out_lmax + 1] + pcls_b[:, None, lmin : out_lmax + 1]),
-        axis=-1,
-    )
-    xims = jnp.sum(
-        p_cl_prefactors_m[None, :, lmin : out_lmax + 1]
-        * l
-        * (
-            pcls_e[:, None, lmin : out_lmax + 1]
-            - pcls_b[:, None, lmin : out_lmax + 1]
-            - 2j * pcls_eb[:, None, lmin : out_lmax + 1]
-        ),
-        axis=-1,
-    )
 
     return xips, xims
 
