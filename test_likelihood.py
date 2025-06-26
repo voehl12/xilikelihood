@@ -1,9 +1,8 @@
 import pytest
 import numpy as np
 from likelihood import XiLikelihood
-from grf_classes import SphereMask,RedshiftBin
-from theory_cl import TheoryCl
-from cov_setup import Cov
+from grf_classes import SphereMask
+from theory_cl import TheoryCl, RedshiftBin
 
 @pytest.fixture
 def likelihood_instance():
