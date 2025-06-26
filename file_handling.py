@@ -115,34 +115,96 @@ def read_2D_cf(config):
     np.savez("missing_jobs.npz", numbers=np.array(fail_list))
     return t0_2, dt_2, t_sets, ind_sets, cf_grid
 
+def xi_sims_from_pcl(i,prefactors,filepath,lmax=None):
+    
+    pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
+    assert lmax <= int(pclfile["lmax"]), f"requested lmax too high for simulated pcljob {i}. Need new simulations."
+    pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
+    xips,xims = helper_funcs.pcls2xis(pcl_s,prefactors,out_lmax=lmax)
+    
 
-def read_sims_nd(filepath, corr_num, angbin, njobs, lmax, kind="xip"):
-    # should make this truly nd
-    allxi1, allxi2 = [], []
+    return xips,xims
+
+def read_sims_nd(filepath, njobs, lmax, kind="xip", prefactors=None, theta=None):
+    # Make this truly nd
+    all_xi = []
     missing = []
+    angles = None  # To store angles from the first file
+
     for i in range(1, njobs + 1):
         if os.path.isfile(filepath + "/job{:d}.npz".format(i)):
             xifile = np.load(filepath + "/job{:d}.npz".format(i))
-            assert lmax == int(xifile["lmax"])
-            angs = xifile["theta"]
-            angind = np.where(angs == angbin)
-            xip1, xip2 = (
-                xifile[kind][:, corr_num[0], angind[0][0]],
-                xifile[kind][:, corr_num[1], angind[0][0]],
-            )
-            allxi1.append(xip1)
-            allxi2.append(xip2)
+            try:
+                #assert lmax == int(xifile["lmax"])
+                xi = xifile[kind]  # Shape (batchsize,n_corr,n_theta)
+                
+            except AssertionError:
+                print(f"lmax mismatch in job {i}. Generating xis using pcls2xis.")
+                pclfile = np.load(filepath + "/pcljob{:d}.npz".format(i))
+                
+                
+                # Check for prefactors in xifile.files
+                if "prefactors" in xifile.files:
+                    prefactors = xifile["prefactors"]
+                elif prefactors is None:
+                    raise ValueError("Prefactors must be provided for older simulations.")
+                assert len(prefactors) == len(theta), "Prefactors and theta must have the same length."
+                xips, xims = xi_sims_from_pcl(i, prefactors, filepath, lmax=lmax)
+                
+                xi = xips if kind == "xip" else xims
+
+                # Update the filepath for storing the new xis
+                new_folder = filepath.replace(
+                    "llim_{}".format(xifile["lmax"]),
+                    "llim_{}".format(lmax),
+                )
+                if not os.path.exists(new_folder):
+                    os.makedirs(new_folder)
+                new_filepath = new_folder + "/job{:d}.npz".format(i)
+                np.savez(
+                    new_filepath,
+                    xip=xips,
+                    xim=xims,
+                    lmax=lmax,  # Update lmax in the saved file
+                    theta=theta,
+                )
+            if angles is None:
+                angles = [tuple(angle) for angle in xifile["theta"]]  # Convert to list of 2-tuples
+                print(angles)
+            # Assert that theta (if provided) is part of angles
+            if theta is not None:
+                
+                assert set(theta).issubset(set(angles)), "Provided theta contains angles not in the dataset."
+            else:
+                theta = angles  # Use all angles if none provided
+            all_xi.append(xi)
         else:
             print("Missing job number {:d}.".format(i))
             missing.append(i)
-    allxi1 = np.concatenate(allxi1, axis=0)
-    allxi2 = np.concatenate(allxi2, axis=0)
+
+    all_xi = np.concatenate(all_xi, axis=0)
 
     missing_string = ",".join([str(x) for x in missing])
     print(missing_string)
-    print(len(missing))
-    return np.array([allxi1, allxi2])
+    return all_xi, theta  # Return all xi and the saved angles
 
+def read_pcl_sims(filepath,njobs):
+    allpcl=[]
+    missing = []
+    for i in range(1,njobs+1):
+        print(i)
+        if os.path.isfile(filepath+"/pcljob{:d}.npz".format(i)):
+            pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
+            pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
+            pcl_s = np.swapaxes(pcl_s,0,1)
+            allpcl += list(pcl_s)
+        else:
+            print('Missing job number {:d}.'.format(i))
+            missing.append(i)
+    allpcl = np.array(allpcl)
+    print(allpcl.shape)
+    #allpcl.reshape(allpcl.shape[0]*allpcl.shape[1],3,768)
+    return allpcl
 
 def read_posterior_files(pattern, regex=None):
     """
@@ -171,18 +233,80 @@ def read_posterior_files(pattern, regex=None):
             gauss_posteriors.append(gauss_post.flatten())
             exact_posteriors.append(exact_post.flatten())
             s8.append(posts['s8'].flatten())
-            means.append(posts['means'])
-            combs.append(posts['comb'])
+            #means.append(posts['means'])
+            #combs.append(posts['comb'])
             available.append(True)
         except Exception as e:
             print(f"Error reading file {file}: {e}")
             available.append(False)
     
     return {
-        "gauss_posteriors": np.array(gauss_posteriors),
-        "exact_posteriors": np.array(exact_posteriors),
-        "s8": np.array(s8),
-        "means": np.array(means),
-        "combs": np.array(combs),
+        "gauss_posteriors": np.array(gauss_posteriors).flatten(),
+        "exact_posteriors": np.array(exact_posteriors).flatten(),
+        "s8": np.array(s8).flatten(),
+        #"means": np.array(means),
+        #"combs": np.array(combs),
         "available": available
     }
+
+
+
+
+
+def xi_sims_from_pcl(i,prefactors,filepath,lmax=None):
+    
+    pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
+    pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
+    xips,xims = pcls2xis(pcl_s,prefactors,out_lmax=lmax)
+    
+# make dictionary of initial xi-file and add this angbin and these xis
+    return xips,xims
+
+
+
+
+def read_xi_sims(filepath,njobs,angbins,kind="xip",prefactors=None,lmax=None):
+    # should change order of going over files and angles
+    allsims = []
+    for j,angbin in enumerate(angbins):
+        allxi=[]
+        missing = []
+        for i in range(1,njobs+1):
+            
+            if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
+                xifile = np.load(filepath+"/job{:d}.npz".format(i))
+                angs = xifile["theta"]
+                print(angs)
+                if filepath[-2:] == 'rr':
+                    angind = np.where(angs == np.mean(angbin))
+                else:
+                    angind = np.where(angs == angbin)
+                print(angind)
+                
+                if lmax is not None or len(angind[0]) == 0:
+                    try:
+                        xip = xi_sims_from_pcl(i,prefactors,filepath,lmax=lmax)[0][:,j]
+                    except FileNotFoundError:
+                        print('Missing job number {:d}.'.format(i))
+                        missing.append(i)
+                        #traceback.print_exc()
+                        xip =[]
+                    except:
+                        traceback.print_exc()
+                        xip =[]
+                else:
+                    #xip = xifile[kind][:,angind[0][0]]
+                    xip = xifile[kind][:,angind[0][0]]
+                allxi += list(xip)
+            else:
+                print('Missing job number {:d}.'.format(i))
+                missing.append(i)
+        allxi = np.array(allxi)
+        missing_string = ','.join([str(x) for x in missing])
+        print(missing_string)
+        allsims.append(allxi)
+    #allxi = allxi.flatten()
+    return np.array(allsims)
+
+
+
