@@ -266,7 +266,8 @@ def xi_sims_from_pcl(i,prefactors,filepath,lmax=None):
 
 
 def read_xi_sims(filepath,njobs,angbins,kind="xip",prefactors=None,lmax=None):
-    # should change order of going over files and angles
+    raise DeprecationWarning("This function is deprecated. Use read_sims_nd instead.")
+     
     allsims = []
     for j,angbin in enumerate(angbins):
         allxi=[]
