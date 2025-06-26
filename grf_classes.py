@@ -21,28 +21,6 @@ def save_maskobject(maskobject, dir=""):
     pickle.dump(maskobject, maskfile)
 
 
-class RedshiftBin:
-    """
-    A class to store and handle redshift bins
-    """
-
-    def __init__(self, nbin, z=None, nz=None, zmean=None, zsig=None, filepath=None):
-        self.nbin = nbin
-        self.z = z
-        self.nz = nz
-        if filepath is not None:
-            zbin = np.loadtxt(filepath)
-            self.z, self.nz = zbin[:, 0], zbin[:, 1]
-        if zmean is not None and zsig is not None:
-            self.zmean = zmean
-            self.zsig = zsig
-            self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
-        self.name = "bin{:d}".format(nbin)
-
-
-
-
-
 class SphereMask:
     """
     A class used to store and calculate properties of a survey mask on a sphere.
@@ -427,8 +405,9 @@ class SphereMask:
         if file_handling.check_for_file(self.mllp_path, kind="mllp"):
             self.load_mllp_arr()
         else:
-            m_llp_p, m_llp_m = wpm_funcs.m_llp(self.wl, self.lmax)
-            self._m_llp = m_llp_p, m_llp_m
+            self._m_llp = wpm_funcs.m_llp(self.wl, self.lmax, spin0=self.spin0)
+             
+
             self.save_mllp_arr()
         return self._m_llp
 
