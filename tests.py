@@ -85,6 +85,7 @@ def noise_test():
 
 
 def noise_corrs():
+    
     import simulate
     import grf_classes
     import matplotlib.pyplot as plt
@@ -169,6 +170,28 @@ def noise_corrs():
     # mask, fullsky, pure noise
     # on the full sky, treecorr underestimates, or namaster too high? check normalization factor
     # assert np.allclose(sims['xip_n'][:,0,0],sims['xip_t'][:,0],atol=1e-07), 'treecorr and namaster do not agree'
+
+
+def noise_correlation_analytical():
+    from grf_classes import SphereMask
+    from theory_cl import TheoryCl
+    from cov_setup import Cov
+    from helper_funcs import prep_prefactors, pcl2xi
+    exact_lmax = 30
+    mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
+    theorycl = TheoryCl(
+        mask.lmax,
+        sigma_e="default",
+        clname="nonoise"
+    )
+
+    covariance = Cov(mask,theorycl=theorycl,exact_lmax=exact_lmax)
+    covariance.cl2pseudocl()
+    prefactors = prep_prefactors([(4,6)],mask.wl,norm_lmax=mask.lmax,out_lmax=mask.lmax)
+    noise_xi = pcl2xi((covariance.p_ee,covariance.p_bb,covariance.p_eb),prefactors)
+    print(noise_xi)
+
+
 
 
 def test_xip_pdf():
@@ -1215,4 +1238,4 @@ def test_glass():
     #ax.set_yscale('log')
     plt.savefig('testfield_glass.png')
 
-high_low_s8()
+noise_correlation_analytical()
