@@ -1,5 +1,4 @@
-from grf_classes import RedshiftBin
-from theory_cl import prepare_theory_cl_inputs, generate_theory_cl
+from theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
 from cov_setup import Cov
 import calc_pdf, helper_funcs, setup_m
 import os, re
@@ -14,7 +13,6 @@ import matplotlib.pyplot as plt
 import copula_funcs
 from scipy.interpolate import griddata
 from scipy.interpolate import RegularGridInterpolator
-import postprocess_nd_likelihood
 from scipy.stats import norm, multivariate_normal
 import jax.numpy as jnp
 import jax
@@ -59,6 +57,7 @@ class XiLikelihood:
             self.lmax = lmax
         # decide whether to get these from a config file or to set them on initialization
         self._ang_bins_in_deg = ang_bins_in_deg
+        self._n_ang_bins = len(ang_bins_in_deg)  # Make n_ang_bins private
         self._redshift_bins = redshift_bins
         self._n_redshift_bins = len(self._redshift_bins)
         (
@@ -66,6 +65,7 @@ class XiLikelihood:
             self.redshift_bin_combinations,
             self._is_cov_cross,
             self._shot_noise,
+            self._n_to_bin_comb_mapper,
         ) = prepare_theory_cl_inputs(redshift_bins, noise)
 
         self._n_redshift_bin_combs = len(self._numerical_redshift_bin_combinations)
@@ -282,8 +282,9 @@ class XiLikelihood:
                                 (rcomb1[1], rcomb2[0]),
                                 (rcomb1[0], rcomb2[1]),
                             ]
-                            sorted = [np.sort(comb)[::-1] for comb in all_combs]
-                            cov_pos = [calc_pdf.get_cov_n(comb) for comb in sorted]
+                            sorted = [tuple(np.sort(comb)[::-1]) for comb in all_combs]
+                            # fix with combination mapper:
+                            cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
                             # make this into a jax function? is quite slow...
                             self._cov_lowell[i, j] = np.sum(
                                 [
@@ -331,6 +332,7 @@ class XiLikelihood:
         self._get_cfs_1d_lowell()
 
         if self._highell:
+            print("Adding high-ell contribution to CFs...")
             self._cfs = self._cfs_lowell * self._get_cfs_1d_highell()
         else:
             self._cfs = self._cfs_lowell
@@ -338,7 +340,7 @@ class XiLikelihood:
         self._marginals = calc_pdf.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
 
-    def gauss_compare(self, data,data_subset=None):
+    def gauss_compare(self, data, data_subset=None):
         # should always use a fixed covariance, produce on initialization?
         mean = self._mean
         if self.gaussian_covariance is None:
@@ -347,55 +349,170 @@ class XiLikelihood:
         else:
             cov = self.gaussian_covariance
         if data_subset is not None:
-            num_angs = data.shape[1]
             data = copula_funcs.data_subset(data, data_subset)
-            cov = copula_funcs.cov_subset(cov, data_subset,num_angs)
+            cov = copula_funcs.cov_subset(cov, data_subset, self._n_ang_bins)  # Use _n_ang_bins
             mean = copula_funcs.data_subset(mean, data_subset)
 
         mean = mean.flatten()
         mvn = multivariate_normal(mean=mean, cov=cov)
         data_flat = data.flatten()
         return mvn.logpdf(data_flat)
+    
+    def _prepare_likelihood_components(self, cosmology, highell=True):
+        """
+        Prepare the components needed for likelihood computation.
 
-    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False,data_subset=None):
-        #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        # compute the likelihood for a given cosmology
-        # don't forget to build in the factor 1/2 for the cross terms where always two m-cov products are used
+        Parameters
+        ----------
+        cosmology : dict
+            Cosmological parameters.
+        highell : bool, optional
+            Whether to include high-ell contributions, by default True.
+
+        Returns
+        -------
+        tuple
+            xs, pdfs, cdfs, cov, mean
+        """
         if highell:
             self._highell = True
+        else:  # Highell is False
+            self._highell = False
 
         self.initiate_theory_cl(cosmology)
-        
         self._prepare_matrix_products()
-        
 
         self._cov = self.get_covariance_matrix_lowell()
-
         self._mean = self._means_lowell
 
-        # assert (
-        #    np.fabs(np.diag(self._cov_lowell) - self._variances).all() < 1e-10
-        # ), "Variances do not match"
         if self._highell:
             self.get_covariance_matrix_highell()
             self._get_means_highell()
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-            # highell_moms = [self._means_highell[1:], self._cov_highell[1:, 1:]]
-        
+
         xs, pdfs = self.marginals()
-        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(
-            xs, pdfs
-        )  # new xs and pdfs are interpolated
+        self._cdfs, self._pdfs, self._xs = copula_funcs.pdf_to_cdf(xs, pdfs)  # Interpolated xs and pdfs
         self.check_pdfs()
-        
-        likelihood = copula_funcs.evaluate(
-            data, self._xs, self._pdfs, self._cdfs, self._cov,subset=data_subset
-        )  # returns log likelihood
-        if gausscompare == True:
-            return likelihood, self.gauss_compare(data,data_subset=data_subset)
+
+
+    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False, data_subset=None):
+        """
+        Compute the log-likelihood for a given cosmology and data point.
+
+        Parameters
+        ----------
+        data : ndarray
+            Data point to evaluate the likelihood at.
+        cosmology : dict
+            Cosmological parameters.
+        highell : bool, optional
+            Whether to include high-ell contributions, by default True.
+        gausscompare : bool, optional
+            Whether to compare with Gaussian likelihood, by default False.
+        data_subset : list, optional
+            Subset of data to evaluate, by default None.
+
+        Returns
+        -------
+        float or tuple
+            Log-likelihood value, optionally with Gaussian comparison.
+        """
+        self._prepare_likelihood_components(cosmology, highell)
+
+        # Quick check to ensure data and self._xs have matching first two dimensions
+        if data.shape[:2] != self._xs.shape[:2]:
+            raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
+
+        likelihood = copula_funcs.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov, subset=data_subset)
+
+        if gausscompare:
+            return likelihood, self.gauss_compare(data, data_subset=data_subset)
         else:
             return likelihood
+    
+    def likelihood_function(self, cosmology, highell=True):
+        """
+        Return the likelihood as a joint PDF for the entire data space at a given cosmology.
+
+        Parameters
+        ----------
+        cosmology : dict
+            Cosmological parameters.
+        highell : bool, optional
+            Whether to include high-ell contributions, by default True.
+
+        Returns
+        -------
+        ndarray
+            Joint PDF values for the entire data space.
+        """
+        # Prepare the likelihood components
+        self._prepare_likelihood_components(cosmology, highell)
+
+        # Compute the joint PDF using copula_funcs.joint_pdf
+        joint_pdf_values = copula_funcs.joint_pdf(self._cdfs, self._pdfs, self._cov)
+
+        return self._xs, joint_pdf_values
+
+    def gaussian_2d(self,xs,mean,cov):
+        mean_flat = mean.flatten()
+        n_dim = mean_flat.shape[0]
+        n_points_per_dim = xs.shape[-1]
+        xs_flat = xs.reshape(-1, n_points_per_dim)
+
+        # Create a meshgrid for the xs_flat
+        x_grid = np.meshgrid(*xs_flat)
+        x_points = np.stack(x_grid, axis=-1)
+        x_points = x_points.reshape(-1, x_points.shape[-1])
+
+        # Compute Gaussian PDF on the meshgrid
+        gaussian_pdf = multivariate_normal.logpdf(x_points, mean=mean_flat, cov=cov)
+        shape = (n_points_per_dim,) * n_dim
+        # Reshape Gaussian PDF to match the 2D subset
+        gaussian_pdf_reshaped = gaussian_pdf.reshape(shape)
+        return gaussian_pdf_reshaped
+
+
+    def likelihood_function_2d(self, data_subset=None,gausscompare=False):
+        """
+        Return a 2D subset of the likelihood as a joint PDF at a given cosmology.
+
+        Parameters
+        ----------
+        cosmology : dict
+            Cosmological parameters.
+        
+        data_subset : list
+            Subset of data to evaluate (e.g., 2D indices).
+
+        Returns
+        -------
+        tuple
+            xs and joint PDF values for the specified 2D subset.
+        """
+        if data_subset is None:
+            raise ValueError("data_subset must be specified for likelihood_function_2d.")
+        
+        # Ensure data_subset selects exactly 2 data points
+        if len(data_subset) != 2:
+            raise ValueError("data_subset must select exactly 2 data dimensions.")
+
+        #self._prepare_likelihood_components(cosmology, highell)
+        
+        cov_2d = copula_funcs.cov_subset(self._cov, data_subset, self._n_ang_bins)  # Use _n_ang_bins
+        xs_subset = copula_funcs.data_subset(self._xs, data_subset)
+        pdfs_subset = copula_funcs.data_subset(self._pdfs, data_subset)
+        cdfs_subset = copula_funcs.data_subset(self._cdfs, data_subset)
+        log_pdf_2d = copula_funcs.joint_pdf(cdfs_subset, pdfs_subset, cov_2d,copula_type='student-t',df=100)
+        
+        
+        if gausscompare:
+            means_subset = copula_funcs.data_subset(self._mean, data_subset)
+            gaussian_log_pdf = self.gaussian_2d(xs_subset,means_subset,cov_2d)
+            return xs_subset, log_pdf_2d, gaussian_log_pdf
+        else:
+            return xs_subset, log_pdf_2d
 
 
 def fiducial_dataspace():
