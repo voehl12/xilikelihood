@@ -31,7 +31,7 @@ def test_cov_xi(snapshot):
 
     mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
     full_mask = mask_props.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
-    theorycl = theory_cl.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    theorycl = theory_cl.TheoryCl(767, clpath="cls/Cl_3x2pt_kids55.txt")
     # covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
     # cov_xip = covs["cov"]
     circ_cov = cov_setup.Cov(mask, theorycl, 10)
@@ -56,7 +56,7 @@ def test_cov_diag():
 
     exact_lmax = 10
     mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
-    theorycl = theory_cl.TheoryCl(767, clpath="Cl_3x2pt_kids55.txt")
+    theorycl = theory_cl.TheoryCl(767, clpath="cls/Cl_3x2pt_kids55.txt")
     cov = cov_setup.Cov(mask, theorycl, exact_lmax)
     cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
@@ -97,7 +97,7 @@ def test_analytic_pcl():
         [(4, 6)],
         circmaskattr=(4000, 256),
         l_smooth_mask=l_smooth_mask,
-        clpath="Cl_3x2pt_kids55.txt",
+        clpath="cls/Cl_3x2pt_kids55.txt",
         batchsize=10,
         simpath="",
         healpix_datapath=testdir,

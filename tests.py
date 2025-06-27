@@ -21,7 +21,7 @@ def test_palm_matching():
 def test_cl_class():
     from scipy.special import j0
     import scipy.integrate as integrate
-    import mask_props
+    import theory_cl
     import matplotlib.pyplot as plt
 
     new_cl = theory_cl.TheoryCl(30, path="Cl_3x2pt_kids55.txt")
