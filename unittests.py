@@ -89,7 +89,7 @@ def test_analytic_pcl():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
     import helper_funcs
-    import calc_pdf
+    import cf_pdf_cov
 
     l_smooth_mask = 30
     lmin = 0
@@ -130,7 +130,7 @@ def test_analytic_pcl():
     )
     xi_ana = [xi_ana[0][0], xi_ana[1][0]]
     xi_sim = [xi_sim[0][0], xi_sim[1][0]]
-    cov_comp = np.sqrt(calc_pdf.cov_xi_gaussian_nD((cov,), ((0, 0),), [(4, 6)])[1][0, 0])
+    cov_comp = np.sqrt(cf_pdf_cov.cov_xi_gaussian_nD((cov,), ((0, 0),), [(4, 6)])[1][0, 0])
     assert np.allclose(np.array(xi_ana_cl), np.array(xi_ana), atol=cov_comp)
     assert np.allclose(xi_sim, xi_ana, atol=cov_comp)
 
@@ -145,7 +145,7 @@ def test_wlmlm():
 def test_treecorrvsnamaster():
     from simulate import TwoPointSimulation
     from cov_setup import Cov
-    from calc_pdf import cov_xi_gaussian_nD
+    from cf_pdf_cov import cov_xi_gaussian_nD
 
     jobnumber = 0
 
@@ -176,7 +176,7 @@ def test_treecorrvsnamaster():
 
 
 def test_means():
-    import calc_pdf
+    import cf_pdf_cov
     import helper_funcs
 
     steps = 2048
@@ -187,8 +187,8 @@ def test_means():
     var_trace = 2 * np.trace(m[:, None] * cov @ m[:, None] * cov)
 
     ximax = mean_trace + 10 * np.sqrt(var_trace)
-    t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
-    x_low, pdf_low = calc_pdf.cf_to_pdf_1d(t, cf)
+    t, cf = cf_pdf_cov.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
+    x_low, pdf_low = cf_pdf_cov.cf_to_pdf_1d(t, cf)
     mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
     var_lowell_pdf = np.trapz(x_low**2 * pdf_low, x=x_low)
     mean_lowell_cf, var_lowell_cf = helper_funcs.nth_moment(2, t, cf)
@@ -205,7 +205,7 @@ def test_means():
 def test_cf2pdf():
     import scipy.stats as stats
     from helper_funcs import gaussian_cf
-    from calc_pdf import cf_to_pdf_1d
+    from cf_pdf_cov import cf_to_pdf_1d
 
     mu = 0
     sigma = 1

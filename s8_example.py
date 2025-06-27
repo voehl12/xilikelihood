@@ -13,7 +13,7 @@ import sys
 from random import randint
 from time import time, sleep
 from postprocess_nd_likelihood import exp_norm_mean
-from calc_pdf import get_cov_n,get_combs
+#from calc_pdf import get_cov_n
 from copula_funcs import data_subset, cov_subset
 import file_handling
 from simulate import TwoPointSimulation
