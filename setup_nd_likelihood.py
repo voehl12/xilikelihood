@@ -4,7 +4,7 @@
 
 import numpy as np
 import helper_funcs
-import calc_pdf
+import cf_pdf_cov
 import setup_m
 from cov_setup import Cov
 import configparser
@@ -79,7 +79,7 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
         config.set("Geometry", "lower{:d}".format(i), str(ang_bins_in_deg[i][0]))
         config.set("Geometry", "upper{:d}".format(i), str(ang_bins_in_deg[i][1]))
 
-    cov_mat = calc_pdf.cov_xi_nD(covs)
+    cov_mat = cf_pdf_cov.cov_xi_nD(covs)
 
     l_exact = covs[0].exact_lmax
     ell_buffer = covs[0].cov_ell_buffer
@@ -97,19 +97,19 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     file_handling.save_matrix(cov_mat, cov_path, kind="cov")
     file_handling.save_matrix(m, m_path)
 
-    cov_triang = calc_pdf.get_cov_triang(covs)
+    cov_triang = cf_pdf_cov.get_cov_triang(covs)
     xi_max = []
     for _, comb in enumerate(combs):
-        inds = calc_pdf.get_cov_pos(comb)
+        inds = cf_pdf_cov.get_cov_pos(comb)
         cov = cov_triang[inds[0]][inds[1]]
         cov.cl2pseudocl()
         xip_estimate, _ = helper_funcs.pcl2xi((cov.p_ee, cov.p_bb, cov.p_eb), prefactors, l_exact)
         xi_max.append(np.fabs(xip_estimate[0]) * 6)
     tset_path = config["Paths"]["t_sets"]
-    _, t_sets, _, _ = calc_pdf.setup_t(xi_max, steps)
+    _, t_sets, _, _ = cf_pdf_cov.setup_t(xi_max, steps)
     np.savez(tset_path, t=t_sets)
     # ximax should go up to number of dimensions and save all
-    combs_n = [calc_pdf.get_cov_n(comb) for comb in combs]
+    combs_n = [cf_pdf_cov.get_cov_n(comb) for comb in combs]
     config["Params"] = {
         "l_exact": l_exact,
         "l_buffer": ell_buffer,

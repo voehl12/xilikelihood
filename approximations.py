@@ -4,7 +4,7 @@ import scipy.optimize
 from statsmodels.stats.moment_helpers import mnc2cum
 from statsmodels.distributions.edgeworth import ExpandedNormal
 from scipy.special import kv, gamma
-import calc_pdf
+import cf_pdf_cov
 import itertools
 import time
 import jax
@@ -556,6 +556,6 @@ def get_exact(m, cov, steps=4096):
     var_trace = second - mean_trace**2
     ximax = mean_trace + 20 * np.sqrt(var_trace)
     # m = np.diag(m)
-    t, cf = calc_pdf.calc_quadcf_1D(ximax, steps, cov, m, is_diag=False)
-    x_low, pdf_low = calc_pdf.cf_to_pdf_1d(t, cf)
+    t, cf = cf_pdf_cov.calc_quadcf_1D(ximax, steps, cov, m, is_diag=False)
+    x_low, pdf_low = cf_pdf_cov.cf_to_pdf_1d(t, cf)
     return x_low, pdf_low, t, cf
