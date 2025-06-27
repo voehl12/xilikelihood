@@ -1,27 +1,56 @@
 import numpy as np
 import pyccl as ccl
 import os
+import scipy.stats 
 import helper_funcs
 import wpm_funcs
 
 
 class RedshiftBin:
     """
-    A class to store and handle redshift bins
+    A class to store and handle redshift bins.
+    
+    Parameters:
+    -----------
+    nbin : int
+        Bin number identifier
+    z : array_like, optional
+        Redshift values
+    nz : array_like, optional
+        Number density at each redshift
+    zmean : float, optional
+        Mean redshift for Gaussian distribution
+    zsig : float, optional
+        Standard deviation for Gaussian distribution
+    filepath : str, optional
+        Path to file containing z, nz data
     """
 
     def __init__(self, nbin, z=None, nz=None, zmean=None, zsig=None, filepath=None):
         self.nbin = nbin
-        self.z = z
-        self.nz = nz
+        self.name = f"bin{nbin:d}"
+        
         if filepath is not None:
-            zbin = np.loadtxt(filepath)
-            self.z, self.nz = zbin[:, 0], zbin[:, 1]
-        if zmean is not None and zsig is not None:
-            self.zmean = zmean
-            self.zsig = zsig
-            self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
-        self.name = "bin{:d}".format(nbin)
+            self._load_from_file(filepath)
+        elif zmean is not None and zsig is not None and z is not None:
+            self._create_gaussian(z, zmean, zsig)
+        elif z is not None and nz is not None:
+            self.z = np.array(z)
+            self.nz = np.array(nz)
+        else:
+            raise ValueError("Must provide either filepath, (z,nz), or (z,zmean,zsig)")
+    
+    def _load_from_file(self, filepath):
+        """Load redshift distribution from file."""
+        zbin = np.loadtxt(filepath)
+        self.z, self.nz = zbin[:, 0], zbin[:, 1]
+    
+    def _create_gaussian(self, z, zmean, zsig):
+        """Create Gaussian redshift distribution."""
+        self.z = np.array(z)
+        self.zmean = zmean
+        self.zsig = zsig
+        self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
 
 class TheoryCl:
     """
@@ -40,83 +69,97 @@ class TheoryCl:
         z_bins=None,
         working_dir=None,
     ):
+        
         self.lmax = lmax
-        print("lmax has been set to {:d}.".format(self.lmax))
-        self.smooth_signal = smooth_signal
-        self.ell = np.arange(self.lmax + 1)
-        self.len_l = len(self.ell)
         self.theory_lmin = theory_lmin
         self.name = clname
-        self.clpath = clpath  # if clpath is set, s8 will be ignored.
-        if working_dir is None:
-            working_dir = os.getcwd()
-        self.working_dir = working_dir
+        self.clpath = clpath # if clpath is set, cosmo will be ignored.
+        self.working_dir = working_dir or os.getcwd()
         self.cosmo = cosmo
         self.z_bins = z_bins
-        self.nn = None
-        self.ee = None
-        self.ne = None
-        self.bb = None
-        self.eb = None
+        self.smooth_signal = smooth_signal
         self._sigma_e = sigma_e
         
+        # Initialize arrays
+        self.ell = np.arange(self.lmax + 1)
+        self.len_l = len(self.ell)
+        self._initialize_spectra()
 
-        if self.clpath is not None:
-            self.read_clfile()
-            self.load_cl()
-            print("Loaded C_l with lmax = {:d}".format(self.lmax))
-
-        elif self.cosmo is not None:
-            import theory_cl
-
-            if self.z_bins is None:
-                print("Warning: no redshift bins provided, using default bins.")
-                bin1 = RedshiftBin(
-                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=1
-                )
-                bin2 = RedshiftBin(
-                    z=np.linspace(0, 1, 100), nz=np.ones(100), zmean=0.5, zsig=0.1, nbin=2
-                )
-                self.z_bins = (bin1, bin2)
-
-            cl = theory_cl.get_cl(self.cosmo, self.z_bins)
-
-            cl = np.array(cl)
-            spectra = np.concatenate(
-                (
-                    np.zeros((3, self.theory_lmin)),
-                    cl[:, : self.lmax - self.theory_lmin + 1],
-                ),
-                axis=1,
-            )
-
-            self.ee = spectra[0]
-            self.ne = spectra[1]
-            self.nn = spectra[2]
-            self.bb = np.zeros_like(self.ee)
-            self.eb = np.zeros_like(self.ee)
-            self.name = None
-            self.clpath = 'fromscratch'
-
-        else:
-            print("Warning: no theory Cl provided, calculating with Cl=0")
-            self.set_cl_zero()
-
+        # Apply smoothing if specified
         if self.smooth_signal is not None:
-            smooth_ell = self.smooth_signal
-            self.smooth_array = wpm_funcs.smooth_cl(self.ell, smooth_ell)
-            self.ee *= self.smooth_array
-            self.nn *= self.smooth_array
-            self.ne *= self.smooth_array
-            self.bb *= self.smooth_array
-            self.name += "_smooth{:d}".format(smooth_ell)
-            print("Theory C_l smoothed to lsmooth = {:d}.".format(smooth_ell))
+            self._apply_smoothing()
 
+        # Set up noise
         self.set_noise_sigma()
+
+        print(f"Initialized TheoryCl with lmax = {self.lmax}")
+
+    def _initialize_spectra(self):
+        """Initialize power spectra from various sources."""
+        if self.clpath is not None:
+            self._load_from_file()
+        elif self.cosmo is not None:
+            self._compute_from_cosmology()
+        else:
+            self._set_zero_spectra()
+
+    def _load_from_file(self):
+        """Load spectra from file."""
+        self.read_clfile()
+        self.load_cl()
+
+    def _compute_from_cosmology(self):
+        """Compute spectra from cosmology."""
+        if self.z_bins is None:
+            self.z_bins = self._get_default_bins()
+        
+        cl = get_cl(self.cosmo, self.z_bins)
+        cl = np.array(cl)
+        
+        spectra = np.concatenate((
+            np.zeros((3, self.theory_lmin)),
+            cl[:, :self.lmax - self.theory_lmin + 1]
+        ), axis=1)
+        
+        self.ee = spectra[0]
+        self.ne = spectra[1] 
+        self.nn = spectra[2]
+        self.bb = np.zeros_like(self.ee)
+        self.eb = np.zeros_like(self.ee)
+        self.clpath = 'fromscratch'
+    
+    def _set_zero_spectra(self):
+        """Set all spectra to zero."""
+        print("Warning: no theory Cl provided, calculating with Cl=0")
+        self.set_cl_zero()
+
+    def _get_default_bins(self):
+        """Create default redshift bins."""
+        print("Warning: no redshift bins provided, using default bins.")
+        z = np.linspace(0, 1, 100)
+        bin1 = RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1)
+        bin2 = RedshiftBin(nbin=2, z=z, zmean=0.5, zsig=0.1)
+        return (bin1, bin2)
+    
+    def _apply_smoothing(self):
+        """Apply smoothing to spectra."""
+        self.smooth_array = wpm_funcs.smooth_cl(self.ell, self.smooth_signal)
+        for attr in ['ee', 'nn', 'ne', 'bb']:
+            if hasattr(self, attr):
+                setattr(self, attr, getattr(self, attr) * self.smooth_array)
+        self.name += f"_smooth{self.smooth_signal:d}"
+        print(f"Theory C_l smoothed to lsmooth = {self.smooth_signal:d}")
+
 
     @property
     def sigma_e(self):
         return self._sigma_e
+    
+    @sigma_e.setter
+    def sigma_e(self, value):
+        """Set sigma_e and update noise calculations."""
+        self._sigma_e = value
+        self.set_noise_sigma()  # Recalculate noise when sigma_e changes
 
     def set_noise_sigma(self):
 
@@ -171,6 +214,118 @@ class TheoryCl:
 
 
 
+class BinCombinationMapper:
+    """
+    Maps combinations of redshift bins to indices and vice versa.
+    
+    Generates all unique ordered combinations (i,j) where i >= j.
+    """
+        
+    def __init__(self, max_n):
+        """Initialize mapper for combinations up to max_n bins."""
+        self.max_n = max_n
+        self._build_mappings()
+
+    def _build_mappings(self):
+        """Build the index-combination mappings."""
+        self.index_to_comb = {}
+        self.comb_to_index = {}
+        self.combinations = []
+        index = 0
+        for i in range(self.max_n):
+            for j in range(i, -1, -1):
+                combination = (i, j)
+                self.index_to_comb[index] = combination
+                self.comb_to_index[combination] = index
+                self.combinations.append([i, j])
+                index += 1
+        self.combinations = np.array(self.combinations)
+
+    @property
+    def n_combinations(self):
+        """Number of combinations."""
+        return len(self.combinations)
+    
+    def get_combination(self, index):
+        """Get combination for given index."""
+        return self.index_to_comb.get(index)
+    
+    def get_index(self, combination):
+        """Get index for given combination."""
+        return self.comb_to_index.get(tuple(combination))
+
+
+
+
+def create_cosmo(params):
+    
+
+    """
+    Create CCL cosmology from parameter dictionary.
+    
+    Parameters:
+    -----------
+    params : dict
+        Dictionary containing 's8' and 'omega_m' keys
+        
+    Returns:
+    --------
+    ccl.Cosmology
+        CCL cosmology object
+    """
+    s8 = params["s8"]
+    omega_m = params["omega_m"]
+    omega_b = 0.046
+    omega_c = omega_m - omega_b
+    sigma8 = s8 * (omega_m / 0.3) ** -0.5
+    
+    return ccl.Cosmology(
+        Omega_c=omega_c, 
+        Omega_b=omega_b, 
+        h=0.7, 
+        sigma8=sigma8, 
+        n_s=0.97
+    )
+
+
+
+def compute_angular_power_spectra(cosmo, ell, z_bins):
+    """
+    Compute angular power spectra for given cosmology and redshift bins.
+    Returns 3x2pt power spectra: (cl_ee, cl_ne, cl_nn).
+    
+    Parameters:
+    -----------
+    cosmo : ccl.Cosmology
+        CCL cosmology object
+    ell : array_like
+        Multipole moments
+    z_bins : tuple
+        Tuple of RedshiftBin objects
+        
+    Returns:
+    --------
+    tuple
+        (cl_ee, cl_ne, cl_nn) power spectra
+    """
+    bin1, bin2 = z_bins
+    
+    lens1 = ccl.WeakLensingTracer(cosmo, dndz=(bin1.z, bin1.nz))
+    lens2 = ccl.WeakLensingTracer(cosmo, dndz=(bin2.z, bin2.nz))
+    
+    cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
+    cl_ne = cl_nn = np.zeros_like(cl_ee)
+    
+    return cl_ee, cl_ne, cl_nn
+
+def get_cl(params_dict, z_bins):
+    cosmo = create_cosmo(params_dict)
+    ell = np.arange(2, 2000)
+    cl = compute_angular_power_spectra(cosmo, ell, z_bins)
+    return cl
+
+
+
 def clnames(s8):
     s8str = str(s8)
     s8str = s8str.replace(".", "p").lstrip("0")
@@ -178,109 +333,10 @@ def clnames(s8):
     clpath = "Cl_3x2pt_kids55_s8{}.txt".format(s8str)
     return clpath, s8name
 
-
-def prep_cosmo(params):
-    import pyccl as ccl
-
-    """
-    function to generate vanilla cosmology with ccl given a value of S8
-
-    Parameters
-    ----------
-    s8 : float
-        lensing amplitude, clustering parameter S8
-
-    Returns
-    -------
-    object
-        ccl vanilla cosmology
-    """
-    s8 = params["s8"]
-    omega_m = params["omega_m"] #0.31
-    omega_b = 0.046
-    omega_c = omega_m - omega_b
-    sigma8 = s8 * (omega_m / 0.3) ** -0.5
-    cosmo = ccl.Cosmology(Omega_c=omega_c, Omega_b=omega_b, h=0.7, sigma8=sigma8, n_s=0.97)
-    return cosmo
-
-
-
-def calc_cl(cosmo, ell, z_bins):
-    """
-    generate 3x2pt c_ell given a ccl cosmology
-
-    Parameters
-    ----------
-    cosmo : object
-        ccl cosmology to be used
-    ell : array
-        array of integer ell values to be used for the cl
-    nz_path : string
-        path to a redshift distribution to be used
-
-    Returns
-    -------
-    tuple
-        cl in the order ee, ne, nn
-    """
-    # rbin = np.loadtxt(nz_path)
-    bin1, bin2 = z_bins
-    z1, nz1 = bin1.z, bin1.nz
-    z2, nz2 = bin2.z, bin2.nz
-    # b = 1.5 * np.ones_like(z)
-    lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1))
-    lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2))
-    # clu = ccl.NumberCountsTracer(cosmo, has_rsd=False, dndz=(z, nz), bias=(z, b))
-    cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
-    # cl_ne = ccl.angular_cl(cosmo, lens, clu, ell)
-    # cl_nn = ccl.angular_cl(cosmo, clu, clu, ell)
-    cl_ne = cl_nn = np.zeros_like(cl_ee)
-    return cl_ee, cl_ne, cl_nn
-
-
 def save_cl(cl, clpath):
     cl_ee, cl_ne, cl_nn = cl
     # np.savez(clpath, theory_ellmin=2,ee=cl_ee,ne=cl_ne,nn=cl_nn)
     np.savetxt(clpath, (cl_ee, cl_ne, cl_nn), header="EE, nE, nn")
-
-
-
-def get_cl(params_dict, z_bins):
-    cosmo = prep_cosmo(params_dict)
-    ell = np.arange(2, 2000)
-    cl = calc_cl(cosmo, ell, z_bins)
-    return cl
-
-class BinCombinationMapper:
-    def __init__(self, max_n):
-        """
-        Initialize the mapper with a maximum value for combinations.
-        """
-        self.index_to_comb = {}
-        self.comb_to_index = {}
-        self.combinations = []
-        index = 0
-        for i in range(max_n):
-            for j in range(i, -1, -1):
-                self.index_to_comb[index] = (i, j)
-                self.comb_to_index[(i, j)] = index
-                self.combinations.append([i, j])
-                index += 1
-        self.combinations = np.array(self.combinations)
-
-    def get_combination(self, index):
-        """
-        Retrieve the combination corresponding to the given index.
-        """
-        return self.index_to_comb.get(index, None)
-
-    def get_index(self, combination):
-        """
-        Retrieve the index corresponding to the given combination.
-        """
-        return self.comb_to_index.get(combination, None)
-    
-   
 
 
 
