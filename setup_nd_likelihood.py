@@ -6,7 +6,7 @@ import numpy as np
 import helper_funcs
 import cf_pdf_cov
 import setup_m
-from cov_setup import Cov
+from pseudo_alm_cov import Cov
 import configparser
 import file_handling
 

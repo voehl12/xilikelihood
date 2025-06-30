@@ -1,5 +1,5 @@
 from theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
-from cov_setup import Cov
+from pseudo_alm_cov import Cov
 import cf_pdf_cov, helper_funcs, setup_m
 import os, re
 

@@ -10,7 +10,7 @@ import healpy as hp
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
 from helper_funcs import get_noise_cl, pcl2xi, prep_prefactors
-from cov_setup import Cov
+from pseudo_alm_cov import Cov
 import helper_funcs
 
 from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable

@@ -27,18 +27,18 @@ def test_wllpmmp(snapshot, tmp_path):
 
 
 def test_cov_xi(snapshot):
-    import mask_props, cov_setup, theory_cl
+    import mask_props, pseudo_alm_cov, theory_cl
 
     mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
     full_mask = mask_props.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
     theorycl = theory_cl.TheoryCl(767, clpath="cls/Cl_3x2pt_kids55.txt")
     # covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
     # cov_xip = covs["cov"]
-    circ_cov = cov_setup.Cov(mask, theorycl, 10)
+    circ_cov = pseudo_alm_cov.Cov(mask, theorycl, 10)
     test_cov = circ_cov.cov_alm_xi()
     # assert np.allclose(cov_xip, test_cov)
     snapshot.check(test_cov, atol=1e-16)
-    nomask_cov = cov_setup.Cov(full_mask, theorycl, 10)
+    nomask_cov = pseudo_alm_cov.Cov(full_mask, theorycl, 10)
     nomask_cov_array = nomask_cov.cov_alm_xi()
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
@@ -52,12 +52,12 @@ def test_cov_xi(snapshot):
 
 def test_cov_diag():
     # check that the diagonal matches the pseudo-cl to 10%:
-    import cov_setup, mask_props, theory_cl
+    import pseudo_alm_cov, mask_props, theory_cl
 
     exact_lmax = 10
     mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
     theorycl = theory_cl.TheoryCl(767, clpath="cls/Cl_3x2pt_kids55.txt")
-    cov = cov_setup.Cov(mask, theorycl, exact_lmax)
+    cov = pseudo_alm_cov.Cov(mask, theorycl, exact_lmax)
     cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
 
@@ -87,7 +87,7 @@ def test_cov_diag():
 
 def test_analytic_pcl():
     from simulate import TwoPointSimulation
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import helper_funcs
     import cf_pdf_cov
 
@@ -144,7 +144,7 @@ def test_wlmlm():
 
 def test_treecorrvsnamaster():
     from simulate import TwoPointSimulation
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     from cf_pdf_cov import cov_xi_gaussian_nD
 
     jobnumber = 0

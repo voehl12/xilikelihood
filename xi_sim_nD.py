@@ -1,5 +1,5 @@
 from simulate import xi_sim_nD
-from cov_setup import Cov
+from pseudo_alm_cov import Cov
 from mask_props import SphereMask
 from theory_cl import generate_theory_cl, prepare_theory_cl_inputs
 import matplotlib.pyplot as plt

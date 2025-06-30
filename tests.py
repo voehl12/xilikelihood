@@ -30,16 +30,16 @@ def test_cl_class():
 
 
 def test_cov_xi():
-    import cov_setup
+    import pseudo_alm_cov
     import matplotlib.pyplot as plt
 
     covs = np.load("../corrfunc_distr/cov_xip_l10_n256_circ1000.npz")
     cov_xip = covs["cov"]
-    circ_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=(1000, 256))
+    circ_cov = pseudo_alm_cov.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=(1000, 256))
 
     test_cov = circ_cov.cov_alm_xi(pos_m=True)
     assert np.allclose(cov_xip, test_cov), "covariance calculation wrong"
-    nomask_cov = cov_setup.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=("fullsky", 256))
+    nomask_cov = pseudo_alm_cov.Cov(10, [2], clpath="Cl_3x2pt_kids55.txt", circmaskattr=("fullsky", 256))
     nomask_cov_array = nomask_cov.cov_alm_xi(pos_m=True)
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
@@ -175,7 +175,7 @@ def noise_corrs():
 def noise_correlation_analytical():
     from mask_props import SphereMask
     from theory_cl import TheoryCl
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     from helper_funcs import prep_prefactors, pcl2xi
     exact_lmax = 30
     mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
@@ -455,7 +455,7 @@ def cov_object_test(cov_object, angbin, ax, lims=(0, 2e-5)):
 
 
 def plot_exactvsgaussian():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
 
     exact_lmax = 10
 
@@ -481,7 +481,7 @@ def plot_exactvsgaussian():
 
 
 def plot_skewness():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import calc_pdf
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
@@ -597,7 +597,7 @@ def plot_skewness():
 
 def sum_testing():
     import wpm_funcs
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
 
     exact_lm = 30
     new_cov = Cov(
@@ -621,7 +621,7 @@ def sum_testing():
 
 
 def test_files():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
 
     new_cov = Cov(
         20,
@@ -654,7 +654,7 @@ def test_files():
 
 
 def sum_partition():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
 
     new_cov = Cov(
         30,
@@ -699,7 +699,7 @@ def sim_test():
 
 def sim_ana_comp():
     from simulate import TwoPointSimulation
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import calc_pdf
     import helper_funcs
     from file_handling import read_pcl_sims
@@ -765,7 +765,7 @@ def sim_ana_comp():
 
 
 def lowell_comp():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import calc_pdf, mask_props
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
@@ -826,7 +826,7 @@ def lowell_comp():
     check_pcl = np.array([np.sum(diag_alm[i*len_sub:(i+1)*len_sub]) for i in range(reps)])
     #check_pcl = np.array([np.sum(2*diag_alm[(new_cov._exact_lmax+1) + i*len_sub:(new_cov._exact_lmax+1) +(i*len_sub+1+new_cov._exact_lmax)]) + diag_alm[new_cov._exact_lmax + i*len_sub] for i in range(reps)])
     fig2,(ax21,ax22) = plt.subplots(2)
-    # TODO: implement this to work with pos_m=True covariance matrices as already done in assert statement in cov_setup.
+    # TODO: implement this to work with pos_m=True covariance matrices as already done in assert statement in pseudo_alm_cov.
     # need to check this again with pos_m=True but add factors 2 that usually come from m matrix. 
     ell_short = 2 * new_cov.ell + 1
     ax21.plot(new_cov.ell,new_cov.p_ee * ell_short,label='pseudo Cl EE')
@@ -874,7 +874,7 @@ def norm_testing():
 
 
 def plot_full_likelihood():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import calc_pdf
     from matplotlib.gridspec import GridSpec
     import scipy.stats as stats
@@ -933,7 +933,7 @@ def plot_full_likelihood():
     plt.savefig("full_likelihood_vs_measured.pdf".format(new_cov.set_char_string()[4:-4]))
 
 def high_low_s8():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     import calc_pdf
     from simulate import TwoPointSimulation   
     import scipy.stats as stats
@@ -1075,7 +1075,7 @@ def test_ndcf():
     plt.savefig('2dgaussian')
 
 def plot_pcl_vs_cl():
-    from cov_setup import Cov
+    from pseudo_alm_cov import Cov
     def plot_clvpcl(fig, axes,cov,name,linestyle,color):
         ax1 = axes[0]
         ax2 = axes[1]
