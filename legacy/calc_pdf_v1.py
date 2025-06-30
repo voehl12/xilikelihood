@@ -7,7 +7,8 @@ Module has been renamed to cf_pdf_cov.py for further use.
 
 import numpy as np
 
-from file_handling import check_for_file, load_cfs, load_pdfs
+from file_handling import check_for_file
+from file_handling_v1 import load_cfs, load_pdfs
 import setup_m
 import helper_funcs
 
