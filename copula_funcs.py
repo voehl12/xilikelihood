@@ -1,15 +1,66 @@
+"""
+Copula-based statistical modeling for multivariate correlation functions.
+
+This module provides:
+- Gaussian and Student-t copula implementations
+- PDF/CDF interpolation and evaluation utilities
+- Joint probability density computation
+- Covariance matrix utilities and conditioning
+- Data validation and quality checks
+
+Used for modeling dependencies between cosmological observables while
+preserving marginal distributions from theory predictions.
+"""
+
 import numpy as np
 from scipy.stats import norm, multivariate_normal, t
 from scipy.interpolate import PchipInterpolator, UnivariateSpline, RegularGridInterpolator
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
-#import cupy as cp
 from scipy.special import gamma
 import logging
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MIN_EIGENVALUE = 5e-4
+DEFAULT_INTERPOLATION_POINTS = 512
+DEFAULT_PDF_THRESHOLD = 0.01
+DEFAULT_NORMALIZATION_TOLERANCE = 1e-3
+DEFAULT_SMALL_NUMBER = 1e-300
+
+__all__ = [
+    # Core copula functions
+    'gaussian_copula_density',
+    'student_t_copula_density', 
+    'gaussian_copula_point_density',
+    'joint_pdf',
+    'joint_pdf_2d',
+    
+    # PDF/CDF utilities
+    'pdf_to_cdf',
+    'interpolate_and_evaluate',
+    'interpolate_and_evaluate_with_log',
+    'pdf_and_cdf_point_eval',
+    
+    # Matrix utilities
+    'covariance_to_correlation',
+    'get_well_conditioned_matrix',
+    'test_correlation_matrix',
+    
+    # Data utilities
+    'validate_pdfs',
+    'cov_subset',
+    'data_subset',
+    'evaluate',
+    
+    # Statistical functions
+    'multivariate_student_t_logpdf',
+]
+
+# ============================================================================
+# Probability Density Functions
+# ============================================================================
 
 
 def multivariate_student_t_logpdf(z, df, scale):
@@ -46,7 +97,12 @@ def multivariate_student_t_logpdf(z, df, scale):
 
     return log_norm_const + log_kernel
 
-def validate_pdfs(pdfs, xs, cdfs=None):
+# ============================================================================
+# Validation and Quality Control
+# ============================================================================
+
+
+def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE):
     """
     Perform checks on the PDFs to ensure they are valid.
 
@@ -68,7 +124,7 @@ def validate_pdfs(pdfs, xs, cdfs=None):
 
             # Check normalization
             integral = np.trapz(pdf, x)
-            if not np.isclose(integral, 1.0, atol=1e-3):
+            if not np.isclose(integral, 1.0, atol=atol):
                 logger.warning(f"PDF {i}-{j} is not normalized: integral={integral}")
 
             # Check non-negativity
@@ -87,29 +143,18 @@ def validate_pdfs(pdfs, xs, cdfs=None):
 
             # Check if PDF drops to zero at domain boundaries (relative to max value)
             max_pdf = np.max(pdf)
-            if not (np.isclose(pdf[0], 0, atol=1e-3 * max_pdf) and np.isclose(pdf[-1], 0, atol=1e-3 * max_pdf)):
+            if not (np.isclose(pdf[0], 0, atol=atol * max_pdf) and np.isclose(pdf[-1], 0, atol=atol * max_pdf)):
                 logger.warning(f"PDF {i}-{j} does not drop to zero at domain boundaries (relative to max value).")
 
     logger.info("All PDFs have been checked.")
 
 
-def get_eigenvalues_with_cupy(matrix):
-    # Convert JAX array to NumPy array
-    np_matrix = np.array(matrix)
-    
-    # Convert NumPy array to CuPy array
-    cupy_matrix = cp.array(np_matrix)
-    
-    # Compute eigenvalues using CuPy
-    eigenvalues, _ = cp.linalg.eig(cupy_matrix)
-    
-    # Convert CuPy array back to NumPy array
-    np_eigenvalues = cp.asnumpy(eigenvalues)
-    
-    
-    return np_eigenvalues
+# ============================================================================
+# PDF/CDF Interpolation and Evaluation
+# ============================================================================
 
-def interpolate_along_last_axis(xs, pdfs, num_points=512, thres=0.01):
+
+def interpolate_along_last_axis(xs, pdfs, num_points=DEFAULT_INTERPOLATION_POINTS, thres=DEFAULT_PDF_THRESHOLD):
     # only interpolate relevant part?
 
     def interpolate_1d(xpdf):
@@ -189,7 +234,7 @@ def interpolate_and_evaluate_with_log(x_data, xs, pdfs):
     flat_points = x_data.reshape(-1)
 
     # Replace zeros in the PDF with a small value to avoid log(0)
-    flat_pdfs[flat_pdfs <= 0] = 1e-300
+    flat_pdfs[flat_pdfs <= 0] = DEFAULT_SMALL_NUMBER
     log_pdfs = np.log(flat_pdfs)
 
     # Create interpolators for the log-PDF
@@ -229,31 +274,9 @@ def pdf_and_cdf_point_eval(x_data, xs, pdfs, cdfs):
     
     return log_pdf_point, cdf_point
 
-
-def covariance_to_correlation(cov_matrix):
-    """
-    Converts a covariance matrix to a correlation matrix.
-
-    Parameters:
-    - cov_matrix: A 2D numpy array representing the covariance matrix
-
-    Returns:
-    - corr_matrix: A 2D numpy array representing the correlation matrix
-    """
-    # Compute the standard deviations
-    std_devs = np.sqrt(np.diag(cov_matrix))
-
-    # Outer product of standard deviations
-    std_devs_outer = np.outer(std_devs, std_devs)
-
-    # Compute the correlation matrix
-    corr_matrix = cov_matrix / std_devs_outer
-
-    # Set the diagonal elements to 1
-    np.fill_diagonal(corr_matrix, 1)
-    corr_matrix = test_correlation_matrix(corr_matrix)
-    return corr_matrix
-
+# ============================================================================
+# Copula Density Functions
+# ============================================================================
 
 def gaussian_copula_density(cdfs, covariance_matrix):
     # Convert u and v to normal space
@@ -279,19 +302,43 @@ def gaussian_copula_density(cdfs, covariance_matrix):
    
     return copula_density
 
-def meshgrid_and_recast(funcs):
-    """
-    Create a meshgrid from the given points and recast it to a 2D array.
+def gaussian_copula_point_density(cdf_point, covariance_matrix):
+    z = norm.ppf(cdf_point)
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    
+    
+    mean = np.zeros(len(corr_matrix))
+    mvn = multivariate_normal(
+        mean=mean, cov=corr_matrix
+    )  # multivariate normal with right correlation structure
+    z = z.flatten()
+    mvariate_pdf = mvn.logpdf(z)
+    pdf = norm.logpdf(z)
+    return mvariate_pdf - np.sum(pdf)
 
-    Parameters:
-    - funcs: A list of arrays representing pdfs/cdfs to recast, shape (n_dims, n_points_per_dim).
 
-    Returns:
-    - meshgrid: A 2D numpy array representing the meshgrid, shape (n_points, n_dims).
-    """
-    meshgrid = np.meshgrid(*funcs)
-    stacked_meshgrid = np.stack(meshgrid, axis=-1)
-    return stacked_meshgrid.reshape(-1, stacked_meshgrid.shape[-1])  # Reshape to 2D array
+def gaussian_copula_density_2d(u, v, covariance_matrix):
+    # Convert u and v to normal space
+    z1 = norm.ppf(u)
+    z2 = norm.ppf(v)
+
+    # Bivariate normal PDF with correlation rho
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    mvn = multivariate_normal(mean=[0, 0], cov=corr_matrix)
+    x_grid, y_grid = np.meshgrid(z1, z2)
+    test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
+    bivariate_pdf = mvn.pdf(test_points)
+
+    # Standard normal PDFs
+    pdf_z1 = norm.pdf(z1)
+    pdf_z2 = norm.pdf(z2)
+
+    pdf_z1_grid, pdf_z2_grid = np.meshgrid(pdf_z1, pdf_z2)
+    pdf_points = np.vstack([pdf_z1_grid.ravel(), pdf_z2_grid.ravel()]).T
+
+    # Copula density
+    copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
+    return copula_density
 
 def student_t_copula_density(cdfs, covariance_matrix, df):
     """
@@ -334,7 +381,53 @@ def student_t_copula_density(cdfs, covariance_matrix, df):
 
     return copula_density
 
-def get_well_conditioned_matrix(corr_matrix, min_eigenvalue=5e-4):
+# ============================================================================
+# Matrix Utilities and Conditioning
+# ============================================================================
+
+
+def covariance_to_correlation(cov_matrix):
+    """
+    Converts a covariance matrix to a correlation matrix.
+
+    Parameters:
+    - cov_matrix: A 2D numpy array representing the covariance matrix
+
+    Returns:
+    - corr_matrix: A 2D numpy array representing the correlation matrix
+    """
+    # Compute the standard deviations
+    std_devs = np.sqrt(np.diag(cov_matrix))
+
+    # Outer product of standard deviations
+    std_devs_outer = np.outer(std_devs, std_devs)
+
+    # Compute the correlation matrix
+    corr_matrix = cov_matrix / std_devs_outer
+
+    # Set the diagonal elements to 1
+    np.fill_diagonal(corr_matrix, 1)
+    corr_matrix = test_correlation_matrix(corr_matrix)
+    return corr_matrix
+
+
+def meshgrid_and_recast(funcs):
+    """
+    Create a meshgrid from the given points and recast it to a 2D array.
+
+    Parameters:
+    - funcs: A list of arrays representing pdfs/cdfs to recast, shape (n_dims, n_points_per_dim).
+
+    Returns:
+    - meshgrid: A 2D numpy array representing the meshgrid, shape (n_points, n_dims).
+    """
+    meshgrid = np.meshgrid(*funcs)
+    stacked_meshgrid = np.stack(meshgrid, axis=-1)
+    return stacked_meshgrid.reshape(-1, stacked_meshgrid.shape[-1])  # Reshape to 2D array
+
+
+
+def get_well_conditioned_matrix(corr_matrix, min_eigenvalue=DEFAULT_MIN_EIGENVALUE):
     eigvals, eigvecs = eigh(corr_matrix)
     eigvals = np.maximum(eigvals, min_eigenvalue)  # Clip small eigenvalues
     return eigvecs @ np.diag(eigvals) @ eigvecs.T  # Reconstruct matrix
@@ -354,44 +447,10 @@ def test_correlation_matrix(matrix, iscov=False):
         logger.info('New condition number of correlation matrix: {:.2f}'.format(new_cond))
     return corr_matrix
 
-def gaussian_copula_point_density(cdf_point, covariance_matrix):
-    z = norm.ppf(cdf_point)
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-    
-    
-    mean = np.zeros(len(corr_matrix))
-    mvn = multivariate_normal(
-        mean=mean, cov=corr_matrix
-    )  # multivariate normal with right correlation structure
-    z = z.flatten()
-    mvariate_pdf = mvn.logpdf(z)
-    pdf = norm.logpdf(z)
-    return mvariate_pdf - np.sum(pdf)
 
-
-def gaussian_copula_density_2d(u, v, covariance_matrix):
-    # Convert u and v to normal space
-    z1 = norm.ppf(u)
-    z2 = norm.ppf(v)
-
-    # Bivariate normal PDF with correlation rho
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-    mvn = multivariate_normal(mean=[0, 0], cov=corr_matrix)
-    x_grid, y_grid = np.meshgrid(z1, z2)
-    test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
-    bivariate_pdf = mvn.pdf(test_points)
-
-    # Standard normal PDFs
-    pdf_z1 = norm.pdf(z1)
-    pdf_z2 = norm.pdf(z2)
-
-    pdf_z1_grid, pdf_z2_grid = np.meshgrid(pdf_z1, pdf_z2)
-    pdf_points = np.vstack([pdf_z1_grid.ravel(), pdf_z2_grid.ravel()]).T
-
-    # Copula density
-    copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
-    return copula_density
-
+# ============================================================================
+# High-level Joint PDF Computation
+# ============================================================================
 
 
 def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
@@ -416,6 +475,16 @@ def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     ndarray
         Joint PDF values reshaped to be ready to plot, shape = (n_points_per_dim,) * n_dim.
     """
+    if copula_type not in ["gaussian", "student-t"]:
+        raise ValueError(f"Unsupported copula type: {copula_type}. Use 'gaussian' or 'student-t'.")
+    
+    if copula_type == "student-t" and df is None:
+        raise ValueError("Degrees of freedom (df) must be provided for Student-t copula.")
+    
+    if copula_type == "student-t" and df <= 2:
+        logger.warning(f"Low degrees of freedom (df={df}) may cause numerical issues.")
+    
+
     # Flatten the PDFs along the first two axes
     
     n_points_per_dim = cdfs.shape[-1]
@@ -425,8 +494,6 @@ def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     if copula_type == "gaussian":
         copula_density = gaussian_copula_density(cdfs, cov)  # Shape: (n_total_points,)
     elif copula_type == "student-t":
-        if df is None:
-            raise ValueError("Degrees of freedom (df) must be provided for Student-t copula.")
         copula_density = student_t_copula_density(cdfs, cov, df)
     else:
         raise ValueError(f"Unsupported copula type: {copula_type}")
@@ -460,6 +527,10 @@ def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     # Joint PDF
     return copula_density * np.prod(pdf_points, axis=1)
 
+
+# ============================================================================
+# Data Subsetting and Evaluation
+# ============================================================================
 
 
 def cov_subset(cov, subset, num_angs):
@@ -541,8 +612,25 @@ def evaluate(x_data, xs, pdfs, cdfs, cov,subset=None):
 
     return np.sum(log_pdf_point) + copula_density
 
+# ============================================================================
+# Internal/Development Functions
+# ============================================================================
 
-def testing():
+
+def _testing_function():
+    """
+    INTERNAL: Development testing function.
+    
+    ⚠️ Warning: This is for development only and will be removed.
+    Use proper test files for production testing.
+    """
+    import warnings
+    warnings.warn(
+        "This is an internal development function and will be removed. "
+        "Use dedicated test files instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     copula = copula_funcs.joint_pdf(
         self._cdfs[1:],
         self._pdfs[1:],
@@ -612,3 +700,4 @@ def testing():
     fig.colorbar(gauss_res, ax=ax6)
     # fig.colorbar(exact_res, ax=ax02)
     fig.savefig("comparison_copula_sims_10000deg2_fullell_newwpm.png")
+    pass
