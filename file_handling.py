@@ -1,34 +1,63 @@
+"""
+File I/O utilities for cosmological data analysis.
+
+This module provides standardized file handling operations for:
+- Covariance matrices and pseudo power spectra
+- Simulation data (xi+/-, power spectra)
+- PDF and correlation function data
+- Batch job result processing
+
+All functions use proper logging and error handling for robust operation.
+"""
+
 import os
 import numpy as np
-import helper_funcs
+
 import glob
 import re  # Import regular expressions
 import logging
+from typing import Dict, List, Tuple, Optional, Union
+
+import helper_funcs
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Core file operations
+    'ensure_directory_exists',
+    'check_for_file',
+    
+    # Covariance matrix I/O
+    'save_covariance_matrix',
+    'load_covariance_matrix', 
+    'generate_covariance_filename',
+    
+    # Pseudo-Cl I/O
+    'save_pseudo_cl',
+    'load_pseudo_cl',
+    'generate_pseudo_cl_filename',
+    
+    # Simulation data readers
+    'read_sims_nd',
+    'read_pcl_sims',
+    'xi_sims_from_pcl',
+    
+    # Batch processing
+    'read_posterior_files',
+    
+    # Utility functions
+    'save_matrix',
+    
+    
+]
 
-class File:
-    """
-    _summary_
-    """
 
-    def __init__(self, filename, kind="file") -> None:
-        self.path = filename
-        self.kind = kind
-        pass
-
-    def check_for_file(self):
-        print("Checking for {}s...".format(self.kind))
-        if os.path.isfile(self.path):
-            print("Found some.")
-            return True
-        else:
-            print("None found.")
-            return False
+# ============================================================================
+# Core File Operations
+# ============================================================================
 
 
-def ensure_directory_exists(directory):
+def ensure_directory_exists(directory: str) -> None:
     """
     Ensure a directory exists, creating it if necessary.
     
@@ -46,17 +75,36 @@ def ensure_directory_exists(directory):
         os.makedirs(directory, exist_ok=True)
         logger.debug(f"Created directory: {directory}")
 
-def check_for_file(name, kind="file"):
-    """Check if a file exists with proper logging."""
-    logger.debug(f"Checking for {kind}: {name}")
-    if os.path.isfile(name):
+def check_for_file(filepath: str, kind: str = "file") -> bool:
+    """
+    Check if a file exists with proper logging.
+    
+    Parameters:
+    -----------
+    filepath : str
+        Path to file to check
+    kind : str, default="file"
+        Type description for logging
+        
+    Returns:
+    --------
+    bool
+        True if file exists, False otherwise
+    """
+    logger.debug(f"Checking for {kind}: {filepath}")
+    if os.path.isfile(filepath):
         logger.debug(f"Found {kind}")
         return True
     else:
         logger.debug(f"No {kind} found")
         return False
 
-def save_covariance_matrix(cov_matrix, filepath):
+# ============================================================================
+# Covariance Matrix I/O
+# ============================================================================
+
+
+def save_covariance_matrix(cov_matrix: np.ndarray, filepath: str) -> None:
     """Save covariance matrix to compressed numpy file."""
     logger.info(f"Saving covariance matrix to: {filepath}")
     
@@ -69,7 +117,7 @@ def save_covariance_matrix(cov_matrix, filepath):
     file_size_mb = os.path.getsize(filepath) / 1024**2
     logger.info(f"Saved covariance matrix: {file_size_mb:.1f} MB")
 
-def load_covariance_matrix(filepath):
+def load_covariance_matrix(filepath: str) -> np.ndarray:
     """Load covariance matrix from numpy file."""
     if not check_for_file(filepath):
         raise FileNotFoundError(f"Covariance file not found: {filepath}")
@@ -77,46 +125,21 @@ def load_covariance_matrix(filepath):
     logger.info(f"Loading covariance matrix from: {filepath}")
     
     try:
-        cov_file = np.load(filepath)
-        cov_matrix = cov_file["cov"]
-        cov_file.close()
-        
-        logger.debug(f"Loaded covariance matrix shape: {cov_matrix.shape}")
-        return cov_matrix
-        
+        with np.load(filepath) as cov_file:
+            cov_matrix = cov_file["cov"]
+            logger.debug(f"Loaded covariance matrix shape: {cov_matrix.shape}")
+            return cov_matrix.copy()  # Return copy to avoid file handle issues
     except Exception as e:
         raise RuntimeError(f"Failed to load covariance matrix from {filepath}: {e}")
 
-def save_pseudo_cl(pseudo_cl_dict, filepath):
-    """Save pseudo power spectra to file."""
-    logger.info(f"Saving pseudo-Cl to: {filepath}")
-    
-    ensure_directory_exists(os.path.dirname(filepath))
-    np.savez_compressed(filepath, **pseudo_cl_dict)
-    
-    file_size_mb = os.path.getsize(filepath) / 1024**2
-    logger.debug(f"Saved pseudo-Cl file: {file_size_mb:.2f} MB")
-
-def load_pseudo_cl(filepath):
-    """Load pseudo power spectra from file."""
-    if not check_for_file(filepath):
-        return None
-    
-    logger.info(f"Loading cached pseudo-Cl from: {filepath}")
-    
-    try:
-        pcl_file = np.load(filepath)
-        result = {key: pcl_file[key] for key in pcl_file.files}
-        pcl_file.close()
-        
-        logger.debug(f"Successfully loaded pseudo-Cl with keys: {list(result.keys())}")
-        return result
-        
-    except Exception as e:
-        logger.warning(f"Failed to load pseudo-Cl from {filepath}: {e}")
-        return None
-
-def generate_covariance_filename(exact_lmax, nside, mask_name, theory_name, sigma_name, base_dir=None):
+def generate_covariance_filename(
+    exact_lmax: int, 
+    nside: int, 
+    mask_name: str, 
+    theory_name: str, 
+    sigma_name: str, 
+    base_dir: Optional[str] = None
+) -> str:
     """Generate standardized filename for covariance matrix."""
     filename = f"cov_xi_l{exact_lmax:d}_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
     
@@ -127,7 +150,46 @@ def generate_covariance_filename(exact_lmax, nside, mask_name, theory_name, sigm
     
     return filename
 
-def generate_pseudo_cl_filename(nside, mask_name, theory_name, sigma_name, base_dir=None):
+# ============================================================================
+# Pseudo Power Spectra I/O
+# ============================================================================
+
+
+def save_pseudo_cl(pseudo_cl_dict: Dict[str, np.ndarray], filepath: str) -> None:
+    """Save pseudo power spectra to file."""
+    logger.info(f"Saving pseudo-Cl to: {filepath}")
+    
+    ensure_directory_exists(os.path.dirname(filepath))
+    np.savez_compressed(filepath, **pseudo_cl_dict)
+    
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.debug(f"Saved pseudo-Cl file: {file_size_mb:.2f} MB")
+
+def load_pseudo_cl(filepath: str) -> Optional[Dict[str, np.ndarray]]:
+    """Load pseudo power spectra from file."""
+    if not check_for_file(filepath):
+        return None
+    
+    logger.info(f"Loading cached pseudo-Cl from: {filepath}")
+    
+    try:
+        with np.load(filepath) as pcl_file:
+            result = {key: pcl_file[key].copy() for key in pcl_file.files}
+            logger.debug(f"Successfully loaded pseudo-Cl with keys: {list(result.keys())}")
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to load pseudo-Cl from {filepath}: {e}")
+        return None
+
+
+
+def generate_pseudo_cl_filename(
+    nside: int, 
+    mask_name: str, 
+    theory_name: str, 
+    sigma_name: str, 
+    base_dir: Optional[str] = None
+) -> str:
     """Generate standardized filename for pseudo-Cl."""
     filename = f"pcl_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
     
@@ -137,21 +199,244 @@ def generate_pseudo_cl_filename(nside, mask_name, theory_name, sigma_name, base_
         return os.path.join(pcl_dir, filename)
     
     return filename
-# load can become one function with a dictionary or list of what to load and return
-def load_pdfs(name):
-    print("Loading pdfs ", end="")
-    mfile = np.load(name)
-    print("with angles ", end="")
-    print(mfile["angs"])
-    return mfile["x"], mfile["pdf"], mfile["stats"], mfile["angs"]
+
+# ============================================================================
+# Simulation Data Readers
+# ============================================================================
+
+def xi_sims_from_pcl(job_id: int, prefactors: np.ndarray, filepath: str, lmax: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Convert pseudo power spectra to correlation functions for a simulation job.
+    
+    Parameters:
+    -----------
+    job_id : int
+        Job number identifier
+    prefactors : ndarray
+        Conversion prefactors for xi calculation
+    filepath : str
+        Base path to simulation files
+    lmax : int, optional
+        Maximum multipole to use
+        
+    Returns:
+    --------
+    tuple
+        (xi_plus, xi_minus) correlation functions
+    """
+    pcl_file_path = f"{filepath}/pcljob{job_id:d}.npz"
+    
+    if not check_for_file(pcl_file_path, f"PCL job {job_id}"):
+        raise FileNotFoundError(f"PCL file not found: {pcl_file_path}")
+    
+    try:
+        with np.load(pcl_file_path) as pclfile:
+            if lmax is not None:
+                file_lmax = int(pclfile["lmax"])
+                if lmax > file_lmax:
+                    raise ValueError(
+                        f"Requested lmax ({lmax}) too high for simulated pcljob {job_id}. "
+                        f"File has lmax={file_lmax}. Need new simulations."
+                    )
+            
+            pcl_s = np.array([pclfile['pcl_e'], pclfile['pcl_b'], pclfile['pcl_eb']])
+        
+        xips, xims = helper_funcs.pcls2xis(pcl_s, prefactors, out_lmax=lmax)
+        return xips, xims
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to process PCL job {job_id}: {e}")
+
+def read_sims_nd(filepath: str, njobs: int, lmax: int, kind: str = "xip", 
+                 prefactors: Optional[np.ndarray] = None, theta: Optional[List] = None) -> Tuple[np.ndarray, List]:
+    """
+    Read n-dimensional simulation data from multiple job files.
+    
+    Parameters:
+    -----------
+    filepath : str
+        Base path to simulation files
+    njobs : int
+        Number of job files to read
+    lmax : int
+        Maximum multipole for calculations
+    kind : str, default="xip"
+        Type of correlation function ("xip" or "xim")
+    prefactors : ndarray, optional
+        Conversion prefactors (required for older simulations)
+    theta : list, optional
+        Angular bins to include (uses all if None)
+        
+    Returns:
+    --------
+    tuple
+        (all_xi, theta_angles) - concatenated xi data and angle list
+    """
+    logger.info(f"Reading {kind} simulations from {filepath}")
+    logger.info(f"Processing {njobs} jobs with lmax={lmax}")
+    all_xi = []
+    missing = []
+    angles = None  # To store angles from the first file
+
+    for i in range(1, njobs + 1):
+        job_file = f"{filepath}/job{i:d}.npz"
+        
+        if not check_for_file(job_file, f"job {i}"):
+            logger.warning(f"Missing job number {i}")
+            missing.append(i)
+            continue
+        try:
+            with np.load(job_file) as xifile:
+                file_lmax = int(xifile["lmax"])
+                
+                # Check if lmax matches - if not, need to recompute from PCL
+                if lmax != file_lmax:
+                    logger.warning(f"lmax mismatch in job {i}: file has {file_lmax}, requested {lmax}. "
+                                 f"Regenerating xi from PCL data.")
+                    
+                    # Get angles and prefactors
+                    if angles is None:
+                        angles = [tuple(angle) for angle in xifile["theta"]]
+                        logger.debug(f"Found {len(angles)} angular bins from file")
+                    
+                    # Check for prefactors in the file or use provided ones
+                    if "prefactors" in xifile.files:
+                        file_prefactors = xifile["prefactors"]
+                        logger.debug("Using prefactors from xi file")
+                    elif prefactors is not None:
+                        file_prefactors = prefactors
+                        logger.debug("Using provided prefactors")
+                    else:
+                        raise ValueError(f"Prefactors must be provided for job {i} with lmax mismatch")
+                    
+                    if len(file_prefactors) != len(angles):
+                        raise ValueError(f"Prefactors length ({len(file_prefactors)}) doesn't match "
+                                       f"theta length ({len(angles)}) for job {i}")
+                    
+                    # Regenerate xi from PCL data
+                    xips, xims = xi_sims_from_pcl(i, file_prefactors, filepath, lmax=lmax)
+                    xi = xips if kind == "xip" else xims
+                    
+                    # Save regenerated data to new location
+                    _save_regenerated_xi_data(filepath, i, xips, xims, lmax, angles, file_lmax)
+                    
+                else:
+                    # lmax matches - use existing xi data
+                    try:
+                        xi = xifile[kind]  # Shape (batchsize, n_corr, n_theta)
+                        logger.debug(f"Using existing {kind} data from job {i}")
+                    except KeyError:
+                        raise KeyError(f"Key '{kind}' not found in job {i} file")
+                    
+                    if angles is None:
+                        angles = [tuple(angle) for angle in xifile["theta"]]
+                        logger.debug(f"Found {len(angles)} angular bins from file")
+                
+                all_xi.append(xi)
+                
+        except Exception as e:
+            logger.error(f"Error processing job {i}: {e}")
+            missing.append(i)
+
+    # Handle missing files
+    if missing:
+        missing_str = ",".join(map(str, missing))
+        logger.warning(f"Missing jobs: {missing_str}")
+
+    # Validate theta parameter against available angles
+    if theta is not None:
+        if not set(theta).issubset(set(angles)):
+            raise ValueError("Provided theta contains angles not in the dataset")
+    else:
+        theta = angles
+
+    # Concatenate all simulation data
+    if all_xi:
+        all_xi = np.concatenate(all_xi, axis=0)
+        logger.info(f"Loaded {all_xi.shape[0]} simulations with shape {all_xi.shape}")
+    else:
+        logger.error("No simulation data loaded!")
+        all_xi = np.array([])
+    
+    return all_xi, theta
+
+def _save_regenerated_xi_data(filepath: str, job_id: int, xips: np.ndarray, xims: np.ndarray, 
+                             lmax: int, angles: List, old_lmax: int) -> None:
+    """Save regenerated xi data to new file structure with updated lmax."""
+    
+    # Create new folder path with updated lmax
+    new_folder = filepath.replace(f"llim_{old_lmax}", f"llim_{lmax}")
+    ensure_directory_exists(new_folder)
+    
+    new_filepath = os.path.join(new_folder, f"job{job_id:d}.npz")
+    
+    # Convert angles back to numpy array format expected by the file
+    theta_array = np.array(angles)
+    
+    np.savez(
+        new_filepath,
+        xip=xips,
+        xim=xims,
+        lmax=lmax,
+        theta=theta_array,
+    )
+    
+    logger.info(f"Saved regenerated xi data to: {new_filepath}")
+    file_size_mb = os.path.getsize(new_filepath) / 1024**2
+    logger.debug(f"Regenerated file size: {file_size_mb:.2f} MB")
 
 
-def load_cfs(name):
-    print("Loading cfs ", end="")
-    mfile = np.load(name)
-    print("with angles ", end="")
-    print(mfile["angs"])
-    return mfile["t"], mfile["cf_re"], mfile["cf_im"], mfile["ximax"], mfile["angs"]
+def read_pcl_sims(filepath: str, njobs: int) -> np.ndarray:
+    """
+    Read pseudo power spectra from simulation job files.
+    
+    Parameters:
+    -----------
+    filepath : str
+        Base path to PCL simulation files
+    njobs : int
+        Number of job files to read
+        
+    Returns:
+    --------
+    ndarray
+        Concatenated PCL data array
+    """
+    logger.info(f"Reading PCL simulations from {filepath}")
+    
+    allpcl = []
+    missing = []
+    
+    for i in range(1, njobs + 1):
+        pcl_file = f"{filepath}/pcljob{i:d}.npz"
+        
+        if check_for_file(pcl_file, f"PCL job {i}"):
+            try:
+                with np.load(pcl_file) as pclfile:
+                    pcl_s = np.array([pclfile['pcl_e'], pclfile['pcl_b'], pclfile['pcl_eb']])
+                    pcl_s = np.swapaxes(pcl_s, 0, 1)
+                    allpcl.extend(pcl_s)
+            except Exception as e:
+                logger.error(f"Error reading PCL job {i}: {e}")
+                missing.append(i)
+        else:
+            logger.warning(f"Missing PCL job number {i}")
+            missing.append(i)
+    
+    if missing:
+        missing_str = ",".join(map(str, missing))
+        logger.warning(f"Missing PCL jobs: {missing_str}")
+    
+    allpcl = np.array(allpcl)
+    logger.info(f"Loaded PCL data with shape: {allpcl.shape}")
+    
+    return allpcl
+
+
+# ============================================================================
+# Legacy Data Loaders (kept for compatibility)
+# ============================================================================
+
 
 
 def save_matrix(m, filename, kind="M"):
@@ -159,257 +444,250 @@ def save_matrix(m, filename, kind="M"):
     np.savez(filename, matrix=m)
 
 
-def read_2D_cf(config):
-    ndim = 2  # int(config["Run"]['ndim'])
-    paths = config["Paths"]
-    params = config["Params"]
-    batchsize = int(config["Run"]["batchsize"])
-    numjobs = int(config["Run"]["jobnum"])
-    steps = int(params["steps"])
-    t_sets = np.load(paths["t_sets"])["t"]
+# ============================================================================
+# Batch Processing Functions
+# ============================================================================
 
-    xi_max = [float(params["ximax{:d}".format(i)]) for i in range(1, ndim + 1)]
-
-    t_inds, t_sets, t0_set, dt_set = helper_funcs.setup_t(xi_max, steps)
-
-    cf_grid = np.full((steps - 1, steps - 1), np.nan, dtype=complex)
-
-    resultpath = paths["result"]
-    # resultpath = '/cluster/scratch/veoehl/2Dcf/xip_5535bins_new/'
-
-    t0_2 = np.array(t0_set)
-    dt_2 = np.array(dt_set)
-
-    ind_sets = np.stack(np.meshgrid(t_inds, t_inds), -1).reshape(-1, 2)
-    fail_list = []
-
-    for i in range(numjobs):
-
-        try:
-            batch = np.load(resultpath + "job{:d}.npz".format(i))
-            size = os.path.getsize(resultpath + "job{:d}.npz".format(i))
-            # if size < 131560 and i != numjobs-1:
-            #    print('removing file job{:d}.npz'.format(i))
-            #    os.remove(resultpath + 'job{:d}.npz'.format(i))
-            batch_t = batch["ts"]
-            batch_cf = batch["cf"]
-        except:
-            fail_list.append(i)
-            batch_t = t_sets[i * batchsize : (i + 1) * batchsize]
-            batch_cf = np.zeros(len(batch_t))
-
-        inds = ind_sets[i * batchsize : (i + 1) * batchsize]
-        # high_ell_ext = calc_pdf.high_ell_gaussian_cf_nD(batch_t,mu,cov)
-
-        # high_ell_ext[np.isnan(high_ell_ext)] = 0
-        # high_ell_ext[np.isinf(high_ell_ext)] = 0
-
-        for j, idx in enumerate(inds):
-            try:
-                cf_grid[tuple(idx)] = batch_cf[j]
-            except:
-                cf_grid[tuple(idx)] = 0
-
-    missing_string = ",".join([str(x + 1) for x in fail_list])
-    print(missing_string)
-
-    print(len(fail_list))
-    np.savez("missing_jobs.npz", numbers=np.array(fail_list))
-    return t0_2, dt_2, t_sets, ind_sets, cf_grid
-
-def xi_sims_from_pcl(i,prefactors,filepath,lmax=None):
-    
-    pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
-    assert lmax <= int(pclfile["lmax"]), f"requested lmax too high for simulated pcljob {i}. Need new simulations."
-    pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
-    xips,xims = helper_funcs.pcls2xis(pcl_s,prefactors,out_lmax=lmax)
-    
-
-    return xips,xims
-
-def read_sims_nd(filepath, njobs, lmax, kind="xip", prefactors=None, theta=None):
-    # Make this truly nd
-    all_xi = []
-    missing = []
-    angles = None  # To store angles from the first file
-
-    for i in range(1, njobs + 1):
-        if os.path.isfile(filepath + "/job{:d}.npz".format(i)):
-            xifile = np.load(filepath + "/job{:d}.npz".format(i))
-            try:
-                #assert lmax == int(xifile["lmax"])
-                xi = xifile[kind]  # Shape (batchsize,n_corr,n_theta)
-                
-            except AssertionError:
-                print(f"lmax mismatch in job {i}. Generating xis using pcls2xis.")
-                pclfile = np.load(filepath + "/pcljob{:d}.npz".format(i))
-                
-                
-                # Check for prefactors in xifile.files
-                if "prefactors" in xifile.files:
-                    prefactors = xifile["prefactors"]
-                elif prefactors is None:
-                    raise ValueError("Prefactors must be provided for older simulations.")
-                assert len(prefactors) == len(theta), "Prefactors and theta must have the same length."
-                xips, xims = xi_sims_from_pcl(i, prefactors, filepath, lmax=lmax)
-                
-                xi = xips if kind == "xip" else xims
-
-                # Update the filepath for storing the new xis
-                new_folder = filepath.replace(
-                    "llim_{}".format(xifile["lmax"]),
-                    "llim_{}".format(lmax),
-                )
-                if not os.path.exists(new_folder):
-                    os.makedirs(new_folder)
-                new_filepath = new_folder + "/job{:d}.npz".format(i)
-                np.savez(
-                    new_filepath,
-                    xip=xips,
-                    xim=xims,
-                    lmax=lmax,  # Update lmax in the saved file
-                    theta=theta,
-                )
-            if angles is None:
-                angles = [tuple(angle) for angle in xifile["theta"]]  # Convert to list of 2-tuples
-                print(angles)
-            # Assert that theta (if provided) is part of angles
-            if theta is not None:
-                
-                assert set(theta).issubset(set(angles)), "Provided theta contains angles not in the dataset."
-            else:
-                theta = angles  # Use all angles if none provided
-            all_xi.append(xi)
-        else:
-            print("Missing job number {:d}.".format(i))
-            missing.append(i)
-
-    all_xi = np.concatenate(all_xi, axis=0)
-
-    missing_string = ",".join([str(x) for x in missing])
-    print(missing_string)
-    return all_xi, theta  # Return all xi and the saved angles
-
-def read_pcl_sims(filepath,njobs):
-    allpcl=[]
-    missing = []
-    for i in range(1,njobs+1):
-        print(i)
-        if os.path.isfile(filepath+"/pcljob{:d}.npz".format(i)):
-            pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
-            pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
-            pcl_s = np.swapaxes(pcl_s,0,1)
-            allpcl += list(pcl_s)
-        else:
-            print('Missing job number {:d}.'.format(i))
-            missing.append(i)
-    allpcl = np.array(allpcl)
-    print(allpcl.shape)
-    #allpcl.reshape(allpcl.shape[0]*allpcl.shape[1],3,768)
-    return allpcl
-
-def read_posterior_files(pattern, regex=None):
+def read_posterior_files(pattern: str, regex: Optional[str] = None, 
+                        flatten_posteriors: Optional[bool] = None) -> Dict[str, np.ndarray]:
     """
-    Reads files matching a given pattern and appends their values to lists.
-
+    Read files matching a pattern and extract posterior data.
+    
+    Automatically detects available fields and handles different file structures:
+    - Single posterior split across many files -> flattens automatically
+    - Multiple complete posteriors in separate files -> keeps as 2D array
+    
     Parameters:
-    - pattern: A string pattern to match files (e.g., 's8posts/s8post_*.npz').
-    - regex: A regular expression to further filter matched files (optional).
-
+    -----------
+    pattern : str
+        Glob pattern to match files (e.g., 's8posts/s8post_*.npz')
+    regex : str, optional
+        Regular expression to further filter matched files
+    flatten_posteriors : bool, optional
+        If True, flatten all posteriors into 1D arrays
+        If False, keep as 2D array (one posterior per row)
+        If None (default), auto-detect based on file structure
+        
     Returns:
-    - A dictionary containing lists of values extracted from the files.
+    --------
+    dict
+        Dictionary containing arrays of extracted posterior data.
+        Available keys depend on what's found in files:
+        - 'gauss_posteriors', 'exact_posteriors' (always present if data exists)
+        - 's8' (if available)
+        - 'means', 'combs' (if available)
+        - 'available' (boolean mask of successfully read files)
+        - 'file_info' (metadata about file structure)
     """
-    gauss_posteriors, exact_posteriors, s8, means, combs, available = [], [], [], [], [], []
+    logger.info(f"Reading posterior files with pattern: {pattern}")
     
-    # Use glob to find files matching the pattern
     files = glob.glob(pattern)
+    if not files:
+        logger.warning(f"No files found matching pattern: {pattern}")
+        return {"available": [], "file_info": {"total_files": 0}}
     
-    # If a regex is provided, filter files using it
     if regex:
         files = [f for f in files if re.search(regex, f)]
+        logger.debug(f"Filtered to {len(files)} files using regex: {regex}")
     
-    for file in files:
+    # Data containers
+    gauss_posteriors, exact_posteriors = [], []
+    s8_values, means_values, combs_values = [], [], []
+    available = []
+    
+    # Track what fields are available
+    available_fields = set()
+    posterior_shapes = []
+    
+    for file_path in files:
         try:
-            posts = np.load(file)
-            gauss_post, exact_post = posts['gauss'], posts['exact']
-            gauss_posteriors.append(gauss_post.flatten())
-            exact_posteriors.append(exact_post.flatten())
-            s8.append(posts['s8'].flatten())
-            #means.append(posts['means'])
-            #combs.append(posts['comb'])
-            available.append(True)
+            with np.load(file_path) as posts:
+                # Check what fields are available
+                file_fields = set(posts.files)
+                available_fields.update(file_fields)
+                
+                # Always try to load gauss and exact
+                if 'gauss' in posts and 'exact' in posts:
+                    gauss_post = posts['gauss']
+                    exact_post = posts['exact']
+                    
+                    # Track shapes for auto-detection
+                    posterior_shapes.append(gauss_post.shape)
+                    
+                    gauss_posteriors.append(gauss_post)
+                    exact_posteriors.append(exact_post)
+                    
+                    # Load optional fields if available
+                    if 's8' in posts:
+                        s8_values.append(posts['s8'])
+                    
+                    if 'means' in posts:
+                        means_values.append(posts['means'])
+                        
+                    if 'comb' in posts:
+                        combs_values.append(posts['comb'])
+                    elif 'combs' in posts:  # Handle both naming conventions
+                        combs_values.append(posts['combs'])
+                    
+                    available.append(True)
+                    logger.debug(f"Successfully loaded: {file_path}")
+                    
+                else:
+                    logger.warning(f"Missing required fields (gauss/exact) in {file_path}")
+                    available.append(False)
+                    
         except Exception as e:
-            print(f"Error reading file {file}: {e}")
+            logger.error(f"Error reading file {file_path}: {e}")
             available.append(False)
     
+    # Auto-detect file structure if not specified
+    if flatten_posteriors is None:
+        flatten_posteriors = _should_flatten_posteriors(posterior_shapes)
+    
+    logger.info(f"Successfully loaded {sum(available)}/{len(files)} files")
+    logger.debug(f"Available fields: {sorted(available_fields)}")
+    logger.debug(f"Flattening posteriors: {flatten_posteriors}")
+    
+    # Process the data based on flattening decision
+    result = {
+        "available": available,
+        "file_info": {
+            "total_files": len(files),
+            "successful_files": sum(available),
+            "available_fields": sorted(available_fields),
+            "flattened": flatten_posteriors,
+            "posterior_shapes": posterior_shapes
+        }
+    }
+    
+    if gauss_posteriors:
+        if flatten_posteriors:
+            result["gauss_posteriors"] = np.concatenate([p.flatten() for p in gauss_posteriors])
+            result["exact_posteriors"] = np.concatenate([p.flatten() for p in exact_posteriors])
+        else:
+            result["gauss_posteriors"] = np.array(gauss_posteriors)
+            result["exact_posteriors"] = np.array(exact_posteriors)
+    
+    # Handle optional fields
+    if s8_values:
+        if flatten_posteriors:
+            result["s8"] = np.concatenate([s.flatten() for s in s8_values])
+        else:
+            result["s8"] = np.array(s8_values)
+    
+    if means_values:
+        if flatten_posteriors:
+            result["means"] = np.concatenate([m.flatten() for m in means_values])
+        else:
+            result["means"] = np.array(means_values)
+    
+    if combs_values:
+        if flatten_posteriors:
+            result["combs"] = np.concatenate([c.flatten() for c in combs_values])
+        else:
+            result["combs"] = np.array(combs_values)
+    
+    return result
+
+def _should_flatten_posteriors(shapes: List[Tuple]) -> bool:
+    """
+    Auto-detect whether posteriors should be flattened based on their shapes.
+    
+    Heuristic:
+    - If all shapes are 1D or very small, likely parts of single posterior -> flatten
+    - If shapes are large and similar, likely complete posteriors -> don't flatten
+    """
+    if not shapes:
+        return True
+    
+    # Convert to numpy for easier analysis
+    shapes_array = np.array(shapes)
+    
+    # If all 1D, definitely parts of a single posterior
+    if all(len(shape) == 1 for shape in shapes):
+        return True
+    
+    # If all same shape and reasonably large, probably complete posteriors
+    if len(set(shapes)) == 1:  # All same shape
+        total_elements = np.prod(shapes[0])
+        if total_elements > 100:  # Arbitrary threshold for "large"
+            logger.debug(f"Detected complete posteriors (shape {shapes[0]}, {total_elements} elements)")
+            return False
+    
+    # Default: flatten for safety
+    logger.debug(f"Defaulting to flattening (shapes: {shapes[:3]}{'...' if len(shapes) > 3 else ''})")
+    return True
+
+# Helper function for backward compatibility
+def read_posterior_files_simple(pattern: str, regex: Optional[str] = None) -> Dict[str, np.ndarray]:
+    """
+    Simplified version that always flattens for backward compatibility.
+    
+    Returns the old format with flattened arrays.
+    """
+    result = read_posterior_files(pattern, regex, flatten_posteriors=True)
+    
+    # Return in old format
     return {
-        "gauss_posteriors": np.array(gauss_posteriors).flatten(),
-        "exact_posteriors": np.array(exact_posteriors).flatten(),
-        "s8": np.array(s8).flatten(),
-        #"means": np.array(means),
-        #"combs": np.array(combs),
-        "available": available
+        "gauss_posteriors": result.get("gauss_posteriors", np.array([])),
+        "exact_posteriors": result.get("exact_posteriors", np.array([])),
+        "s8": result.get("s8", np.array([])),
+        "available": result["available"]
     }
 
 
 
 
 
-def xi_sims_from_pcl(i,prefactors,filepath,lmax=None):
-    
-    pclfile = np.load(filepath+"/pcljob{:d}.npz".format(i))
-    pcl_s = np.array([pclfile['pcl_e'],pclfile['pcl_b'],pclfile['pcl_eb']])
-    xips,xims = pcls2xis(pcl_s,prefactors,out_lmax=lmax)
-    
-# make dictionary of initial xi-file and add this angbin and these xis
-    return xips,xims
 
 
 
+# ============================================================================
+# Deprecated Functions
+# ============================================================================
 
-def read_xi_sims(filepath,njobs,angbins,kind="xip",prefactors=None,lmax=None):
-    raise DeprecationWarning("This function is deprecated. Use read_sims_nd instead.")
-     
-    allsims = []
-    for j,angbin in enumerate(angbins):
-        allxi=[]
-        missing = []
-        for i in range(1,njobs+1):
-            
-            if os.path.isfile(filepath+"/job{:d}.npz".format(i)):
-                xifile = np.load(filepath+"/job{:d}.npz".format(i))
-                angs = xifile["theta"]
-                print(angs)
-                if filepath[-2:] == 'rr':
-                    angind = np.where(angs == np.mean(angbin))
-                else:
-                    angind = np.where(angs == angbin)
-                print(angind)
-                
-                if lmax is not None or len(angind[0]) == 0:
-                    try:
-                        xip = xi_sims_from_pcl(i,prefactors,filepath,lmax=lmax)[0][:,j]
-                    except FileNotFoundError:
-                        print('Missing job number {:d}.'.format(i))
-                        missing.append(i)
-                        #traceback.print_exc()
-                        xip =[]
-                    except:
-                        traceback.print_exc()
-                        xip =[]
-                else:
-                    #xip = xifile[kind][:,angind[0][0]]
-                    xip = xifile[kind][:,angind[0][0]]
-                allxi += list(xip)
-            else:
-                print('Missing job number {:d}.'.format(i))
-                missing.append(i)
-        allxi = np.array(allxi)
-        missing_string = ','.join([str(x) for x in missing])
-        print(missing_string)
-        allsims.append(allxi)
-    #allxi = allxi.flatten()
-    return np.array(allsims)
+def load_pdfs(*args, **kwargs):
+    """DEPRECATED: Moved to legacy.file_handling_v1."""
+    import warnings
+    warnings.warn(
+        "load_pdfs has been moved to the legacy folder. "
+        "Use 'from legacy.file_handling_v1 import load_pdfs' instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from legacy.file_handling_v1 import load_pdfs as legacy_load_pdfs
+    return legacy_load_pdfs(*args, **kwargs)
 
+def load_cfs(*args, **kwargs):
+    """DEPRECATED: Moved to legacy.file_handling_v1."""
+    import warnings
+    warnings.warn(
+        "load_cfs has been moved to the legacy folder. "
+        "Use 'from legacy.file_handling_v1 import load_cfs' instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from legacy.file_handling_v1 import load_cfs as legacy_load_cfs
+    return legacy_load_cfs(*args, **kwargs)
 
+def read_2D_cf(*args, **kwargs):
+    """DEPRECATED: Moved to legacy.file_handling_v1."""
+    import warnings
+    warnings.warn(
+        "read_2D_cf has been moved to the legacy folder. "
+        "Use 'from legacy.file_handling_v1 import read_2D_cf' instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    from legacy.file_handling_v1 import read_2D_cf as legacy_read_2D_cf
+    return legacy_read_2D_cf(*args, **kwargs)
 
+def read_xi_sims(*args, **kwargs):
+    """DEPRECATED: Use read_sims_nd instead."""
+    import warnings
+    warnings.warn(
+        "read_xi_sims is deprecated. Use read_sims_nd() for new analyses.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    raise NotImplementedError("Use read_sims_nd() instead - provides better functionality.")
