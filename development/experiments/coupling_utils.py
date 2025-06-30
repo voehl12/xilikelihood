@@ -1,9 +1,39 @@
+"""
+Coupling utilities for copula-based likelihood experiments.
+
+This module provides utilities for experimenting with different coupling 
+approaches in likelihood computations using copulas and various marginal 
+distributions.
+
+⚠️ Note: This is experimental code for research purposes, not part of the 
+main package API.
+"""
+
 import numpy as np
 from scipy.stats import norm, gamma, multivariate_normal
 import matplotlib.pyplot as plt
 
+# ============================================================================
+# Model Generation Utilities
+# ============================================================================
+
 
 def simple_model(parameter, ndim=10):
+    """
+    Generate a simple model vector for testing purposes.
+    
+    Parameters:
+    -----------
+    parameter : float or array-like
+        Model parameter(s)
+    ndim : int, default=10
+        Number of dimensions
+        
+    Returns:
+    --------
+    ndarray
+        Model vector(s)
+    """
     
     base_vector = 1e-3 * np.linspace(1, ndim, ndim)
     if isinstance(parameter, (int, float)):
@@ -12,6 +42,10 @@ def simple_model(parameter, ndim=10):
         param = parameter**2
         return param[:, None] * base_vector
     
+# ============================================================================
+# Covariance and Correlation Utilities
+# ============================================================================
+
 
 def covariance_to_correlation(cov_matrix):
     """
@@ -36,6 +70,19 @@ def covariance_to_correlation(cov_matrix):
     np.fill_diagonal(corr_matrix, 1)
 
     return corr_matrix
+
+def generate_covariance(datavector, correlation):
+    ndim = len(datavector)
+    base_cov = 0.5*np.outer(datavector / (np.arange(1,ndim+1) + 1),datavector) 
+    corr_matrix = np.eye(ndim) * (1 - correlation) + correlation
+    cov = base_cov * corr_matrix
+    cov += np.eye(ndim) * 1e-6  # Add small diagonal term for numerical stability
+    return cov
+
+
+# ============================================================================
+# Copula Density Functions
+# ============================================================================
 
 
 def gaussian_copula_point_density(cdf_point, covariance_matrix):
@@ -77,10 +124,34 @@ def gaussian_copula_point_density(cdf_point, covariance_matrix):
     else:
         raise ValueError("Covariance matrix must be 2D or 3D.")
 
+# ============================================================================
+# Likelihood Functions
+# ============================================================================
+
+
 def copula_likelihood(datavector, cov, prior_model,type='gamma'):
     """
     Compute the copula likelihood using 1D marginals for each dimension.
     This function evaluates the log PDFs for all dimensions and prior values simultaneously.
+    
+    Compute copula likelihood using specified marginal distributions.
+    
+    Parameters:
+    -----------
+    datavector : ndarray
+        Observed data vector
+    cov : ndarray
+        Covariance matrix or matrices
+    prior_model : ndarray
+        Prior model predictions
+    marginal_type : str, default='gamma'
+        Type of marginal distribution ('gamma' or 'gaussian')
+        
+    Returns:
+    --------
+    ndarray
+        Log likelihood values
+    
     """
     # Extract standard deviations from the covariance matrix
     if not np.all(np.linalg.eigvals(cov) >= 0):  
@@ -122,10 +193,4 @@ def copula_likelihood(datavector, cov, prior_model,type='gamma'):
     likelihood = total_log_likelihood + copula_density  # Shape: (n_prior_values,)
     return likelihood
 
-def generate_covariance(datavector, correlation):
-    ndim = len(datavector)
-    base_cov = 0.5*np.outer(datavector / (np.arange(1,ndim+1) + 1),datavector) 
-    corr_matrix = np.eye(ndim) * (1 - correlation) + correlation
-    cov = base_cov * corr_matrix
-    cov += np.eye(ndim) * 1e-6  # Add small diagonal term for numerical stability
-    return cov
+
