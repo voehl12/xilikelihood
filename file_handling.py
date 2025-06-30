@@ -3,6 +3,9 @@ import numpy as np
 import helper_funcs
 import glob
 import re  # Import regular expressions
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class File:
@@ -25,16 +28,115 @@ class File:
             return False
 
 
+def ensure_directory_exists(directory):
+    """
+    Ensure a directory exists, creating it if necessary.
+    
+    Parameters:
+    -----------
+    directory : str
+        Path to directory that should exist
+        
+    Notes:
+    ------
+    Uses os.makedirs with exist_ok=True for safe directory creation.
+    Replaces unsafe os.system("mkdir") calls.
+    """
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+        logger.debug(f"Created directory: {directory}")
+
 def check_for_file(name, kind="file"):
-    print("Checking for {}s...".format(kind))
+    """Check if a file exists with proper logging."""
+    logger.debug(f"Checking for {kind}: {name}")
     if os.path.isfile(name):
-        print("Found some.")
+        logger.debug(f"Found {kind}")
         return True
     else:
-        print("None found.")
+        logger.debug(f"No {kind} found")
         return False
 
+def save_covariance_matrix(cov_matrix, filepath):
+    """Save covariance matrix to compressed numpy file."""
+    logger.info(f"Saving covariance matrix to: {filepath}")
+    
+    # Ensure directory exists
+    ensure_directory_exists(os.path.dirname(filepath))
+    
+    np.savez_compressed(filepath, cov=cov_matrix)
+    
+    # Log file size
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.info(f"Saved covariance matrix: {file_size_mb:.1f} MB")
 
+def load_covariance_matrix(filepath):
+    """Load covariance matrix from numpy file."""
+    if not check_for_file(filepath):
+        raise FileNotFoundError(f"Covariance file not found: {filepath}")
+    
+    logger.info(f"Loading covariance matrix from: {filepath}")
+    
+    try:
+        cov_file = np.load(filepath)
+        cov_matrix = cov_file["cov"]
+        cov_file.close()
+        
+        logger.debug(f"Loaded covariance matrix shape: {cov_matrix.shape}")
+        return cov_matrix
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to load covariance matrix from {filepath}: {e}")
+
+def save_pseudo_cl(pseudo_cl_dict, filepath):
+    """Save pseudo power spectra to file."""
+    logger.info(f"Saving pseudo-Cl to: {filepath}")
+    
+    ensure_directory_exists(os.path.dirname(filepath))
+    np.savez_compressed(filepath, **pseudo_cl_dict)
+    
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.debug(f"Saved pseudo-Cl file: {file_size_mb:.2f} MB")
+
+def load_pseudo_cl(filepath):
+    """Load pseudo power spectra from file."""
+    if not check_for_file(filepath):
+        return None
+    
+    logger.info(f"Loading cached pseudo-Cl from: {filepath}")
+    
+    try:
+        pcl_file = np.load(filepath)
+        result = {key: pcl_file[key] for key in pcl_file.files}
+        pcl_file.close()
+        
+        logger.debug(f"Successfully loaded pseudo-Cl with keys: {list(result.keys())}")
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Failed to load pseudo-Cl from {filepath}: {e}")
+        return None
+
+def generate_covariance_filename(exact_lmax, nside, mask_name, theory_name, sigma_name, base_dir=None):
+    """Generate standardized filename for covariance matrix."""
+    filename = f"cov_xi_l{exact_lmax:d}_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
+    
+    if base_dir:
+        cov_dir = os.path.join(base_dir, "covariances")
+        ensure_directory_exists(cov_dir)
+        return os.path.join(cov_dir, filename)
+    
+    return filename
+
+def generate_pseudo_cl_filename(nside, mask_name, theory_name, sigma_name, base_dir=None):
+    """Generate standardized filename for pseudo-Cl."""
+    filename = f"pcl_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
+    
+    if base_dir:
+        pcl_dir = os.path.join(base_dir, "pcls")
+        ensure_directory_exists(pcl_dir)
+        return os.path.join(pcl_dir, filename)
+    
+    return filename
 # load can become one function with a dictionary or list of what to load and return
 def load_pdfs(name):
     print("Loading pdfs ", end="")
