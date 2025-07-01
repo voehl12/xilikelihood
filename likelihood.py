@@ -1,7 +1,7 @@
 from theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
 from pseudo_alm_cov import Cov
 import characteristic_functions
-import cl2xi_transforms
+from cl2xi_transforms import prep_prefactors, cl2pseudocl
 import os, re
 
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -114,7 +114,7 @@ class XiLikelihood:
         copula_funcs.validate_pdfs(self._pdfs, self._xs, self._cdfs)
 
     def precompute_combination_matrices(self):
-        prefactors = cl2xi_transforms.prep_prefactors(
+        prefactors = prep_prefactors(
             self._ang_bins_in_deg, self.mask.wl, self.lmax, self.lmax
         )
         self._prefactors = prefactors
@@ -160,7 +160,7 @@ class XiLikelihood:
         # these means are not right yet, need to take care of the cross terms
         logger.info("Calculating 1D means...")
         einsum_means = np.einsum("cbll->cb", self._products.copy())
-        self.pseudo_cl = cl2xi_transforms.cl2pseudocl(self.mask.m_llp, self._theory_cl)
+        self.pseudo_cl = cl2pseudocl(self.mask.m_llp, self._theory_cl)
         self._means_lowell = characteristic_functions.mean_xi_gaussian_nD(
             self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax
         )
