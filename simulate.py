@@ -12,7 +12,7 @@ from numpy.random import default_rng
 from cl2xi_transforms import pcl2xi, prep_prefactors
 from noise_utils import get_noise_cl, get_noise_pixelsigma
 from pseudo_alm_cov import Cov
-from file_handling import check_property_equal
+from core_utils import check_property_equal
 
 from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable
 

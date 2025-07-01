@@ -89,7 +89,7 @@ def test_analytic_pcl():
     from simulate import TwoPointSimulation
     from pseudo_alm_cov import Cov
     import cl2xi_transforms
-    from characteristic_functions import cov_xi_gaussian_nD
+    from distributions import cov_xi_gaussian_nD
 
     l_smooth_mask = 30
     lmin = 0
@@ -145,7 +145,7 @@ def test_wlmlm():
 def test_treecorrvsnamaster():
     from simulate import TwoPointSimulation
     from pseudo_alm_cov import Cov
-    from characteristic_functions import cov_xi_gaussian_nD
+    from distributions import cov_xi_gaussian_nD
 
     jobnumber = 0
 
@@ -176,7 +176,7 @@ def test_treecorrvsnamaster():
 
 
 def test_means():
-    import characteristic_functions
+    import distributions
     import moments
 
     steps = 2048
@@ -187,8 +187,8 @@ def test_means():
     var_trace = 2 * np.trace(m[:, None] * cov @ m[:, None] * cov)
 
     ximax = mean_trace + 10 * np.sqrt(var_trace)
-    t, cf = characteristic_functions.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
-    x_low, pdf_low = characteristic_functions.cf_to_pdf_1d(t, cf)
+    t, cf = distributions.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
+    x_low, pdf_low = distributions.cf_to_pdf_1d(t, cf)
     mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
     var_lowell_pdf = np.trapz(x_low**2 * pdf_low, x=x_low)
     mean_lowell_cf, var_lowell_cf = moments.nth_moment(2, t, cf)
@@ -204,7 +204,7 @@ def test_means():
 
 def test_cf2pdf():
     import scipy.stats as stats
-    from characteristic_functions import gaussian_cf, cf_to_pdf_1d
+    from distributions import gaussian_cf, cf_to_pdf_1d
     
 
     mu = 0

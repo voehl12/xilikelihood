@@ -16,7 +16,8 @@ import time
 import logging
 import cov_funcs
 import noise_utils
-import file_handling
+from file_handling import generate_covariance_filename, save_covariance_matrix, check_for_file, load_covariance_matrix, generate_pseudo_cl_filename, load_pseudo_cl, save_pseudo_cl
+from core_utils import check_property_equal
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class Cov:
         self._exact_lmax = exact_lmax
         
         # Validate consistency between mask and covariance lmax
-        if not file_handling.check_property_equal([self, self.mask], "_exact_lmax"):
+        if not check_property_equal([self, self.mask], "_exact_lmax"):
             raise RuntimeError(
                 "exact_lmax mismatch between Cov class and mask. "
                 f"Cov: {exact_lmax}, Mask: {getattr(mask, '_exact_lmax', 'undefined')}"
@@ -105,7 +106,7 @@ class Cov:
         self._lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self._cov_ell_buffer = cov_ell_buffer
         # Set up file paths
-        self.covalm_path = file_handling.generate_covariance_filename(
+        self.covalm_path = generate_covariance_filename(
             self._exact_lmax,
             self.mask.nside,
             self.mask.name,
@@ -501,19 +502,19 @@ class Cov:
 
     def save_cov(self):
         """Save covariance matrix using centralized file handling."""
-        file_handling.save_covariance_matrix(self.cov_alm, self.covalm_path)
+        save_covariance_matrix(self.cov_alm, self.covalm_path)
 
     def check_cov(self):
         """Check if covariance file exists."""
-        return file_handling.check_for_file(self.covalm_path)
+        return check_for_file(self.covalm_path)
 
     def load_cov(self):
         """Load covariance matrix using centralized file handling."""
-        self.cov_alm = file_handling.load_covariance_matrix(self.covalm_path)
+        self.cov_alm = load_covariance_matrix(self.covalm_path)
 
     def _get_pseudo_cl_path(self):
         """Generate file path for pseudo-Cl cache."""
-        return file_handling.generate_pseudo_cl_filename(
+        return generate_pseudo_cl_filename(
             self.mask.nside,
             self.mask.name,
             self.theorycl.name,
@@ -552,7 +553,7 @@ class Cov:
             pcl_path = self._get_pseudo_cl_path()
             
             # Try to load from cache first
-            cached_pcl = file_handling.load_pseudo_cl(pcl_path)
+            cached_pcl = load_pseudo_cl(pcl_path)
             if cached_pcl is not None:
                 self.p_ee = cached_pcl["pcl_ee"]
                 self.p_bb = cached_pcl["pcl_bb"] 
@@ -582,7 +583,7 @@ class Cov:
             if hasattr(self, 'p_tt'):
                 save_dict["pcl_tt"] = self.p_tt
             
-            file_handling.save_pseudo_cl(save_dict, pcl_path)
+            save_pseudo_cl(save_dict, pcl_path)
         logger.info("Pseudo-Cl computation completed")
         
   

@@ -67,7 +67,7 @@ def read_xi_sims(filepath, njobs, angbins, kind="xip", prefactors=None, lmax=Non
 
 
 def read_2D_cf(config):
-    from characteristic_functions import setup_t
+    from distributions import setup_t
     ndim = 2  # int(config["Run"]['ndim'])
     paths = config["Paths"]
     params = config["Params"]
