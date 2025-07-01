@@ -594,28 +594,32 @@ def _should_flatten_posteriors(shapes: List[Tuple]) -> bool:
     Auto-detect whether posteriors should be flattened based on their shapes.
     
     Heuristic:
-    - If all shapes are 1D or very small, likely parts of single posterior -> flatten
-    - If shapes are large and similar, likely complete posteriors -> don't flatten
+    - If all arrays are short (< 5 elements), likely parts of single posterior -> flatten
+    - If arrays are long and similar length, likely complete posteriors -> don't flatten
     """
     if not shapes:
         return True
     
-    # Convert to numpy for easier analysis
-    shapes_array = np.array(shapes)
+    # Get array lengths (assuming 1D arrays)
+    lengths = [np.prod(shape) for shape in shapes]
     
-    # If all 1D, definitely parts of a single posterior
-    if all(len(shape) == 1 for shape in shapes):
+    # If all arrays are very short, probably parts of a single posterior
+    if all(length < 5 for length in lengths):
+        logger.debug(f"Detected posterior fragments (lengths: {lengths}) -> flattening")
         return True
     
-    # If all same shape and reasonably large, probably complete posteriors
-    if len(set(shapes)) == 1:  # All same shape
-        total_elements = np.prod(shapes[0])
-        if total_elements > 100:  # Arbitrary threshold for "large"
-            logger.debug(f"Detected complete posteriors (shape {shapes[0]}, {total_elements} elements)")
-            return False
+    # If arrays are reasonably long and similar length, probably complete posteriors
+    if len(set(lengths)) == 1 and lengths[0] > 100:  # All same length and long
+        logger.debug(f"Detected complete posteriors (length {lengths[0]}) -> keeping as 2D")
+        return False
+    
+    # If mixed lengths but all reasonably long, probably complete posteriors of different types
+    if all(length > 50 for length in lengths):
+        logger.debug(f"Detected complete posteriors (various lengths: {set(lengths)}) -> keeping as 2D")
+        return False
     
     # Default: flatten for safety
-    logger.debug(f"Defaulting to flattening (shapes: {shapes[:3]}{'...' if len(shapes) > 3 else ''})")
+    logger.debug(f"Uncertain structure (lengths: {lengths[:5]}{'...' if len(lengths) > 5 else ''}) -> flattening")
     return True
 
 # Helper function for backward compatibility
