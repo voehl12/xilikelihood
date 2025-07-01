@@ -1,9 +1,9 @@
 """
-PDF calculation utilities for 2-point correlation functions.
+Characteristic function calculation utilities for 2-point correlation functions.
 
 This module provides functions for:
 - Converting characteristic functions to PDFs
-- Computing Gaussian covariances for correlation functions  
+- Computing Gaussian covariances for characteristic functions of correlation functions  
 - Batch processing of characteristic functions with JAX
 - High-ell Gaussian extensions
 
@@ -15,29 +15,74 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from scipy.interpolate import UnivariateSpline
-from scipy.integrate import quad_vec
-import wigner
-# import matplotlib.pyplot as plt  # Only import if actually used
-import helper_funcs
+
+from noise_utils import get_noisy_cl
+from cl2xi_transforms import get_integrated_wigners, pcls2xi
+from file_handling import check_property_equal
 
 __all__ = [
+    # Grid setup utilities
+    'setup_t',
+
+    # Gaussian characteristic functions (moved from helper_funcs)
+    'gaussian_cf',
+    'gaussian_cf_nD',
+    
+    # Core CF/PDF conversion functions
     'batched_cf_1d_jitted',
     'high_ell_gaussian_cf_1d', 
     'cf_to_pdf_1d',
+       
+    # Gaussian covariance functions
     'cov_xi_gaussian_nD',
-    'cov_cl_nD',
     'mean_xi_gaussian_nD',
+    'cov_xi_nD',
+    
+    # C_ℓ covariance functions
+    'cov_cl_nD',
     'cov_cl_gaussian',
     'cov_cl_gaussian_mixed',
-    'get_noisy_cl',
-    'get_integrated_wigners',
-    # Explicitly exclude deprecated functions
 ]
 
 # ============================================================================
-# Core characteristic function and PDF Functions (actively used)
+# Grid setup utilities
 # ============================================================================
 
+def setup_t(xi_max, steps):
+    dts, t0s, ts = [], [], []
+
+    for xi in xi_max:
+
+        dt = 0.45 * 2 * np.pi / xi
+        t0 = -0.5 * dt * (steps - 1)
+        t = np.linspace(t0, -t0, steps - 1)
+        dts.append(dt)
+        t0s.append(t0)
+        ts.append(t)
+
+    t_inds = np.arange(len(t))
+    t_sets = np.stack(np.meshgrid(ts[0], ts[1]), -1).reshape(-1, 2)
+
+    return t_inds, t_sets, t0s, dts
+
+# ============================================================================
+# Gaussian characteristic functions (moved from helper_funcs)
+# ============================================================================
+
+def gaussian_cf(t, mu, sigma):
+
+    return np.exp(1j * t * mu - 0.5 * sigma**2 * t**2)
+
+
+def gaussian_cf_nD(t_sets, mu, cov):
+    tmu = np.dot(t_sets, mu)
+    cov_t = np.einsum("ij,kj->ki", cov, t_sets)
+    tct = np.einsum("ki,ki->k", t_sets, cov_t)
+    return np.exp(1j * tmu - 0.5 * tct)
+
+# ============================================================================
+# Core CF/PDF conversion functions
+# ============================================================================
 
 def batched_cf_1d(eigvals, max_vals, steps=1024):
 
@@ -99,8 +144,6 @@ def high_ell_gaussian_cf_1d(t_lowell, means, vars):
 
     return interp_to_lowell
 
-
-
 def cf_to_pdf_1d(t, cf):
     """
     Converts a characteristic function phi(t) to a probability density function f(x).
@@ -152,10 +195,11 @@ def cf_to_pdf_1d(t, cf):
         )  # I have found this tends to be more numerically stable
 
         return (np.array(x), np.array(pdf))
-    
+
+
 
 # ============================================================================
-# Core Gaussian covariance Functions 
+# Gaussian covariance Functions 
 # ============================================================================
 
 
@@ -173,7 +217,7 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     )"""  # need to specify the angular bins for each redshift bin combination, it's a bit more flexible than the likelihood setup
 
     if lmax is None:
-        if not helper_funcs.check_property_equal(cl_objects, "lmax"):
+        if not check_property_equal(cl_objects, "lmax"):
             raise RuntimeError("lmax not equal for all cl objects.")
         else:
             lmax = cl_objects[0].lmax
@@ -203,6 +247,66 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
 
     return xi_cov
+
+
+def mean_xi_gaussian_nD(prefactors, pseudo_cl, lmin=0, lmax=None, kind="p"):
+    pseudo_cl = jnp.array(pseudo_cl)
+
+    pcl_means_p, pcl_means_m = pcls2xis(
+        pseudo_cl,
+        prefactors,
+        lmax,
+        lmin=lmin,
+    )
+    """ if hasattr(auto_cov_object, "_noise_sigma"):
+        cl_e = auto_cov_object.ee.copy() + auto_cov_object.noise_cl
+        cl_b = auto_cov_object.bb.copy() + auto_cov_object.noise_cl
+    else:
+        cl_e, cl_b = auto_cov_object.ee.copy(), auto_cov_object.bb.copy()
+    cl_mean_p, cl_mean_m = helper_funcs.cl2xi((cl_e, cl_b), angbins_in_deg[i], lmax, lmin=lmin)
+    # assert np.allclose(pcl_mean_p[0], cl_mean_p, rtol=1e-2), (pcl_mean_p[0], cl_mean_p)
+    print(
+        "lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(
+            lmin, lmax, pcl_mean_p[i], cl_mean_p
+        )
+    )
+    assert np.allclose(pcl_mean_p[i], cl_mean_p, rtol=1e-1) """
+    if kind == "p":
+        return np.array(pcl_means_p)
+    elif kind == "m":
+        return np.array(pcl_means_m)
+    else:
+        return np.array(pcl_means_p), np.array(pcl_means_m)
+
+
+def cov_xi_nD(cov_objects):
+    """
+    Patches together several pseudo alm covariances to a full covariance matrix.
+    Only needed for multi-dimensional characteristic functions and moments, computationally challenging due to matrix size.
+    """
+    n = len(cov_objects)
+    sidelen_almcov = int(0.5 * (-1 + np.sqrt(1 + 8 * n)))
+    
+    k = 0
+    for i in range(sidelen_almcov):
+        for j in reversed(list(range(sidelen_almcov)[: i + 1])):
+            cov_object = cov_objects[k]
+
+            sub_cov = cov_object.cov_alm_xi()
+            if k == 0:
+                len_sub = len(sub_cov)
+                cov = np.zeros((len(sub_cov) * sidelen_almcov, len(sub_cov) * sidelen_almcov))
+            cov[i * len_sub : (i + 1) * len_sub, j * len_sub : (j + 1) * len_sub] = sub_cov
+            if i != j:
+                cov[j * len_sub : (j + 1) * len_sub, i * len_sub : (i + 1) * len_sub] = sub_cov
+            k += 1
+
+    assert np.allclose(cov, cov.T), "Covariance matrix not symmetric"
+    return cov
+
+# ============================================================================
+# C_ℓ covariance functions
+# ============================================================================
 
 def cov_cl_nD(cl_objects, lmax, redshift_bin_combs=None, n_redshift_bins=None):
     """
@@ -282,35 +386,6 @@ def cov_cl_nD(cl_objects, lmax, redshift_bin_combs=None, n_redshift_bins=None):
     return cov
 
 
-def mean_xi_gaussian_nD(prefactors, pseudo_cl, lmin=0, lmax=None, kind="p"):
-    pseudo_cl = jnp.array(pseudo_cl)
-
-    pcl_means_p, pcl_means_m = helper_funcs.pcls2xis(
-        pseudo_cl,
-        prefactors,
-        lmax,
-        lmin=lmin,
-    )
-    """ if hasattr(auto_cov_object, "_noise_sigma"):
-        cl_e = auto_cov_object.ee.copy() + auto_cov_object.noise_cl
-        cl_b = auto_cov_object.bb.copy() + auto_cov_object.noise_cl
-    else:
-        cl_e, cl_b = auto_cov_object.ee.copy(), auto_cov_object.bb.copy()
-    cl_mean_p, cl_mean_m = helper_funcs.cl2xi((cl_e, cl_b), angbins_in_deg[i], lmax, lmin=lmin)
-    # assert np.allclose(pcl_mean_p[0], cl_mean_p, rtol=1e-2), (pcl_mean_p[0], cl_mean_p)
-    print(
-        "lmin: {:d}, lmax: {:d}, pCl mean: {:.5e}, Cl mean: {:.5e}".format(
-            lmin, lmax, pcl_mean_p[i], cl_mean_p
-        )
-    )
-    assert np.allclose(pcl_mean_p[i], cl_mean_p, rtol=1e-1) """
-    if kind == "p":
-        return np.array(pcl_means_p)
-    elif kind == "m":
-        return np.array(pcl_means_m)
-    else:
-        return np.array(pcl_means_p), np.array(pcl_means_m)
-
 def cov_cl_gaussian(cl_object):
     cl_e = cl_object.ee.copy()
     cl_b = cl_object.bb.copy()
@@ -330,30 +405,6 @@ def cov_cl_gaussian(cl_object):
     return diag, noise_diag
 
 
-# ============================================================================
-# Covariance Utilities 
-# ============================================================================
-
-
-def get_noisy_cl(cl_objects, lmax):
-    cl_es, cl_bs = [], []
-    for cl_object in cl_objects:
-        if cl_object is None:
-            # assert that this is in place of a cross cl?
-            cl_e = cl_b = np.zeros((lmax + 1))
-        else:
-            cl_e = cl_object.ee.copy()
-            cl_b = cl_object.bb.copy()
-            if hasattr(cl_object, "_noise_sigma"):
-                noise_B = noise_E = cl_object.noise_cl
-
-                cl_e += noise_E
-                cl_b += noise_B
-        cl_es.append(cl_e)
-        cl_bs.append(cl_b)
-    return tuple(cl_es), tuple(cl_bs)
-
-
 def cov_cl_gaussian_mixed(mixed_cl_objects, lmax):
     cl_es, cl_bs = get_noisy_cl(
         mixed_cl_objects, lmax
@@ -364,46 +415,11 @@ def cov_cl_gaussian_mixed(mixed_cl_objects, lmax):
     return cl2
 
 
-def get_int_lims(bin_in_deg):
-    """Convert angular bin limits from degrees to radians."""
-    binmin_in_deg, binmax_in_deg = bin_in_deg
-    return np.radians(binmin_in_deg), np.radians(binmax_in_deg)
 
+# ============================================================================
+# Deprecated functions
+# ============================================================================
 
-def get_integrated_wigners(lmin, lmax, bin_in_deg):
-    wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
-        lmin, lmax, 2, 2, theta_in_rad
-    )
-    lower, upper = get_int_lims(bin_in_deg)
-    t_norm = 2 / (upper**2 - lower**2)
-    integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
-    norm = 1 / (4 * np.pi)
-    return norm * integrated_wigners * t_norm
-
-def cov_xi_nD(cov_objects):
-    """
-    Patches together several pseudo alm covariances to a full covariance matrix.
-    Only needed for multi-dimensional characteristic functions and moments, computationally challenging due to matrix size.
-    """
-    n = len(cov_objects)
-    sidelen_almcov = int(0.5 * (-1 + np.sqrt(1 + 8 * n)))
-    
-    k = 0
-    for i in range(sidelen_almcov):
-        for j in reversed(list(range(sidelen_almcov)[: i + 1])):
-            cov_object = cov_objects[k]
-
-            sub_cov = cov_object.cov_alm_xi()
-            if k == 0:
-                len_sub = len(sub_cov)
-                cov = np.zeros((len(sub_cov) * sidelen_almcov, len(sub_cov) * sidelen_almcov))
-            cov[i * len_sub : (i + 1) * len_sub, j * len_sub : (j + 1) * len_sub] = sub_cov
-            if i != j:
-                cov[j * len_sub : (j + 1) * len_sub, i * len_sub : (i + 1) * len_sub] = sub_cov
-            k += 1
-
-    assert np.allclose(cov, cov.T), "Covariance matrix not symmetric"
-    return cov
 
 
 def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):

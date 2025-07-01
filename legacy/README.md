@@ -14,5 +14,5 @@ For new analyses, use the main package modules.
 
 ## Paper References
 
-- First paper: [Citation/DOI here]
+- First paper: [\[Citation/DOI here\]](https://arxiv.org/abs/2407.08718.)
 - Used commit: `git tag v1.0-first-paper`

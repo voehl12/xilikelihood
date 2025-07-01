@@ -18,7 +18,7 @@ import re  # Import regular expressions
 import logging
 from typing import Dict, List, Tuple, Optional, Union
 
-import helper_funcs
+from cl2xi_transforms import pcls2xis
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ __all__ = [
     
     # Utility functions
     'save_matrix',
+    'check_property_equal'
     
     
 ]
@@ -241,7 +242,7 @@ def xi_sims_from_pcl(job_id: int, prefactors: np.ndarray, filepath: str, lmax: O
             
             pcl_s = np.array([pclfile['pcl_e'], pclfile['pcl_b'], pclfile['pcl_eb']])
         
-        xips, xims = helper_funcs.pcls2xis(pcl_s, prefactors, out_lmax=lmax)
+        xips, xims = pcls2xis(pcl_s, prefactors, out_lmax=lmax)
         return xips, xims
         
     except Exception as e:
@@ -434,14 +435,31 @@ def read_pcl_sims(filepath: str, njobs: int) -> np.ndarray:
 
 
 # ============================================================================
-# Legacy Data Loaders (kept for compatibility)
+# Utility functions
 # ============================================================================
-
-
 
 def save_matrix(m, filename, kind="M"):
     print("Saving {} matrix.".format(kind))
     np.savez(filename, matrix=m)
+
+def check_property_equal(instances, property_name):
+    """
+    Check if a specific property of all instances is equal.
+
+    Parameters:
+        instances (list): A list of instances to check.
+        property_name (str): The name of the property to check.
+
+    Returns:
+        bool: True if the property is equal for all instances, False otherwise.
+    """
+    if not instances:
+        return True  # If the list is empty, return True
+
+    first_value = getattr(instances[0], property_name)
+    return all(getattr(instance, property_name) == first_value for instance in instances)
+
+
 
 
 # ============================================================================
