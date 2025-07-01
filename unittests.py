@@ -88,8 +88,8 @@ def test_cov_diag():
 def test_analytic_pcl():
     from simulate import TwoPointSimulation
     from pseudo_alm_cov import Cov
-    import helper_funcs
-    import cf_pdf_cov
+    import cl2xi_transforms
+    from characteristic_functions import cov_xi_gaussian_nD
 
     l_smooth_mask = 30
     lmin = 0
@@ -122,15 +122,15 @@ def test_analytic_pcl():
 
     new_sim.cl2pseudocl()
 
-    prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
-    xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax, lmin=lmin)
-    xi_ana_cl = helper_funcs.cl2xi((new_sim.ee, new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
-    xi_ana = helper_funcs.pcl2xi(
+    prefactors = cl2xi_transforms.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
+    xi_sim = cl2xi_transforms.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax, lmin=lmin)
+    xi_ana_cl = cl2xi_transforms.cl2xi((new_sim.ee, new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
+    xi_ana = cl2xi_transforms.pcl2xi(
         (new_sim.p_ee, new_sim.p_bb, new_sim.p_eb), prefactors, new_sim.lmax, lmin=lmin
     )
     xi_ana = [xi_ana[0][0], xi_ana[1][0]]
     xi_sim = [xi_sim[0][0], xi_sim[1][0]]
-    cov_comp = np.sqrt(cf_pdf_cov.cov_xi_gaussian_nD((cov,), ((0, 0),), [(4, 6)])[1][0, 0])
+    cov_comp = np.sqrt(cov_xi_gaussian_nD((cov,), ((0, 0),), [(4, 6)])[1][0, 0])
     assert np.allclose(np.array(xi_ana_cl), np.array(xi_ana), atol=cov_comp)
     assert np.allclose(xi_sim, xi_ana, atol=cov_comp)
 
@@ -145,7 +145,7 @@ def test_wlmlm():
 def test_treecorrvsnamaster():
     from simulate import TwoPointSimulation
     from pseudo_alm_cov import Cov
-    from cf_pdf_cov import cov_xi_gaussian_nD
+    from characteristic_functions import cov_xi_gaussian_nD
 
     jobnumber = 0
 
@@ -176,8 +176,8 @@ def test_treecorrvsnamaster():
 
 
 def test_means():
-    import cf_pdf_cov
-    import helper_funcs
+    import characteristic_functions
+    import moments
 
     steps = 2048
     cov = np.random.random((10, 10))
@@ -187,11 +187,11 @@ def test_means():
     var_trace = 2 * np.trace(m[:, None] * cov @ m[:, None] * cov)
 
     ximax = mean_trace + 10 * np.sqrt(var_trace)
-    t, cf = cf_pdf_cov.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
-    x_low, pdf_low = cf_pdf_cov.cf_to_pdf_1d(t, cf)
+    t, cf = characteristic_functions.calc_quadcf_1D(ximax, steps, cov, m, is_diag=True)
+    x_low, pdf_low = characteristic_functions.cf_to_pdf_1d(t, cf)
     mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
     var_lowell_pdf = np.trapz(x_low**2 * pdf_low, x=x_low)
-    mean_lowell_cf, var_lowell_cf = helper_funcs.nth_moment(2, t, cf)
+    mean_lowell_cf, var_lowell_cf = moments.nth_moment(2, t, cf)
 
     assert np.allclose(mean_trace, mean_lowell_cf, rtol=1e-2), (mean_trace, mean_lowell_cf)
     assert np.allclose(var_trace, var_lowell_cf, rtol=1e-2), (var_trace, var_lowell_cf)
@@ -204,8 +204,8 @@ def test_means():
 
 def test_cf2pdf():
     import scipy.stats as stats
-    from helper_funcs import gaussian_cf
-    from cf_pdf_cov import cf_to_pdf_1d
+    from characteristic_functions import gaussian_cf, cf_to_pdf_1d
+    
 
     mu = 0
     sigma = 1

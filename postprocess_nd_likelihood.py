@@ -1,5 +1,5 @@
 import numpy as np
-import cf_pdf_cov
+import characteristic_functions
 import configparser
 import file_handling
 import itertools
@@ -24,11 +24,11 @@ def convert_nd_cf_to_pdf(config, highell_moms=None):
         mu_high, cov_high = highell_moms
         mu_high = np.array(mu_high).flatten()
         high_ell_cf = np.full_like(cf_grid, np.nan, dtype=complex)
-        vals = cf_pdf_cov.high_ell_gaussian_cf_nD(t_sets, mu_high, cov_high)
+        vals = characteristic_functions.high_ell_gaussian_cf_nD(t_sets, mu_high, cov_high)
         for i, inds in enumerate(ind_sets):
             high_ell_cf[inds[0], inds[1]] = vals[i]
         cf_grid *= high_ell_cf
-    x_grid, pdf_grid = cf_pdf_cov.cf_to_pdf_nd(cf_grid, t0_2, dt_2, verbose=True)
+    x_grid, pdf_grid = characteristic_functions.cf_to_pdf_nd(cf_grid, t0_2, dt_2, verbose=True)
     return x_grid, pdf_grid
 
 
@@ -123,9 +123,9 @@ def compare_to_gaussian(config):
     angbins_in_deg = get_angbins(config)
     params = config["Params"]
     exact_lmax = int(params["l_exact"])
-    xi_combs = [cf_pdf_cov.get_combs(comb_n) for comb_n in get_comb_ns(config)]
+    xi_combs = [characteristic_functions.get_combs(comb_n) for comb_n in get_comb_ns(config)]
     cov_objects = setup_covs(config)
-    mu, cov = cf_pdf_cov.cov_xi_gaussian_nD(
+    mu, cov = characteristic_functions.cov_xi_gaussian_nD(
         cov_objects, xi_combs=xi_combs, angbins_in_deg=angbins_in_deg, lmin=0, lmax=exact_lmax
     )
     pass

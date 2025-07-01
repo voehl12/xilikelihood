@@ -9,9 +9,10 @@ import healpy as hp
 
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
-from helper_funcs import get_noise_cl, pcl2xi, prep_prefactors
+from cl2xi_transforms import pcl2xi, prep_prefactors
+from noise_utils import get_noise_cl, get_noise_pixelsigma
 from pseudo_alm_cov import Cov
-import helper_funcs
+from file_handling import check_property_equal
 
 from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable
 
@@ -261,10 +262,10 @@ def create_maps_nD(gls=[], nside=256, lmax=None):
 def set_pixelsigma(theorycl, nside):
     if theorycl.sigma_e is not None:
         if isinstance(theorycl.sigma_e, str):
-            pixelsigma = helper_funcs.get_noise_pixelsigma(nside)
+            pixelsigma = get_noise_pixelsigma(nside)
 
         elif isinstance(theorycl.sigma_e, tuple):
-            pixelsigma = helper_funcs.get_noise_pixelsigma(nside, theorycl.sigma_e)
+            pixelsigma = get_noise_pixelsigma(nside, theorycl.sigma_e)
         else:
             raise RuntimeError("sigma_e needs to be string for default or tuple (sigma_e,n_gal)")
     else:
@@ -372,9 +373,9 @@ def xi_sim_nD(
 ):
     xis, pcls = [], []
     gls = np.array([cl.ee.copy() for cl in theorycls])
-    if not helper_funcs.check_property_equal(
+    if not check_property_equal(
         masks, "nside"
-    ) or not helper_funcs.check_property_equal(masks, "eff_area"):
+    ) or not check_property_equal(masks, "eff_area"):
         raise RuntimeError("Different masks not implemented yet.")
 
     mask = masks[0]

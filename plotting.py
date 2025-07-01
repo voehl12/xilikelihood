@@ -3,7 +3,7 @@ import numpy as np
 import os
 from scipy.stats import norm
 import configparser
-from helper_funcs import pcls2xis, prep_prefactors, compute_kernel
+from cl2xi_transforms import pcls2xis, prep_prefactors, compute_kernel
 import traceback
 import matplotlib.colors as colors
 import numpy as np

@@ -176,7 +176,7 @@ def noise_correlation_analytical():
     from mask_props import SphereMask
     from theory_cl import TheoryCl
     from pseudo_alm_cov import Cov
-    from helper_funcs import prep_prefactors, pcl2xi
+    from cl2xi_transforms import prep_prefactors, pcl2xi
     exact_lmax = 30
     mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
     theorycl = TheoryCl(
@@ -276,7 +276,7 @@ def test_gaussian_cov(theta, binmin_in_arcmin, binmax_in_arcmin, noise_apo=False
 def noise_level_scale():
     import matplotlib.pyplot as plt
     import scipy.stats as stats
-    from helper_funcs import get_global_sigma_n
+    from noise_utils import get_global_sigma_n
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 5))
     binedges = np.logspace(np.log10(0.5), np.log10(300), 10)
@@ -701,7 +701,7 @@ def sim_ana_comp():
     from simulate import TwoPointSimulation
     from pseudo_alm_cov import Cov
     import calc_pdf
-    import helper_funcs
+    import cl2xi_transforms
     from file_handling import read_pcl_sims
     import healpy as hp
     mask_smooth_l = 30
@@ -737,8 +737,8 @@ def sim_ana_comp():
     new_sim.cl2pseudocl()
     angbins = [(0.23,0.3),(0.3,0.5),(0.6,0.9),(0.75,2),(2,3),(2.5,5),(4,6),(6,9)]
     angs = [np.mean(np.array(tup)) for tup in angbins]
-    prefacs = helper_funcs.prep_prefactors(angbins,new_sim.wl,new_sim.lmax,new_sim.lmax)
-    corr_func = helper_funcs.pcl2xi((new_sim.p_ee,new_sim.p_bb,new_sim.p_eb),prefacs,new_sim.lmax)
+    prefacs = cl2xi_transforms.prep_prefactors(angbins,new_sim.wl,new_sim.lmax,new_sim.lmax)
+    corr_func = cl2xi_transforms.pcl2xi((new_sim.p_ee,new_sim.p_bb,new_sim.p_eb),prefacs,new_sim.lmax)
     #prefactors = helper_funcs.prep_prefactors([(4, 6)], new_sim.wl, new_sim.lmax, new_sim.lmax)
     #xi_sim = helper_funcs.pcl2xi(np.mean(pcl_measured, axis=0), prefactors, new_sim.lmax,lmin=lmin)
     #xi_ana_cl = helper_funcs.cl2xi((new_sim.ee,new_sim.bb), (4, 6), new_sim.lmax, lmin=lmin)
@@ -1152,7 +1152,7 @@ def test_glass():
     import matplotlib.pyplot as plt
     import numpy as np
     import time
-    import helper_funcs
+    import cl2xi_transforms
     import healpy as hp
 
     cl_55 = "Cl_3x2pt_kids55.txt"
@@ -1174,7 +1174,7 @@ def test_glass():
     lmax = 30
     ell = np.arange(lmax+1)
     print(areas)
-    prefactors = helper_funcs.prep_prefactors(angs_in_deg, sim_33.wl, sim_33.lmax, lmax)
+    prefactors = cl2xi_transforms.prep_prefactors(angs_in_deg, sim_33.wl, sim_33.lmax, lmax)
     gls = np.array([sim_33.ee,sim_55.ee,sim_53.ee])
     fig, (ax1,ax2,ax3) = plt.subplots(1,3,figsize=(18,8))
     all_cl = []

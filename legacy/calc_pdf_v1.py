@@ -2,7 +2,7 @@
 Legacy PDF calculation functions from first paper, https://arxiv.org/abs/2407.08718.
 Preserved for reproducibility and reference.
 Use likelihood module for new work.
-Module has been renamed to cf_pdf_cov.py for further use.
+Module has been renamed to characteristic_functions.py for further use.
 """
 
 import numpy as np
@@ -10,7 +10,9 @@ import numpy as np
 from file_handling import check_for_file
 from file_handling_v1 import load_cfs, load_pdfs
 import setup_m
-import helper_funcs
+import cl2xi_transforms
+import characteristic_functions
+import moments
 
 def pdf_xi_1D(
     ang_bins_in_deg,
@@ -121,7 +123,7 @@ def pdf_xi_1D(
                 if not cov_flag:
                     cov = cov_xi_nD(cov_objects)
                     cov_flag = True
-                    prefactors_all = helper_funcs.prep_prefactors(
+                    prefactors_all = cl2xi_transforms.prep_prefactors(
                         ang_bins_in_deg, cov_objects[0].mask.wl, cov_objects[0].mask.lmax, cov_objects[0].mask.lmax
                     )
                     for cov_object in cov_objects:
@@ -132,7 +134,7 @@ def pdf_xi_1D(
                     cov_estimate = cov_xi_gaussian_nD(
                         [cov_ref.theorycl], [(0, 0)], [bin_in_deg],cov_ref.mask.eff_area, lmax=cov_ref.mask.lmax
                     )
-                    xip_estimate, _ = helper_funcs.pcl2xi(
+                    xip_estimate, _ = cl2xi_transforms.pcl2xi(
                         (cov_ref.p_ee, cov_ref.p_bb, cov_ref.p_eb), prefactors_all, cov_ref.mask.lmax
                     )
 
@@ -177,7 +179,7 @@ def pdf_xi_1D(
                 print("Converting to pdf")
                 x_low, pdf_low = cf_to_pdf_1d(t, cf)
                 mean_lowell_pdf = np.trapz(x_low * pdf_low, x=x_low)
-                mean_lowell_cf, var_lowell = helper_funcs.nth_moment(2, t, cf)
+                mean_lowell_cf, var_lowell = moments.nth_moment(2, t, cf)
                 if is_diag:
 
                     mean_trace = np.trace(m[:, None] * cov)
@@ -199,12 +201,12 @@ def pdf_xi_1D(
             if high_ell_extension:
                 cf *= high_ell_gaussian_cf(t, cov_ref, bin_in_deg)
 
-            skewness = helper_funcs.skewness(t, cf)
+            skewness = moments.skewness(t, cf)
 
             x, pdf = cf_to_pdf_1d(t, cf)
 
             mean = np.trapz(x * pdf, x=x)
-            first, second = helper_funcs.nth_moment(2, t, cf)
+            first, second = moments.nth_moment(2, t, cf)
             assert np.isclose(mean, first, rtol=1e-2), (mean, first)
 
             std = second - first**2
@@ -262,7 +264,7 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
     """
 
     cov = cov_xi_gaussian_nD([cov_object.theorycl], [(0, 0)], [angbin], cov_object.mask.eff_area,lmin=cov_object.exact_lmax + 1)
-    prefactors = helper_funcs.prep_prefactors(
+    prefactors = cl2xi_transforms.prep_prefactors(
             [angbin], cov_object.mask.wl, cov_object.mask.lmax, cov_object.mask.lmax
         )
     mean = mean_xi_gaussian_nD(prefactors,(cov_object.p_ee, cov_object.p_bb, cov_object.p_eb), lmin=cov_object.exact_lmax + 1,lmax=cov_object.exact_lmax, kind="p")
@@ -276,12 +278,12 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
     t0 = -0.5 * dt_xip * (steps - 1)
     t = np.linspace(t0, -t0, steps - 1)
 
-    gauss_cf = helper_funcs.gaussian_cf(t, mean, np.sqrt(cov))
+    gauss_cf = characteristic_functions.gaussian_cf(t, mean, np.sqrt(cov))
 
-    assert np.allclose(helper_funcs.skewness(t, gauss_cf), 0, atol=1e-3), helper_funcs.skewness(
+    assert np.allclose(moments.skewness(t, gauss_cf), 0, atol=1e-3), moments.skewness(
         t, gauss_cf
     )
-    print("Skewness of Gaussian extension: {}".format(helper_funcs.skewness(t, gauss_cf)))
+    print("Skewness of Gaussian extension: {}".format(moments.skewness(t, gauss_cf)))
     # test_cf2pdf(t, mean, np.sqrt(cov))
     interp_to_lowell = 1j * UnivariateSpline(t, gauss_cf.imag, k=5, s=0)(
         t_lowell
@@ -403,6 +405,6 @@ def get_cf_nD(tset, mset, cov):
 
 def high_ell_gaussian_cf_nD(t_sets, mu, cov):
 
-    gauss_cf = helper_funcs.gaussian_cf_nD(t_sets, mu, cov)
+    gauss_cf = characteristic_functions.gaussian_cf_nD(t_sets, mu, cov)
 
     return gauss_cf

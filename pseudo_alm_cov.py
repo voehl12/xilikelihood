@@ -15,7 +15,7 @@ from sys import getsizeof
 import time
 import logging
 import cov_funcs
-import helper_funcs
+import noise_utils
 import file_handling
 
 # Set up module logger
@@ -96,7 +96,7 @@ class Cov:
         self._exact_lmax = exact_lmax
         
         # Validate consistency between mask and covariance lmax
-        if not helper_funcs.check_property_equal([self, self.mask], "_exact_lmax"):
+        if not file_handling.check_property_equal([self, self.mask], "_exact_lmax"):
             raise RuntimeError(
                 "exact_lmax mismatch between Cov class and mask. "
                 f"Cov: {exact_lmax}, Mask: {getattr(mask, '_exact_lmax', 'undefined')}"
@@ -224,7 +224,7 @@ class Cov:
         # Add noise contributions if available
         if hasattr(self.theorycl, "_noise_sigma") and self.theorycl._noise_sigma is not None:
             logger.debug("Adding noise contributions to theory power spectra")
-            theory_cell += helper_funcs.noise_cl_cube(
+            theory_cell += noise_utils.noise_cl_cube(
                 self.theorycl.noise_cl[:self._exact_lmax + 1 + buffer]
             )
             
@@ -645,10 +645,10 @@ class Cov:
         )
         if self.theorycl._sigma_e is not None:
             if isinstance(self.theorycl._sigma_e, str):
-                self.pixelsigma = helper_funcs.get_noise_pixelsigma(self.mask.nside)
+                self.pixelsigma = noise_utils.get_noise_pixelsigma(self.mask.nside)
 
             elif isinstance(self.theorycl._sigma_e, tuple):
-                self.pixelsigma = helper_funcs.get_noise_pixelsigma(
+                self.pixelsigma = noise_utils.get_noise_pixelsigma(
                     self.mask.nside, self.theorycl._sigma_e
                 )
             else:

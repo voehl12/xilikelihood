@@ -3,8 +3,8 @@
 # as well as xi range
 
 import numpy as np
-import helper_funcs
-import cf_pdf_cov
+import cl2xi_transforms
+import characteristic_functions
 import setup_m
 from pseudo_alm_cov import Cov
 import configparser
@@ -60,15 +60,15 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     ndim = len(combs)
     config["Run"] = {"steps": str(steps), "ndim": str(ndim)}
 
-    if not helper_funcs.check_property_equal(covs, "area"):
+    if not file_handling.check_property_equal(covs, "area"):
         raise RuntimeError("Areas are not equal.")
-    if not helper_funcs.check_property_equal(covs, "nside"):
+    if not file_handling.check_property_equal(covs, "nside"):
         raise RuntimeError("nsides are not equal.")
 
-    if not helper_funcs.check_property_equal(covs, "exact_lmax"):
+    if not file_handling.check_property_equal(covs, "exact_lmax"):
         raise RuntimeError("exact lmax are not equal (problem for compatibility of matrices).")
     # can probably be set up for different ell max as well and might work but needs to be tested
-    if not helper_funcs.check_property_equal(covs, "cov_ell_buffer"):
+    if not file_handling.check_property_equal(covs, "cov_ell_buffer"):
         raise RuntimeError("ell buffer is not equal.")
 
     area = covs[0].area
@@ -79,12 +79,12 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
         config.set("Geometry", "lower{:d}".format(i), str(ang_bins_in_deg[i][0]))
         config.set("Geometry", "upper{:d}".format(i), str(ang_bins_in_deg[i][1]))
 
-    cov_mat = cf_pdf_cov.cov_xi_nD(covs)
+    cov_mat = characteristic_functions.cov_xi_nD(covs)
 
     l_exact = covs[0].exact_lmax
     ell_buffer = covs[0].cov_ell_buffer
 
-    prefactors = helper_funcs.prep_prefactors(
+    prefactors = cl2xi_transforms.prep_prefactors(
         ang_bins_in_deg, covs[0].wl, covs[0].lmax, covs[0].lmax
     )
 
@@ -97,19 +97,19 @@ def setup_likelihood(config, covs, combs, ang_bins_in_deg, steps=1024):
     file_handling.save_matrix(cov_mat, cov_path, kind="cov")
     file_handling.save_matrix(m, m_path)
 
-    cov_triang = cf_pdf_cov.get_cov_triang(covs)
+    cov_triang = characteristic_functions.get_cov_triang(covs)
     xi_max = []
     for _, comb in enumerate(combs):
-        inds = cf_pdf_cov.get_cov_pos(comb)
+        inds = characteristic_functions.get_cov_pos(comb)
         cov = cov_triang[inds[0]][inds[1]]
         cov.cl2pseudocl()
-        xip_estimate, _ = helper_funcs.pcl2xi((cov.p_ee, cov.p_bb, cov.p_eb), prefactors, l_exact)
+        xip_estimate, _ = cl2xi_transforms.pcl2xi((cov.p_ee, cov.p_bb, cov.p_eb), prefactors, l_exact)
         xi_max.append(np.fabs(xip_estimate[0]) * 6)
     tset_path = config["Paths"]["t_sets"]
-    _, t_sets, _, _ = cf_pdf_cov.setup_t(xi_max, steps)
+    _, t_sets, _, _ = characteristic_functions.setup_t(xi_max, steps)
     np.savez(tset_path, t=t_sets)
     # ximax should go up to number of dimensions and save all
-    combs_n = [cf_pdf_cov.get_cov_n(comb) for comb in combs]
+    combs_n = [characteristic_functions.get_cov_n(comb) for comb in combs]
     config["Params"] = {
         "l_exact": l_exact,
         "l_buffer": ell_buffer,

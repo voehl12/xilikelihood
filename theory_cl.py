@@ -2,7 +2,7 @@ import numpy as np
 import pyccl as ccl
 import os
 import scipy.stats 
-import helper_funcs
+import noise_utils
 import wpm_funcs
 
 
@@ -165,11 +165,11 @@ class TheoryCl:
 
         if self._sigma_e is not None:
             if isinstance(self._sigma_e, str):
-                self._noise_sigma = helper_funcs.get_noise_cl()
+                self._noise_sigma = noise_utils.get_noise_cl()
                 self.sigmaname = "noise" + self._sigma_e
 
             elif isinstance(self._sigma_e, tuple):
-                self._noise_sigma = helper_funcs.get_noise_cl(*self._sigma_e)
+                self._noise_sigma = noise_utils.get_noise_cl(*self._sigma_e)
                 self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
 
             else:

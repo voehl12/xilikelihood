@@ -11,7 +11,7 @@ from scipy.integrate import cumulative_trapezoid as cumtrapz
 from scipy.stats import norm, multivariate_normal
 from scipy.interpolate import griddata
 from scipy.interpolate import PchipInterpolator
-import helper_funcs
+import cl2xi_transforms
 import setup_m
 
 #  1) stack/2024-06   3) swig/4.1.1-ipvpwcc   5) python/3.11.6
@@ -64,7 +64,7 @@ def setup_m_cov_combs(covs, ang_bins):
     for cov in covs:
         cov_mat = cov.cov_alm
         exact_lmax = cov.exact_lmax
-        prefactors = helper_funcs.prep_prefactors(ang_bins, cov.wl, cov.lmax, cov.lmax)
+        prefactors = cl2xi_transforms.prep_prefactors(ang_bins, cov.wl, cov.lmax, cov.lmax)
         m = setup_m.m_xi_cross((prefactors[0, :, : exact_lmax + 1],), combs=((0, 0),), kind=("p",))[
             0
         ]

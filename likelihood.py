@@ -1,6 +1,7 @@
 from theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
 from pseudo_alm_cov import Cov
-import cf_pdf_cov, helper_funcs, setup_m
+import characteristic_functions
+import cl2xi_transforms
 import os, re
 
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -76,7 +77,7 @@ class XiLikelihood:
             self._exact_lmax = mask.exact_lmax
         else:
             self._exact_lmax = exact_lmax
-            if not helper_funcs.check_property_equal([self, self.mask], "_exact_lmax"):
+            if not file_handling.check_property_equal([self, self.mask], "_exact_lmax"):
                 raise RuntimeError("Exact lmax does not align for mask and likelihood.")
         self._highell = False
         self.gaussian_covariance = None
@@ -113,7 +114,7 @@ class XiLikelihood:
         copula_funcs.validate_pdfs(self._pdfs, self._xs, self._cdfs)
 
     def precompute_combination_matrices(self):
-        prefactors = helper_funcs.prep_prefactors(
+        prefactors = cl2xi_transforms.prep_prefactors(
             self._ang_bins_in_deg, self.mask.wl, self.lmax, self.lmax
         )
         self._prefactors = prefactors
@@ -159,8 +160,8 @@ class XiLikelihood:
         # these means are not right yet, need to take care of the cross terms
         logger.info("Calculating 1D means...")
         einsum_means = np.einsum("cbll->cb", self._products.copy())
-        self.pseudo_cl = helper_funcs.cl2pseudocl(self.mask.m_llp, self._theory_cl)
-        self._means_lowell = cf_pdf_cov.mean_xi_gaussian_nD(
+        self.pseudo_cl = cl2xi_transforms.cl2pseudocl(self.mask.m_llp, self._theory_cl)
+        self._means_lowell = characteristic_functions.mean_xi_gaussian_nD(
             self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax
         )
         diff = einsum_means - self._means_lowell
@@ -222,7 +223,7 @@ class XiLikelihood:
     
     def _compute_cfs(self):
         logger.info("Computing CDFs...")
-        t_lowell, cfs_lowell = cf_pdf_cov.batched_cf_1d_jitted(
+        t_lowell, cfs_lowell = characteristic_functions.batched_cf_1d_jitted(
             self._eigvals, self._ximax, steps=4096
         )
         return np.array(t_lowell), np.array(cfs_lowell)
@@ -305,7 +306,7 @@ class XiLikelihood:
     def get_covariance_matrix_highell(self):
         # get the covariance matrix for the full data vector Gaussian part
         # use C_ell approximation
-        self._cov_highell = cf_pdf_cov.cov_xi_gaussian_nD(
+        self._cov_highell = characteristic_functions.cov_xi_gaussian_nD(
             self._theory_cl,
             self._numerical_redshift_bin_combinations,
             self._ang_bins_in_deg,
@@ -316,7 +317,7 @@ class XiLikelihood:
 
     def _get_means_highell(self):
         # get the mean for the full data vector Gaussian part
-        self._means_highell = cf_pdf_cov.mean_xi_gaussian_nD(
+        self._means_highell = characteristic_functions.mean_xi_gaussian_nD(
             self._prefactors, self.pseudo_cl, lmin=self._exact_lmax + 1, lmax=self.lmax
         )
 
@@ -325,7 +326,7 @@ class XiLikelihood:
         vars = np.diag(self._cov_highell)
         vars = vars.reshape((self._n_redshift_bin_combs, len(self._ang_bins_in_deg)))
 
-        return cf_pdf_cov.high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
+        return characteristic_functions.high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
 
     def marginals(self):
         # get the marginal pdfs and potentially cdfs
@@ -337,7 +338,7 @@ class XiLikelihood:
         else:
             self._cfs = self._cfs_lowell
         # need to build in a test here checking that the boundaries of the pdfs are converged to zero
-        self._marginals = cf_pdf_cov.cf_to_pdf_1d(self._t_lowell, self._cfs)
+        self._marginals = characteristic_functions.cf_to_pdf_1d(self._t_lowell, self._cfs)
         return self._marginals
 
     def gauss_compare(self, data, data_subset=None):

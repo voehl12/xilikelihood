@@ -67,6 +67,7 @@ def read_xi_sims(filepath, njobs, angbins, kind="xip", prefactors=None, lmax=Non
 
 
 def read_2D_cf(config):
+    from characteristic_functions import setup_t
     ndim = 2  # int(config["Run"]['ndim'])
     paths = config["Paths"]
     params = config["Params"]
@@ -77,7 +78,7 @@ def read_2D_cf(config):
 
     xi_max = [float(params["ximax{:d}".format(i)]) for i in range(1, ndim + 1)]
 
-    t_inds, t_sets, t0_set, dt_set = helper_funcs.setup_t(xi_max, steps)
+    t_inds, t_sets, t0_set, dt_set = setup_t(xi_max, steps)
 
     cf_grid = np.full((steps - 1, steps - 1), np.nan, dtype=complex)
 
