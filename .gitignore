@@ -2,10 +2,16 @@
 **/results
 **/plots
 **/__pycache__
-*.pdf
+# Generated plots and outputs
+*.html
 *.png
+*.pdf
+*.svg
+*.eps
+# Python bytecode files
 *.obj
 *.txt
 *.npz
+*.npy
 *.fits
 .python_version
