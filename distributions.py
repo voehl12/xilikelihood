@@ -15,10 +15,11 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from scipy.interpolate import UnivariateSpline
+from scipy.stats import multivariate_normal
 
 from noise_utils import get_noisy_cl
-from cl2xi_transforms import get_integrated_wigners, pcls2xi
-from file_handling import check_property_equal
+from cl2xi_transforms import get_integrated_wigners, pcls2xis
+from core_utils import check_property_equal
 
 __all__ = [
     # Grid setup utilities
@@ -34,6 +35,7 @@ __all__ = [
     'cf_to_pdf_1d',
        
     # Gaussian covariance functions
+    'gaussian_2d'
     'cov_xi_gaussian_nD',
     'mean_xi_gaussian_nD',
     'cov_xi_nD',
@@ -202,6 +204,23 @@ def cf_to_pdf_1d(t, cf):
 # Gaussian covariance Functions 
 # ============================================================================
 
+def gaussian_2d(xs,mean,cov):
+    mean_flat = mean.flatten()
+    n_dim = mean_flat.shape[0]
+    n_points_per_dim = xs.shape[-1]
+    xs_flat = xs.reshape(-1, n_points_per_dim)
+
+    # Create a meshgrid for the xs_flat
+    x_grid = np.meshgrid(*xs_flat)
+    x_points = np.stack(x_grid, axis=-1)
+    x_points = x_points.reshape(-1, x_points.shape[-1])
+
+    # Compute Gaussian PDF on the meshgrid
+    gaussian_pdf = multivariate_normal.logpdf(x_points, mean=mean_flat, cov=cov)
+    shape = (n_points_per_dim,) * n_dim
+    # Reshape Gaussian PDF to match the 2D subset
+    gaussian_pdf_reshaped = gaussian_pdf.reshape(shape)
+    return gaussian_pdf_reshaped
 
 def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None):
     # cov_xi_gaussian(lmin=0, noise_apo=False)

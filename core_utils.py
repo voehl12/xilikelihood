@@ -7,7 +7,7 @@ Configuration and context managers specifically for likelihood computations.
 import gc
 import time
 import logging
-import psutil
+
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional
@@ -83,6 +83,7 @@ def computation_phase(phase_name: str, log_memory: bool = True):
     initial_memory = None
     if log_memory:
         try:
+            import psutil
             process = psutil.Process()
             initial_memory = process.memory_info().rss / 1024**3  # GB
             logger.debug(f"{phase_name} initial memory: {initial_memory:.2f} GB")

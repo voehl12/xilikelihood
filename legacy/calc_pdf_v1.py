@@ -2,7 +2,7 @@
 Legacy PDF calculation functions from first paper, https://arxiv.org/abs/2407.08718.
 Preserved for reproducibility and reference.
 Use likelihood module for new work.
-Module has been renamed to characteristic_functions.py for further use.
+Module has been renamed to distributions.py for further use.
 """
 
 import numpy as np
@@ -11,7 +11,7 @@ from file_handling import check_for_file
 from file_handling_v1 import load_cfs, load_pdfs
 import setup_m
 import cl2xi_transforms
-import characteristic_functions
+import distributions
 import moments
 
 def pdf_xi_1D(
@@ -278,7 +278,7 @@ def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
     t0 = -0.5 * dt_xip * (steps - 1)
     t = np.linspace(t0, -t0, steps - 1)
 
-    gauss_cf = characteristic_functions.gaussian_cf(t, mean, np.sqrt(cov))
+    gauss_cf = distributions.gaussian_cf(t, mean, np.sqrt(cov))
 
     assert np.allclose(moments.skewness(t, gauss_cf), 0, atol=1e-3), moments.skewness(
         t, gauss_cf
@@ -405,6 +405,6 @@ def get_cf_nD(tset, mset, cov):
 
 def high_ell_gaussian_cf_nD(t_sets, mu, cov):
 
-    gauss_cf = characteristic_functions.gaussian_cf_nD(t_sets, mu, cov)
+    gauss_cf = distributions.gaussian_cf_nD(t_sets, mu, cov)
 
     return gauss_cf
