@@ -1,3 +1,5 @@
+# needs to be revisited after adding general utility functions that can be used in specific naming /loading etc.
+
 """
 File I/O utilities for cosmological data analysis.
 
@@ -16,6 +18,7 @@ import numpy as np
 import glob
 import re  # Import regular expressions
 import logging
+from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 
 from cl2xi_transforms import pcls2xis
@@ -98,6 +101,27 @@ def check_for_file(filepath: str, kind: str = "file") -> bool:
     else:
         logger.debug(f"No {kind} found")
         return False
+
+def create_array_directory(base_dir: str, subdir_name: str) -> Path:
+    """Create directory for array storage if it doesn't exist."""
+    array_dir = Path(base_dir) / subdir_name
+    array_dir.mkdir(exist_ok=True)
+    return array_dir
+
+def generate_array_filename(prefix: str, lmax: int, nside: int, name: str, 
+                           buffer: int = 0) -> str:
+    """Generate standardized filename for array storage."""
+    if buffer > 0:
+        return f"{prefix}_l{lmax + buffer}_n{nside}_{name}.npz"
+    else:
+        return f"{prefix}_l{lmax}_n{nside}_{name}.npz"
+
+def check_array_file_size(filepath: str) -> str:
+    """Check and return human-readable file size."""
+    if os.path.exists(filepath):
+        size_mb = os.path.getsize(filepath) / (1024**2)
+        return f"{size_mb:.1f} MB"
+    return "File not found"
 
 # ============================================================================
 # Covariance Matrix I/O

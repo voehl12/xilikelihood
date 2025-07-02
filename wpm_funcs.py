@@ -155,3 +155,128 @@ def smooth_alm(l_smooth, lmax):
     l_array = np.concatenate(l_array, axis=0)
     smoothing_arr = smooth_gauss(l_array, l_smooth)
     return smoothing_arr
+
+
+def calc_w_element_from_mask(wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0=True, spin2=True):
+    """
+    Calculate W matrix element for given l,m indices.
+    
+    Parameters
+    ----------
+    wlm_lmax : array
+        Spherical harmonic coefficients of mask
+    exact_lmax : int
+        Maximum multipole for exact calculations
+    L1, L2, M1, M2 : int
+        Multipole and azimuthal indices
+    spin0, spin2 : bool
+        Whether to compute spin-0 and spin-2 components
+        
+    Returns
+    -------
+    tuple
+        (w0, wp, wm) - W matrix elements for each spin
+    """
+    m = M1 - M2
+    buffer_lmax = exact_lmax
+    
+    # Spin-0 calculation
+    if not spin0:
+        w0 = 0
+    else:
+        allowed_l, wigners0 = prepare_wigners(0, L1, L2, M1, M2, buffer_lmax)
+        wlm_l = get_wlm_l(wlm_lmax, m, allowed_l)
+        prefac = w_factor(allowed_l, L1, L2)
+        w0 = (-1) ** np.abs(M1) * np.sum(wigners0 * prefac * wlm_l)
+    
+    # Spin-2 calculation
+    if not spin2 or np.logical_or(L1 < 2, L2 < 2):
+        wp, wm = 0, 0
+    else:
+        allowed_l, wp_l, wm_l = prepare_wigners(2, L1, L2, M1, M2, buffer_lmax)
+        prefac = w_factor(allowed_l, L1, L2)
+        wlm_l = get_wlm_l(wlm_lmax, m, allowed_l)
+        wp = 0.5 * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wp_l)
+        wm = 0.5 * 1j * (-1) ** np.abs(M1) * np.sum(prefac * wlm_l * wm_l)
+    
+    return w0, wp, wm
+
+def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=True, verbose=True):
+    """
+    Compute full W arrays for mask coupling matrix.
+    
+    Parameters
+    ----------
+    wlm_lmax : array
+        Spherical harmonic coefficients of mask
+    exact_lmax : int
+        Maximum multipole for exact calculations
+    cov_ell_buffer : int
+        Buffer in multipole space
+    spin0, spin2 : bool
+        Whether to compute spin components
+    verbose : bool
+        Whether to print progress
+        
+    Returns
+    -------
+    tuple
+        (w0_arr, wpm_arr) - computed W arrays
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    L = np.arange(exact_lmax + cov_ell_buffer + 1)
+    M = np.arange(-exact_lmax - cov_ell_buffer, exact_lmax + cov_ell_buffer + 1)
+    Nl, Nm = len(L), len(M)
+    
+    # Initialize arrays
+    w0_arr = np.zeros((Nl, Nm, Nl, Nm), dtype=complex) if spin0 else None
+    wpm_arr = np.zeros((2, Nl, Nm, Nl, Nm), dtype=complex) if spin2 else None
+    
+    # Generate argument list - matching your original indexing
+    arglist = []
+    for l1, L1 in enumerate(L):
+        M1_arr = np.arange(-L1, L1 + 1)
+        for l2, L2 in enumerate(L):
+            M2_arr = np.arange(-L2, L2 + 1)
+            for m1, M1 in enumerate(M1_arr):
+                for m2, M2 in enumerate(M2_arr):
+                    # Calculate the actual indices into the M array
+                    m1_ind = np.where(M == M1)[0][0]  # Find index of M1 in M array
+                    m2_ind = np.where(M == M2)[0][0]  # Find index of M2 in M array
+                    arglist.append((l1, m1_ind, l2, m2_ind, L1, L2, M1, M2))
+    
+    logger.info(f"Computing W arrays for {len(arglist)} elements...")
+    
+    # Compute elements
+    for i, (l1_ind, m1_ind, l2_ind, m2_ind, L1, L2, M1, M2) in enumerate(arglist):
+        if verbose and i % 1000 == 0:
+            logger.info(f"Progress: {i/len(arglist)*100:.1f}%")
+        
+        w0, wp, wm = calc_w_element_from_mask(
+            wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0, spin2
+        )
+        
+        # Store results using the correct indices
+        inds = (l1_ind, m1_ind, l2_ind, m2_ind)
+        if w0 and spin0:
+            w0_arr[inds] = w0
+        if (wp or wm) and spin2:
+            wpm_arr[0, l1_ind, m1_ind, l2_ind, m2_ind] = wp
+            wpm_arr[1, l1_ind, m1_ind, l2_ind, m2_ind] = wm
+    
+    logger.info("W array computation completed")
+    return w0_arr, wpm_arr
+
+def assemble_w_array(w0_arr, wpm_arr, spin0=True, spin2=True):
+    """Assemble final W array from spin components."""
+    if spin0 and spin2:
+        return np.append(wpm_arr, w0_arr[None, :, :, :, :], axis=0)
+    elif spin0:
+        helper = np.empty_like(w0_arr)[None, :, :, :, :]
+        return np.append(np.append(helper, helper, axis=0), w0_arr[None, :, :, :, :], axis=0)
+    elif spin2:
+        return wpm_arr
+    else:
+        raise ValueError("Must have at least one of spin0 or spin2")
