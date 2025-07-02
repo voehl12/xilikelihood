@@ -18,6 +18,7 @@ from legacy.file_handling_v1 import read_xi_sims
 rc('font',**{'family':'serif','serif':['Times']})
 rc('text', usetex=True)
 rc('text.latex', preamble=r'\usepackage{amsmath}')
+figdir = 'plots_paperone/
 
 cov_params_masks = [{'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'circmaskattr' : (1000,256),'l_smooth_mask' : 30,'cov_ell_buffer' : 10,'l_smooth_signal' : None},{'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'circmaskattr' : (10000,256),'l_smooth_mask' : 30,'cov_ell_buffer' : 10}, {'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'maskpath' : 'singlet_lowres.fits', 'maskname' : 'kids_lowres', 'l_smooth_mask' : 30,'cov_ell_buffer' : 10}]
 masknames = [r'$1 \ 000 \ \mathrm{{deg}}^2$',r'$10 \ 000\ \mathrm{{deg}}^2$',r'KiDS']
@@ -53,13 +54,13 @@ def fig1():
         
         for j in range(len(ang_bins_in_deg)):
             ax.plot(x[j],pdf[j],color=color,linestyle=linestyles[j],label=labels[j])
-        #fig.savefig('figure1_step1.pdf',bbox_inches='tight')
+        #fig.savefig(figdir+'figure1_step1.pdf',bbox_inches='tight')
         plotting.add_data_1d(ax,sims[0],color,name=masknames[i])
         plotting.add_data_1d(ax,sims[1],color,name=None)
     
     
     ax.legend(frameon=False)
-    fig.savefig('figure1.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'figure1.pdf',bbox_inches='tight')
 
 def fig4():
     l_exact = [10,30,70]
@@ -90,7 +91,7 @@ def fig4():
     plotting.add_data_1d(ax,sims[0],'gray',name=None,mean=False)
     plotting.set_xi_axes_hist(ax,ang_bins_in_deg[0],(5,5),lims,labels=True,binnum=2)
     ax.legend(frameon=False)
-    fig.savefig('ell_convergence.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'ell_convergence.pdf',bbox_inches='tight')
 
 def fig5():
     l_exact = 50
@@ -121,20 +122,20 @@ def fig5():
     mean_high = mean_xi_gaussian_nD(prefactors,(cov_object.p_ee,cov_object.p_bb, cov_object.p_eb),lmin=l_exact+1,lmax=mask.lmax)
     plotting.set_xi_axes_hist(ax,ang_bins_in_deg[0],(5,5),lims,labels=True,binnum=2)
     ax.plot(x_low[0],pdf_low[0],color=color,linestyle='dotted',label=lowlabel,alpha=0.5)
-    fig.savefig('low_high_ell_1_new.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'low_high_ell_1_new.pdf',bbox_inches='tight')
     plotting.plot_gauss(ax,x[0],mean_high[0],cov_high[0,0],color,label=highlabel)
-    fig.savefig('low_high_ell_2_new.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'low_high_ell_2_new.pdf',bbox_inches='tight')
     ax.plot(x[0],pdf[0],color=color,label='convolution')
-    fig.savefig('low_high_ell_3_new.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'low_high_ell_3_new.pdf',bbox_inches='tight')
     ax.plot(x_nonoise[0],pdf_nonoise[0],color=color,alpha=0.5,label=r'no noise')
-    fig.savefig('low_high_ell_3_nonoise.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'low_high_ell_3_nonoise.pdf',bbox_inches='tight')
     filepath = "/cluster/work/refregier/veoehl/xi_sims/3x2pt_kids_55_{}_noisedefault".format(cov_object.mask.name)
     sims, angles = file_handling.read_sims_nd(filepath, 1000, lmax=mask.lmax)
     print(sims.shape, angles)
     plotting.add_data_1d(ax,sims[:,1],'gray',name=None,mean=False)
     
     ax.legend(frameon=False)
-    fig.savefig('low_high_ell_4_new.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'low_high_ell_4_new.pdf',bbox_inches='tight')
 
 
 
@@ -210,7 +211,7 @@ def fig2():
     fig.subplots_adjust(wspace=0.05, hspace=0)
     ax2.legend(frameon=False)
     ax4.legend(frameon=False,loc='upper right')
-    fig.savefig('figure2.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'figure2.pdf',bbox_inches='tight')
 
 
 def fig3():
@@ -329,8 +330,8 @@ def plot_skewness():
         ang2 = "{:.2f}_{:.2f}".format(*angbins[1])
         ang2 = ang2.replace('.','p')
         
-        fig1.savefig("skewness{}_{}.png".format(cov_object.set_char_string()[4:-4],ang1))
-        fig2.savefig("skewness{}_{}.png".format(cov_object.set_char_string()[4:-4],ang2))
+        fig1.savefig(figdir+"skewness{}_{}.png".format(cov_object.set_char_string()[4:-4],ang1))
+        fig2.savefig(figdir+"skewness{}_{}.png".format(cov_object.set_char_string()[4:-4],ang2))
         # measured pseudo cell are too low for small angles
 
 
@@ -376,7 +377,7 @@ def app1():
     
     #ax2.set_xticklabels(['1','2','3','4'])
     #ax1.set_xticklabels([])
-    fig.savefig('app1.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'app1.pdf',bbox_inches='tight')
 
 def app2():
     # skewnesses
@@ -436,7 +437,7 @@ def app2():
     ax2.yaxis.set_label_position("right")
     ax2.yaxis.tick_right()
     fig.subplots_adjust(hspace=0,wspace=0.05)
-    fig.savefig("stats.pdf",bbox_inches='tight')
+    fig.savefig(figdir+"stats.pdf",bbox_inches='tight')
 
 def app3():
     mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
@@ -499,8 +500,8 @@ def app4():
         ax.plot(xs_noise[i],pdfs_noise[i],color=color,label=noislabel,linestyle='solid')
         plotting.set_xi_axes_hist(ax,angbin=ab_selection[0],rs_bin=None,lims=(-0.4e-6,0.8e-6),labels=True,binnum=2)
     ax.legend(frameon=False)
-    fig.savefig('app4.pdf',bbox_inches='tight')
-    fig.savefig('app4.png',bbox_inches='tight',dpi=300)
+    fig.savefig(figdir+'app4.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'app4.png',bbox_inches='tight',dpi=300)
     
 
     
@@ -566,7 +567,7 @@ def high_low_s8(n=100):
     plt.plot(fiducial_x,fiducial_lh)
     plt.plot(fiducial_x,gauss_likelihood[fiducial_lh_ind],linestyle='dashed')
     plt.xlim(0.8e-6,2.2e-6)
-    plt.savefig('fiducial_likelihood.png')
+    plt.savefig(figdir+'fiducial_likelihood.png')
     print(theorycl.ee)
     measurement = TwoPointSimulation(angbin,mask,theorycl,batchsize=n)
     jobnumber = 20
@@ -619,7 +620,7 @@ def high_low_s8(n=100):
             ax.set_yticks([])
             pn += 1
     fig.subplots_adjust(wspace=0.05, hspace=0)
-    plt.savefig('s8plots/combindeds8plot_wideprior.pdf',bbox_inches='tight')
+    plt.savefig(figdir+'s8plots/combindeds8plot_wideprior.pdf',bbox_inches='tight')
     
     means_exact, means_gauss =  np.array(means_exact), np.array(means_gauss)
     stds_exact, stds_gauss = np.array(stds_exact), np.array(stds_gauss)
@@ -637,12 +638,12 @@ def high_low_s8(n=100):
     ax.legend(frameon=False)
     ax.axvline(0.8,color='C3')
     ax.set_xlabel(r'S8')
-    fig.savefig('posterior_histograms_wideprior.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'posterior_histograms_wideprior.pdf',bbox_inches='tight')
 
     fig, (ax1,ax2) = plt.subplots(1,2,figsize=(5, 4))
     plotting.add_data_1d(ax1,(means_exact-means_gauss) / means_gauss,colors[2],r'difference',mean=True,density=False,nbins=15)
     ax1.set_xlabel(r'$\Delta \mu_{S_8}$ / $\mu_{S_8}^{\mathrm{Gauss}}$')
-    #fig.savefig('posterior_mean_differences.pdf',bbox_inches='tight')
+    #fig.savefig(figdir+'posterior_mean_differences.pdf',bbox_inches='tight')
     #ax.set_xlim(lims)
     #ax.axvline(xip_measured,color='C3',label='measured')
     #ax.set_xlabel(r'$\xi^+$')
@@ -652,11 +653,11 @@ def high_low_s8(n=100):
     plotting.add_data_1d(ax2,(stds_exact-stds_gauss) / stds_gauss,colors[1],r'difference',mean=True,density=False,nbins=15)
     ax2.set_xlabel(r'$\Delta \sigma_{S_8}$ / $\sigma_{S_8}^{\mathrm{Gauss}}$')
     #ax2.set_xlim(-0.1,0.1)
-    fig.savefig('posterior_mean_variance_difference_wideprior.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'posterior_mean_variance_difference_wideprior.pdf',bbox_inches='tight')
     
     
     
-    #plt.savefig('varied_s8_{:d}.pdf'.format(k),bbox_inches='tight')  
+    #plt.savefig(figdir+'varied_s8_{:d}.pdf'.format(k),bbox_inches='tight')  
     
 
 def plot_1d_posteriors():
@@ -699,7 +700,7 @@ def plot_1d_posteriors():
             ax.set_xlim(0.55,1.05)
             ax.set_ylabel(r'Posterior')
             ax.legend(frameon=False,loc='upper left')
-            debugfig.savefig('debug_nan_posterior_k{:d}.png'.format(k),bbox_inches='tight')
+            debugfig.savefig(figdir+'debug_nan_posterior_k{:d}.png'.format(k),bbox_inches='tight')
             plt.close(debugfig)
             continue
         
@@ -720,7 +721,7 @@ def plot_1d_posteriors():
             ax.set_yticks([])
             pn += 1
     fig.subplots_adjust(wspace=0.05, hspace=0)
-    fig.savefig('s8plots/combindeds8plot_wideprior_smooth.pdf',bbox_inches='tight')
+    fig.savefig(figdir+'s8plots/combindeds8plot_wideprior_smooth.pdf',bbox_inches='tight')
 
     means_exact, means_gauss =  np.array(means_exact), np.array(means_gauss)
     stds_exact, stds_gauss = np.array(stds_exact), np.array(stds_gauss)
@@ -731,7 +732,7 @@ def plot_1d_posteriors():
     plotting.add_data_1d(ax2,(stds_exact-stds_gauss) / stds_gauss,colors[1],r'difference',mean=True,density=False,nbins=15)
     ax2.set_xlabel(r'$\Delta \sigma_{S_8}$ / $\sigma_{S_8}^{\mathrm{Gauss}}$')
     
-    fig2.savefig('posterior_mean_variance_difference_wideprior_smooth.pdf',bbox_inches='tight')
+    fig2.savefig(figdir+'posterior_mean_variance_difference_wideprior_smooth.pdf',bbox_inches='tight')
     
     
         
