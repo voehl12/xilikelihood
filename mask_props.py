@@ -1,82 +1,155 @@
+"""
+Spherical mask properties and calculations for cosmological surveys.
+
+This module provides the SphereMask class for handling survey masks on the sphere,
+including coupling matrix calculations and spherical harmonic decompositions.
+"""
+
+import os
+import time
+import pickle
+from pathlib import Path
+from typing import List, Optional, Union, Tuple
+
 import numpy as np
 import healpy as hp
-import wpm_funcs, cov_funcs
-import pickle
-import os.path
-import os
-from sys import getsizeof
+
+# Local imports
+import wpm_funcs
+import cov_funcs
 import file_handling
-import time
+from core_utils import computation_phase
 
-#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
+__all__ = ['SphereMask', 'save_maskobject']
 
-
-def save_maskobject(maskobject, dir=""):
-    name = dir + maskobject.name + "_l" + str(maskobject.lmax) + "_n" + str(maskobject.nside)
-    maskfile = open(name, "wb")
-    pickle.dump(maskobject, maskfile)
 
 
 class SphereMask:
     """
-    A class used to store and calculate properties of a survey mask on a sphere.
-    Maybe split this class into a mask and a field class or have the mask inherit from the field.
+    Survey mask properties and calculations for spherical cosmological surveys.
+    
+    Handles mask loading, smoothing, spherical harmonic decomposition, and 
+    coupling matrix calculations for correlation function covariance estimation.
+    
+    Parameters
+    ----------
+    spins : list of int, default=[0, 2]
+        Spin fields to consider (0=scalar, 2=tensor/shear)
+    maskpath : str, optional
+        Path to FITS file containing the mask
+    circmaskattr : tuple, optional
+        (area_in_sqd, nside) for circular mask, or ('fullsky', nside)
+    lmin : int, default=0
+        Minimum multipole for calculations
+    exact_lmax : int, optional
+        Maximum multipole for exact calculations. Defaults to 3*nside-1
+    maskname : str, default="mask"
+        Name identifier for saving/loading cached arrays
+    l_smooth : int or 'auto', optional
+        Smoothing scale parameter. If 'auto', uses exact_lmax
+    working_dir : str, optional
+        Directory for caching arrays. Defaults to current directory
+        
     Attributes
     ----------
-    mask : array
-        a healpy map of the mask
-    nside: integer
-        healpy nside parameter of the mask
-    exact_lmax: integer
-        maximum multipole moment to which calculations are taken to
-
-    Methods
-    -------
-    calc_w_arrs(verbose=True)
-        Calculates 4D coupling matrices for a given mask, +,- and 0 depending on spins required. Saves to w_arr stacked as w_p, w_m,w_0
-
-
+    mask : ndarray
+        HEALPix mask map
+    nside : int
+        HEALPix resolution parameter
+    npix : int
+        Number of pixels in the map
+    area : float
+        Survey area in square degrees
+    eff_area : float
+        Effective area after smoothing
+    lmax : int
+        Bandlimit of the mask (3*nside-1)
+    exact_lmax : int
+        Maximum multipole for exact calculations
+        
+    Examples
+    --------
+    >>> # Create circular mask
+    >>> mask = SphereMask(circmaskattr=(1000, 256))  # 1000 sq deg at nside=256
+    >>> 
+    >>> # Load mask from file
+    >>> mask = SphereMask(maskpath="survey_mask.fits", exact_lmax=30)
+    >>> 
+    >>> # Precompute arrays for covariance calculations
+    >>> mask.precompute_for_cov_masked(cov_ell_buffer=10)
     """
 
     def __init__(
         self,
-        spins=[0, 2],
-        maskpath=None,
-        circmaskattr=None,
-        lmin=0,
-        exact_lmax=None,
-        maskname="mask",
-        l_smooth=None,
-        working_dir=None,
+        spins: List[int] = [0, 2],
+        maskpath: Optional[str] = None,
+        circmaskattr: Optional[Tuple] = None,
+        lmin: int = 0,
+        exact_lmax: Optional[int] = None,
+        maskname: str = "mask",
+        l_smooth: Optional[Union[int, str]] = None,
+        working_dir: Optional[str] = None,
     ) -> None:
-        """
+        
+        if maskpath is None and circmaskattr is None:
+            raise ValueError("Must specify either maskpath or circmaskattr")
+        
+        if not any(spin in [0, 2] for spin in spins):
+            raise ValueError("spins must contain 0 and/or 2")
 
-        Parameters
-        ----------
-        spins : list, optional
-            spins of the fields under consideration, by default [0, 2]
-        maskpath : string, optional
-            path to a fits-file for a mask, by default None
-        circmaskattr : tuple, optional
-            (area_in_deg,nside) for a circular mask, by default None
-        prep_wlm : bool, optional
-            calculate spherical harmonic coefficients of the mask on initialization, by default True
-        lmin : integer, optional
-            minimum multipole moment used, by default 0
-        exact_lmax : integer, optional
-            maximum multipole moment used for exact calculations, by default None, then defaults to bandlimit of mask resolution
-        name : str, optional
-            name of the mask used for saving covariance matrices, by default "mask"
+        if working_dir is None:
+            working_dir = os.getcwd()
+        self.working_dir = Path(working_dir)
+        
+        # Initialize mask
+        if maskpath is not None:
+            self.name = maskname
+            self.maskpath = Path(maskpath)
+            self._read_maskfile()
 
-        Raises
-        ------
-        RuntimeError
-            If no maskfile or specifications for a circular mask (which can also be ('fullsky',nside) are provided)
-        RuntimeError
-            If neither spin 0 or spin 2 are specified
-        """
+        elif circmaskattr is not None:
+            self._create_mask_from_attributes(circmaskattr)
+        
+        # Set up mask properties
+        self._initialize_properties(spins, lmin, exact_lmax, l_smooth)
+        
+        # Smoothing if requested
+        if l_smooth is not None:
+            self._setup_smoothing(l_smooth)
+
+    def _initialize_properties(self, spins, lmin, exact_lmax):
+        """Initialize mask properties and validate parameters."""
+        self._precomputed = False
+        self.npix = hp.nside2npix(self.nside)
+        self.spins = spins
+        self.lmin = lmin
+        self.lmax = 3 * self.nside - 1
+        
+        # Set exact_lmax with validation
+        if exact_lmax is not None:
+            if exact_lmax > self.lmax:
+                raise ValueError(f"exact_lmax ({exact_lmax}) cannot exceed mask bandlimit ({self.lmax})")
+            self._exact_lmax = exact_lmax
+        else:
+            self._exact_lmax = self.lmax
+            print("Warning: exact lmax has been set to {:d}.".format(self._exact_lmax))
+            
+        # Initialize spin flags
+        self.spin0 = 0 in spins
+        self.spin2 = 2 in spins
+        self.n_field = sum([1 if self.spin0 else 0, 2 if self.spin2 else 0])
+        
+        # Initialize arrays to None
+        self._reset_arrays()
+
+    def _reset_arrays(self):
+        """Reset all computed arrays to None."""
+        self.L = None
+        self.M = None
+        self.w0_arr = None
+        self.wpm_arr = None
+        self._w_arr = None
+
         if maskpath is not None:
             self.name = maskname
             self.maskpath = maskpath
@@ -91,87 +164,123 @@ class SphereMask:
             else:
                 self.area, self.nside = circmaskattr
                 self.get_circmask()
+       
+        
+        
+    def _setup_smoothing(self, l_smooth: Union[int, str]) -> None:
+        """Set up mask smoothing parameters."""
+        if l_smooth == "auto":
+            self.l_smooth_auto = True
+            self.l_smooth = self._exact_lmax
         else:
-            raise RuntimeError(
-                "Please specify either a mask path or attributes for a circular mask"
+            if not isinstance(l_smooth, int) or l_smooth <= 0:
+                raise ValueError("l_smooth must be positive integer or 'auto'")
+            self.l_smooth_auto = False
+            self.l_smooth = l_smooth
+        
+        self._apply_smoothing()
+        self.name += f"_smoothl{self.l_smooth}"
+        self.wl
+        self.wlm
+
+    def _apply_smoothing(self) -> None:
+        """Apply smoothing to the mask."""
+        try:
+            sigma = np.deg2rad(1 / self.l_smooth * 300)
+            self.smooth_mask = hp.smoothing(
+                self.mask,
+                sigma=np.abs(sigma),
+                iter=50,
+                use_pixel_weights=True,
+                datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
             )
-        if working_dir is None:
-            working_dir = os.getcwd()
-        self.working_dir = working_dir
-        self._precomputed = False
-        self.npix = hp.nside2npix(self.nside)
-        self.spins = spins
-        self.spin0 = None
-        self.spin2 = None
-        self.n_field = 0
-        if 0 in spins:
-            self.spin0 = True
-            self.n_field += 1
-        if 2 in spins:
-            self.spin2 = True
-            self.n_field += 2
-        if not self.spin0 and not self.spin2:
-            raise RuntimeError("Spin needs to be 0 and/or 2")
-        self.lmax = 3 * self.nside - 1
-        if exact_lmax is not None:
-            self._exact_lmax = exact_lmax
+        except Exception as e:
+            raise RuntimeError(f"Mask smoothing failed: {e}")
+        
+
+        
+    
+
+
+            
+
+    def _read_maskfile(self) -> None:
+        """Read mask from FITS file and set properties."""
+        if not self.maskpath.exists():
+            raise FileNotFoundError(f"Mask file not found: {self.maskpath}")
+        
+        try:
+            self.mask = hp.read_map(str(self.maskpath))
+            self.nside = hp.get_nside(self.mask)
+            self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read mask file {self.maskpath}: {e}")
+
+    def _create_mask_from_attributes(self, circmaskattr: Tuple) -> None:
+        """Create mask from circular or fullsky attributes."""
+        if len(circmaskattr) != 2:
+            raise ValueError("circmaskattr must be (area_in_sqd, nside) or ('fullsky', nside)")
+        
+        area_or_type, nside = circmaskattr
+        
+        if area_or_type == "fullsky":
+            self._create_fullsky_mask(nside)
         else:
-            self._exact_lmax = 3 * self.nside - 1
-            print("Warning: exact lmax has been set to {:d}.".format(self._exact_lmax))
+            self._create_circular_mask(area_or_type, nside)
+    
 
-        self.lmin = lmin
-
-        self.L = None
-        self.M = None
-        self.w0_arr = None
-        self.wpm_arr = None
-        self._w_arr = None
-        if l_smooth is not None:
-            if l_smooth == "auto":
-                self.l_smooth_auto = True
-                self.l_smooth = self._exact_lmax
-
-            else:
-                self.l_smooth_auto = False
-                self.l_smooth = l_smooth
-
-            self.set_smoothed_mask()
-            self.name += "smoothl{}".format(str(self.l_smooth))
-
-    def read_maskfile(self):
-        """Reads a fits file and sets mask properties accordingly"""
-        self.mask = hp.fitsfunc.read_map(self.maskpath)
-        self.nside = hp.pixelfunc.get_nside(self.mask)
-        self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
-
-    def get_circmask(self):
-        """Sets mask properties to a circular mask and saves to file"""
-        self.maskpath = "circular_{:d}sqd_nside{:d}.fits".format(self.area, self.nside)
-        self.name = "circ{:d}".format(self.area)
-        if os.path.isfile(self.maskpath):
-            self.mask = hp.fitsfunc.read_map(self.maskpath)
-            assert np.allclose(
-                self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask), rtol=0.1
-            ), (self.area, hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask))
+    def _create_circular_mask(self, area: float, nside: int) -> None:
+        """Create circular mask with specified area."""
+        if area <= 0:
+            raise ValueError("Area must be positive")
+        if nside <= 0 or not isinstance(nside, int):
+            raise ValueError("nside must be positive integer")
+            
+        self.area = area
+        self.nside = nside
+        self.name = f"circ{area:.0f}"
+        self.maskpath = Path(f"circular_{area:.0f}sqd_nside{nside}.fits")
+        
+        if self.maskpath.exists():
+            self.mask = hp.read_map(str(self.maskpath))
+            # Validate area matches
+            actual_area = hp.nside2pixarea(nside, degrees=True) * np.sum(self.mask)
+            if not np.isclose(area, actual_area, rtol=0.1):
+                raise ValueError(f"Existing mask area {actual_area:.1f} doesn't match requested {area:.1f}")
         else:
-            npix = hp.nside2npix(self.nside)
-            m = np.zeros(npix)
-            vec = hp.ang2vec(np.pi / 2, 0)
-            r = np.sqrt(self.area / np.pi)
-            disc = hp.query_disc(nside=self.nside, vec=vec, radius=np.radians(r))
-            m[disc] = 1
-            self.mask = m
-            hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
+            self._generate_circular_mask()
 
-    def fullsky_mask(self):
-        """Sets mask properties to full sky (i.e. no mask)"""
+    
+    def _generate_circular_mask(self) -> None:
+        """Generate and save circular mask."""
         npix = hp.nside2npix(self.nside)
-        m = np.ones(npix)
-        self.mask = m
-        self.maskpath = "fullsky_nside{:d}.fits".format(self.nside)
+        mask = np.zeros(npix)
+        vec = hp.ang2vec(np.pi / 2, 0)  # North pole
+        radius = np.sqrt(self.area / np.pi)
+        disc = hp.query_disc(nside=self.nside, vec=vec, radius=np.radians(radius))
+        mask[disc] = 1
+        self.mask = mask
+        hp.write_map(str(self.maskpath), mask, overwrite=True)
+
+
+    def _create_fullsky_mask(self, nside: int) -> None:
+        """Create full-sky mask."""
+        if nside <= 0 or not isinstance(nside, int):
+            raise ValueError("nside must be positive integer")
+            
+        self.nside = nside
+        npix = hp.nside2npix(nside)
+        self.mask = np.ones(npix)
+        self.maskpath = Path(f"fullsky_nside{nside}.fits")
         self.name = "fullsky"
-        self.area = hp.nside2pixarea(self.nside, degrees=True) * np.sum(self.mask)
-        hp.fitsfunc.write_map(self.maskpath, m, overwrite=True)
+        self.area = hp.nside2pixarea(nside, degrees=True) * npix
+        hp.write_map(str(self.maskpath), self.mask, overwrite=True)
+
+    
+    @property
+    def is_precomputed(self) -> bool:
+        """Check if mask arrays are precomputed for covariance calculations."""
+        return self._precomputed
 
     @property
     def exact_lmax(self):
@@ -225,18 +334,7 @@ class SphereMask:
             self._wlm_lmax = hp.sphtfunc.map2alm(self.mask, lmax=self.lmax)
             return self._wlm_lmax
 
-    def set_smoothed_mask(self):
-        sigma = np.deg2rad(1 / self.l_smooth * 300)
-        smooth_mask = hp.sphtfunc.smoothing(
-            self.mask,
-            sigma=np.abs(sigma),
-            iter=50,
-            use_pixel_weights=True,
-            datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
-        )
-        self.smooth_mask = smooth_mask
-        self.wl
-        self.wlm
+    
 
     @property
     def wl(self):
@@ -388,15 +486,6 @@ class SphereMask:
             self.save_w_arr()
             return self._w_arr
 
-    def precompute_for_cov_masked(self, cov_ell_buffer=0):
-        tic1 = time.perf_counter()
-        w_arr = self.w_arr(cov_ell_buffer=cov_ell_buffer)
-        self._wpm_delta, self._wpm_stack = cov_funcs.precompute_xipm(w_arr)
-        _ = self.m_llp
-        self._precomputed = True
-        toc1 = time.perf_counter()
-        print("cov_masked: precomputation took {:.2f} minutes".format((toc1 - tic1) / 60))
-
     @property
     def m_llp(self):
         self.set_mllppath()
@@ -408,6 +497,30 @@ class SphereMask:
 
             self.save_mllp_arr()
         return self._m_llp
+
+    def precompute_for_cov_masked(self, cov_ell_buffer: int = 0) -> None:
+        """
+        Precompute all arrays needed for masked covariance calculations.
+        
+        Parameters
+        ----------
+        cov_ell_buffer : int, default=0
+            Buffer in multipole space for covariance calculations
+        """
+        with computation_phase("mask precomputation", log_memory=True):
+            w_arr = self.w_arr(cov_ell_buffer=cov_ell_buffer)
+            self._wpm_delta, self._wpm_stack = cov_funcs.precompute_xipm(w_arr)
+            _ = self.m_llp  # Trigger computation
+            self._precomputed = True
+
+    def __repr__(self) -> str:
+        """String representation of the mask."""
+        status = "precomputed" if self._precomputed else "ready"
+        smoothed = " (smoothed)" if hasattr(self, 'smooth_mask') else ""
+        return (f"SphereMask(name='{self.name}', area={self.area:.1f} sq deg, "
+                f"nside={self.nside}, exact_lmax={self._exact_lmax}, {status}){smoothed}")
+
+    
 
     def save_w_arr(self):
         print("Saving Wpm0 arrays.")
@@ -458,3 +571,28 @@ class SphereMask:
             os.system(command)
         mllp_name = self.working_dir + "/mllp_arrays/mllp" + charstring
         self.mllp_path = mllp_name
+
+
+def save_maskobject(maskobject: SphereMask, directory: str = "") -> str:
+    """
+    Save SphereMask object to pickle file.
+    
+    Parameters
+    ----------
+    maskobject : SphereMask
+        Mask object to save
+    directory : str, optional
+        Directory to save in
+        
+    Returns
+    -------
+    str
+        Path to saved file
+    """
+    filename = f"{maskobject.name}_l{maskobject.lmax}_n{maskobject.nside}.pkl"
+    filepath = Path(directory) / filename
+    
+    with open(filepath, "wb") as f:
+        pickle.dump(maskobject, f)
+    
+    return str(filepath)
