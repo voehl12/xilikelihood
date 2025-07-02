@@ -261,6 +261,34 @@ def plot_kernels(prefactors,save_path=None,ang_bins=None):
     else:
         plt.show()
 
+        
+def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False):
+
+    bincenters_x, bincenters_y = bincenters
+    X, Y = np.meshgrid(bincenters_x, bincenters_y)
+    exact_grid = interp((Y,X))
+    
+    if log:
+        diff_hist = sim_mean - exact_grid
+        rel_res = diff_hist
+    else:
+        diff_hist = (sim_mean - exact_grid)
+        rel_res = diff_hist / sim_std
+    print("Mean deviation from simulations: {} std".format(np.mean(np.fabs(rel_res))))
+
+    # Display values per pixel using a heatmap
+    im = axes.pcolormesh(bincenters_x, bincenters_y,
+        rel_res, 
+        shading="auto", 
+        #extent=(bincenters_x[0], bincenters_x[-1], bincenters_y[0], bincenters_y[-1]),
+        cmap="coolwarm", 
+        vmin=-vmax, 
+        vmax=vmax
+    )
+    #im2 = axes.contour(bincenters_x, bincenters_y,exact_grid,cmap='gray',levels=5)
+
+    return im
+
 def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100):
     """
     Create a corner plot with 2D marginals and 1D histograms for simulations,

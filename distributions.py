@@ -33,6 +33,9 @@ __all__ = [
     'batched_cf_1d_jitted',
     'high_ell_gaussian_cf_1d', 
     'cf_to_pdf_1d',
+
+    # Normalization/Marginalization
+    'exp_norm_mean'
        
     # Gaussian covariance functions
     'gaussian_2d'
@@ -198,6 +201,48 @@ def cf_to_pdf_1d(t, cf):
 
         return (np.array(x), np.array(pdf))
 
+# ============================================================================
+# Normalization/Marginalization
+# ============================================================================
+
+def exp_norm_mean(x,posterior,reg=350):
+    
+    posterior = np.array(posterior)
+    posterior = posterior - reg
+    posterior = np.exp(posterior)
+    diffs = np.diff(posterior)
+    nonan_diffs = diffs[~np.isnan(diffs)]
+    extended_diffs = np.append(diffs, 0)
+    
+    median_diffs = np.median(np.fabs(nonan_diffs))
+    threshold = 500 * median_diffs
+    
+    
+    cond = ~np.isnan(posterior) & (np.fabs(extended_diffs) < threshold)
+    if np.sum(cond) == 0:
+        raise ValueError("No values in posterior satisfy the condition for normalization.")
+    integral = np.trapz(posterior[cond], x=x[cond])
+    if not np.isfinite(integral) or integral <= 0:
+        
+        debugfig, ax = plt.subplots()
+        ax.plot(x, posterior)
+        ax.set_yscale("log")
+        ax.set_title("Posterior not finite or integral <= 0")
+        debugfig.savefig("posterior_not_finite.png")
+        plt.close(debugfig)
+        raise ValueError("Integral of posterior is not finite or less than or equal to zero.")
+    # check convergence
+    conditioned_posterior = posterior[cond]
+    conditioned_x = x[cond]
+    endvalues = conditioned_posterior[0]/np.max(conditioned_posterior), conditioned_posterior[-1]/np.max(conditioned_posterior)
+    #print(endvalues)
+    if endvalues[0] > 0.1 or endvalues[1] > 0.1:
+        print("Warning: Posterior does not converge to zero at the edges.")
+        print("End values:", endvalues)
+    normalized_post = conditioned_posterior / integral
+    mean = np.trapz(conditioned_x * normalized_post, x=conditioned_x)
+    std = np.sqrt(np.trapz((conditioned_x-mean)**2 * normalized_post, x=conditioned_x))
+    return conditioned_x, normalized_post, mean, std
 
 
 # ============================================================================
