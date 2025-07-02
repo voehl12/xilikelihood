@@ -18,7 +18,7 @@ from legacy.file_handling_v1 import read_xi_sims
 rc('font',**{'family':'serif','serif':['Times']})
 rc('text', usetex=True)
 rc('text.latex', preamble=r'\usepackage{amsmath}')
-figdir = 'plots_paperone/
+figdir = 'plots_paperone/'
 
 cov_params_masks = [{'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'circmaskattr' : (1000,256),'l_smooth_mask' : 30,'cov_ell_buffer' : 10,'l_smooth_signal' : None},{'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'circmaskattr' : (10000,256),'l_smooth_mask' : 30,'cov_ell_buffer' : 10}, {'sigma_e' : 'default' , 'clpath' : 'Cl_3x2pt_kids55.txt','clname' : "3x2pt_kids_55",'maskpath' : 'singlet_lowres.fits', 'maskname' : 'kids_lowres', 'l_smooth_mask' : 30,'cov_ell_buffer' : 10}]
 masknames = [r'$1 \ 000 \ \mathrm{{deg}}^2$',r'$10 \ 000\ \mathrm{{deg}}^2$',r'KiDS']
