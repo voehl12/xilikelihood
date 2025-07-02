@@ -93,3 +93,17 @@ def get_stats_from_sims(sims, orders=[1, 2, 3], axis=1):
     else:
         return stats
 
+
+# In statistics.py
+def compare_cf_to_simulations(t_grid, theory_cf, sim_data, n_moments=3):
+    """Compare theoretical CF moments to simulation moments."""
+    import moments
+    
+    theory_moments = moments.nth_moment(n_moments, t_grid, theory_cf)
+    sim_moments = compute_simulation_moments(sim_data, orders=list(range(1, n_moments+1)))
+    
+    return {
+        'theory': [m.real for m in theory_moments],
+        'simulation': sim_moments,
+        'difference': [t.real - s for t, s in zip(theory_moments, sim_moments)]
+    }
