@@ -28,10 +28,10 @@ def test_wllpmmp(snapshot, tmp_path):
 
 def test_cov_xi(snapshot):
     import mask_props, pseudo_alm_cov, theory_cl
-
+    import file_handling
     mask = mask_props.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
     full_mask = mask_props.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
-    theorycl = theory_cl.TheoryCl(767, clpath="cls/Cl_3x2pt_kids55.txt")
+    theorycl = theory_cl.TheoryCl(767, clpath="papers/first_paper_2024/data/cls/Cl_3x2pt_kids55.txt")
     # covs = np.load(testdir + "/cov_xip_l10_n256_circ1000.npz")
     # cov_xip = covs["cov"]
     circ_cov = pseudo_alm_cov.Cov(mask, theorycl, 10)
@@ -44,8 +44,18 @@ def test_cov_xi(snapshot):
     diag_arr = np.diag(diag)
     assert np.allclose(nomask_cov_array, diag_arr)
 
-    nomask_cov.maskname = "disguised_fullsky"
-    nomask_cov.set_covalmpath()
+    nomask_cov.mask.name = "disguised_fullsky"
+    nomask_cov.covalm_path = file_handling.generate_covariance_filename(
+            nomask_cov.exact_lmax,
+            nomask_cov.mask.nside,
+            nomask_cov.mask.name,
+            nomask_cov.theorycl.name,
+            nomask_cov.theorycl.sigmaname,
+            nomask_cov.working_dir
+        )
+
+            
+        
     nomask_bruteforce_cov = nomask_cov.cov_alm_xi()
     assert np.allclose(nomask_bruteforce_cov - nomask_cov_array, np.zeros_like(nomask_cov_array))
 
