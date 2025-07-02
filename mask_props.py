@@ -114,7 +114,7 @@ class SphereMask:
             self._create_mask_from_attributes(circmaskattr)
         
         # Set up mask properties
-        self._initialize_properties(spins, lmin, exact_lmax, l_smooth)
+        self._initialize_properties(spins, lmin, exact_lmax)
         
         # Smoothing if requested
         if l_smooth is not None:
