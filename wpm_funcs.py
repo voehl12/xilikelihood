@@ -1,7 +1,60 @@
+"""
+Wigner 3j-symbol computation and mask coupling functions.
+
+This module provides functions for computing Wigner 3j-symbols, mask coupling
+matrices, and related spherical harmonic operations for cosmic shear analysis.
+
+Main Functions
+--------------
+prepare_wigners : Prepare Wigner symbol arrays for given spins
+calc_w_element_from_mask : Calculate W matrix elements from mask
+compute_w_arrays : Compute full W arrays for mask coupling
+m_llp : Compute coupling matrix elements
+smooth_cl : Apply smoothing to power spectra
+
+Examples
+--------
+>>> import numpy as np
+>>> l_arr = np.arange(100)
+>>> wigners_arr = prepare_wigners(2, 10, 20, 1, -1, 99)
+>>> smoothed = smooth_cl(l_arr, 30)
+"""
+
 import wigner
 import healpy as hp
 import numpy as np
+import logging
 from scipy.special import factorial
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    # Core Wigner functions
+    'prepare_wigners',
+    'wigners_on_array', 
+    'wigners',
+    'wigners_2',
+    'wigners_0',
+    
+    # W matrix computation
+    'calc_w_element_from_mask',
+    'compute_w_arrays',
+    'assemble_w_array',
+    
+    # Coupling matrix functions
+    'm_llp',
+    'w_factor',
+    
+    # Utility functions
+    'get_wlm_l',
+    'shorten_wigners',
+    
+    # Smoothing functions
+    'smooth_gauss',
+    'smooth_cl',
+    'smooth_alm',
+]
+
 
 
 def w_factor(l, l1, l2):
