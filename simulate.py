@@ -1,469 +1,645 @@
+"""
+Correlation function simulation utilities.
+
+This module provides functions for simulating two-point correlation functions
+from theoretical power spectra using either pseudo-C_l estimators or TreeCorr.
+
+Main Functions
+--------------
+simulate_correlation_functions : Unified simulation interface
+create_maps : Create Gaussian random maps using GLASS
+compute_pseudo_cl : Compute pseudo-C_l from masked maps
+compute_correlation_functions : Convert pseudo-C_l to correlation functions or use TreeCorr directly
+
+Examples
+--------
+>>> # 1D simulation
+>>> results = simulate_correlation_functions(
+...     theory_cl_list=[theory_cl],
+...     masks=[mask],
+...     angular_bins=angular_bins,
+...     method="pcl_estimator"
+... )
+
+>>> # nD simulation  
+>>> results = simulate_correlation_functions(
+...     theory_cl_list=[cl1, cl2, cl3],
+...     masks=[mask1, mask2, mask3],
+...     angular_bins=angular_bins,
+...     method="pcl_estimator"
+... )
+"""
+
 import os
 import logging
-
+import warnings
 import numpy as np
 import healpy as hp
-
-# import pymaster as nmt
-# import treecorr
-
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
+from pathlib import Path
+
+# Optional imports with graceful degradation
+try:
+    import treecorr
+    HAS_TREECORR = True
+except ImportError:
+    HAS_TREECORR = False
+    
+
+import glass.fields
+import time
+
 from cl2xi_transforms import pcl2xi, prep_prefactors
-from noise_utils import get_noise_cl, get_noise_pixelsigma
+from noise_utils import get_noise_pixelsigma
 from pseudo_alm_cov import Cov
 from core_utils import check_property_equal
 
-from typing import Any, Union, Tuple, Generator, Optional, Sequence, Callable, Iterable
+__all__ = [
+    # Main unified API
+    'simulate_correlation_functions',
+    
+    # Core utilities that users might need
+    'create_maps',
+    'add_noise_to_maps',
+    'compute_pseudo_cl',
+    'compute_correlation_functions',
+    'get_noise_sigma',
+    'limit_noise',
+    
+    # TreeCorr utilities
+    'prep_cat_treecorr',
+    'prep_angles_treecorr',
+    'get_xi_treecorr',
+    
+    # Backward compatibility
+    'TwoPointSimulation',
 
-import glass.fields
-
-# glass          2023.8.dev10+g67a5721 /cluster/home/veoehl/glass
-import time
+]
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
 class TwoPointSimulation:
-    # inherits theory c_ell and mask stuff, use properties to set up simulations (not for single simulation)
-    def __init__(
-        self,
-        seps_in_deg,
-        mask,
-        theorycl,
-        ximode="namaster",
-        batchsize=1,
-        simpath=None,
-        lmax=None,
-        healpix_datapath=None,
-    ):
-
-        self.mask = mask
-        self.theorycl = theorycl
-        self.ximode = ximode
-        foldername = "{}_{}_{}_{}".format(self.theorycl.name, self.mask.name, self.theorycl.sigmaname, self.ximode)
-        
-        
-        self.batchsize = batchsize
-        if simpath is None:
-            current = os.getcwd()
-            sim_folder = os.path.join(current, "simulations", foldername)  # Ensure full path
-            logger.info(f"Simulation folder: {sim_folder}")
-            os.makedirs(sim_folder, exist_ok=True)  # Ensure both folders exist
-            self.simpath = sim_folder
-        else:
-            self.simpath = simpath
-        self.seps_in_deg = seps_in_deg
-        self.healpix_datapath = healpix_datapath
-        self.lmax = lmax
-
-    def create_maps(self, seed=None):
-        """
-        Create Gaussian random maps from C_l
-        C_l need to be tuple of arrays in order:  TT, TE, EE, *BB
-        * are zero for pure shear
-        """
-        if self.theorycl.clpath is None:
-            npix = hp.nside2npix(self.mask.nside)
-            zeromaps = np.zeros((3, npix))
-            return zeromaps
-        else:
-            np.random.seed(seed=seed)
-            maps = hp.sphtfunc.synfast(
-                (self.theorycl.nn, self.theorycl.ne, self.theorycl.ee, self.theorycl.bb),
-                self.mask.nside,
-                lmax=self.mask.lmax,
-            )
-            return maps
-
-    def add_noise(self, maps, testing=False):
-        if self.theorycl.sigma_e is not None:
-            self.pixelsigma = set_pixelsigma(self.theorycl, self.mask.nside)
-        else:
-            return maps
-        rng = default_rng()
-
-        noise_map_q = self.limit_noise(rng.normal(size=(self.mask.npix), scale=self.pixelsigma))
-        noise_map_u = self.limit_noise(rng.normal(size=(self.mask.npix), scale=self.pixelsigma))
-
-        if testing == True:
-            cl_t = hp.anafast(noise_map_q)
-            assert np.allclose(np.mean(cl_t), get_noise_cl(), rtol=1e-01), (
-                np.mean(cl_t),
-                get_noise_cl(),
-            )
-
-        maps[1] += noise_map_q
-        maps[2] += noise_map_u
-
-        return maps
-
-    def limit_noise(self, noisemap):
-        almq = hp.map2alm(noisemap)
-        clq = hp.sphtfunc.alm2cl(almq)
-
-        if self.theorycl.smooth_signal is not None:
-            clq *= self.theorycl.smooth_array
-
-        # assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
-        np.random.seed()
-        return hp.sphtfunc.synfast(clq, self.nside, lmax=self.lmax)
-
-    def get_pcl(self, maps_TQU):
-        if self.mask.name == "fullsky":
-            cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb = hp.anafast(maps_TQU)
-            return cl_e, cl_b, cl_eb
-        else:
-            if hasattr(self.mask, "smooth_mask"):
-                mask = self.mask.smooth_mask
-            else:
-                mask = self.mask.mask
-            maps_TQU_masked = mask[None, :] * maps_TQU
-            pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
-                maps_TQU_masked,
-                iter=5,
-                use_pixel_weights=True,
-                datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
-            )
-            return pcl_e, pcl_b, pcl_eb
-
-    def get_xi_namaster(self, maps_TQU, prefactors, lmin=0, pixwin_p=None):
-        # pcl2xi should work for several angles at once.
-        pcl_22 = self.get_pcl(maps_TQU)
-        if pixwin_p is not None:
-            pcl_22 = pcl_22 / pixwin_p[None, :] ** 2
-        xi_p, xi_m = pcl2xi(pcl_22, prefactors, self.lmax, lmin=lmin)
-        return pcl_22, xi_p, xi_m
-
-    def xi_sim_1D(self, j, lmin=0, plot=False, save_pcl=False, pixwin=False):
-        xip, xim, pcls = [], [], []
-     
-
-        if self.ximode == "namaster":
-            prefactors = prep_prefactors(
-                self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax
-            )  # exact lmax shoukld not be used here.
-            if pixwin:
-                pixwin_t, pixwin_p = hp.pixwin(self.mask.nside, pol=True)
-                pixwin_p[:2] = np.ones(2)
-            else:
-                pixwin_p = None
-            for _i in range(self.batchsize):
-                logger.info(f"Simulating xip and xim......{_i / self.batchsize * 100:.1f}%")
-                maps_TQU = self.create_maps()
-                maps = self.add_noise(maps_TQU)
-                pcl, xi_p, xi_m = self.get_xi_namaster(maps, prefactors, lmin, pixwin_p=pixwin_p)
-                xip.append(xi_p)
-                xim.append(xi_m)
-                pcls.append(pcl)
-            xip = np.array(xip)
-            xim = np.array(xim)
-            pcls = np.array(pcls)
-            if plot:
-                plt.figure()
-                plt.hist(xip[:, 0], bins=30)
-                plt.savefig("sim_demo_{:d}.png".format(j))
-            np.savez(
-                self.simpath + "/job{:d}.npz".format(j),
-                mode=self.ximode,
-                theta=self.seps_in_deg,
-                lmax=self.lmax,
-                lmin=lmin,
-                xip=np.array(xip),
-                xim=np.array(xim),
-            )
-            if save_pcl:
-                np.savez(
-                    self.simpath + "/pcljob{:d}.npz".format(j),
-                    lmin=lmin,
-                    lmax=self.mask.lmax,
-                    pcl_e=np.array(pcls[:, 0]),
-                    pcl_b=np.array(pcls[:, 1]),
-                    pcl_eb=np.array(pcls[:, 2]),
-                )
-
-        elif self.ximode == "treecorr":
-
-            cat_props = prep_cat_treecorr(self.mask.nside, self.mask.smooth_mask)
-            for _i in range(self.batchsize):
-                logger.info(f"Simulating xip and xim......{_i / self.batchsize * 100:.1f}%")
-                maps_TQU = self.create_maps()
-                maps = self.add_noise(maps_TQU)
-                xi_p, xi_m, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
-
-                xip.append(xi_p)
-                xim.append(xi_m)
-            xip = np.array(xip)
-            xim = np.array(xim)
-            if plot:
-                plt.figure()
-                plt.hist(xip[:, 0], bins=10)
-                plt.savefig("sim_demo1_{:d}.png".format(j))
-
-            if os.path.isfile(path + "/job{:d}.npz".format(j)):
-                xifile = np.load(path + "/job{:d}.npz".format(j))
-                angs = xifile["theta"]
-                for a, ang in enumerate(angsep):
-                    if ang not in angs:
-                        angsep = np.append(angs, [ang], axis=0)
-                        xip = np.append(xifile["xip"], xip, axis=1)
-                        xim = np.append(xifile["xim"], xim, axis=1)
-
-            np.savez(
-                path + "/job{:d}.npz".format(j),
-                mode=self.ximode,
-                theta=angsep,
-                xip=np.array(xip),
-                xim=np.array(xim),
-            )
-
-        elif self.ximode == "comp":
-            cat_props = prep_cat_treecorr(self.mask.nside, self.mask.smooth_mask)
-            prefactors = prep_prefactors(
-                self.seps_in_deg, self.mask.wl, self.mask.lmax, self.mask.lmax
-            )
-
-            logger.info("Running comparison mode simulation.")
-            maps_TQU = self.create_maps(seed=7)
-            maps = self.add_noise(maps_TQU)
-            xi_p_t, xi_m_t, angsep = get_xi_treecorr(maps, self.seps_in_deg, cat_props)
-            pcl, xi_p_n, xi_m_n = self.get_xi_namaster(maps, prefactors, lmin, pixwin_p=None)
-            self.comp = [xi_p_t, xi_p_n]
-
-        else:
-            raise RuntimeError("Simulation mode can either be namaster, treecorr or comp")
-
-
-def create_maps_nD(gls=[], nside=256, lmax=None):
     """
-    Create Gaussian random maps from C_l
-    C_l need to be list of cl-arrays in order:  11,22,12,33,32,31,... for cross-correlations
-    only E-mode C_ells! (T and B are set to zero within glass)
+    Two-point correlation function simulation class.
+    
+    .. deprecated:: 
+        TwoPointSimulation is deprecated and will be removed in a future version.
+        This class has been moved to papers/first_paper_method/analysis/simulate_1d.py
+        and is maintained there for reproducibility of the first paper results.
+        
+        For new simulations, use the functional simulation API:
+        - simulate_correlation_functions() for single redshift bins
+        - simulate_correlation_functions_nd() for multiple redshift bins
+        
+    This class is limited to single redshift bin combinations and has been
+    superseded by more flexible functional approaches.
     """
-    if len(gls) == 0:
+    
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "TwoPointSimulation is deprecated. Use the functional simulation API instead. "
+            "This class will be removed in a future version. "
+            "See papers/first_paper_method/analysis/ for the maintained version.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
+
+def create_maps(power_spectra, nside, lmax=None):
+    """
+    Create Gaussian random maps using GLASS for 1D or nD cases.
+    
+    Parameters
+    ----------
+    power_spectra : list of arrays
+        List of C_l arrays for cross-correlations
+        - For 1D: [cl_ee] (single power spectrum)
+        - For nD: [cl_11, cl_22, cl_12, cl_33, cl_32, cl_31, ...]
+        Only E-mode C_ells (T and B set to zero in GLASS)
+    nside : int
+        HEALPix resolution parameter
+    lmax : int, optional
+        Maximum multipole (not used by GLASS but kept for compatibility)
+        
+    Returns
+    -------
+    maps : ndarray
+        - For 1D: shape (3, n_pix) - single T,Q,U map
+        - For nD: shape (n_fields, 3, n_pix) - multiple T,Q,U maps
+    """
+    if len(power_spectra) == 0:
         npix = hp.nside2npix(nside)
-        zeromaps = np.zeros((3, npix))
-        return zeromaps
+        return np.zeros((3, npix))
+    
+    # Use GLASS generator correctly (your implementation is right!)
+    fields = glass.fields.generate_gaussian(power_spectra, nside=nside)
+    field_list = []
+    while True:
+        try:
+            maps_TQU = next(fields)
+            field_list.append(maps_TQU)
+        except StopIteration:
+            break
+    
+    maps_array = np.array(field_list)
+    
+    # For single field case, remove extra dimension for consistency
+    if len(power_spectra) == 1:
+        return maps_array[0]  # Shape: (3, n_pix)
     else:
-        fields = glass.fields.generate_gaussian(gls, nside=nside)
-        field_list = []
-        while True:
-            try:
-                mapsTQU = next(fields)
-                field_list.append(mapsTQU)
-            except StopIteration:
-                break
-
-        return np.array(field_list)
+        return maps_array     # Shape: (n_fields, 3, n_pix)
 
 
-def set_pixelsigma(theorycl, nside):
-    if theorycl.sigma_e is not None:
-        if isinstance(theorycl.sigma_e, str):
-            pixelsigma = get_noise_pixelsigma(nside)
-
-        elif isinstance(theorycl.sigma_e, tuple):
-            pixelsigma = get_noise_pixelsigma(nside, theorycl.sigma_e)
+def get_noise_sigma(theory_cl, nside):
+    """Extract noise sigma from theory C_l object."""
+    if theory_cl.sigma_e is not None:
+        if isinstance(theory_cl.sigma_e, str):
+            return get_noise_pixelsigma(nside)
+        elif isinstance(theory_cl.sigma_e, tuple):
+            return get_noise_pixelsigma(nside, theory_cl.sigma_e)
         else:
-            raise RuntimeError("sigma_e needs to be string for default or tuple (sigma_e,n_gal)")
-    else:
-        pixelsigma = None
-    return pixelsigma
+            raise ValueError("sigma_e must be string for default or tuple (sigma_e, n_gal)")
+    return None
 
 
-def limit_noise(noisemap, nside: int, lmax: Optional[int] = None):
+def limit_noise(noisemap, nside, lmax=None):
     almq = hp.map2alm(noisemap)
     clq = hp.sphtfunc.alm2cl(almq)
 
-    # assert np.allclose(clq[2*self.smooth_signal], self.noise_cl[2*self.smooth_signal], rtol=1e-01),(clq,self.noise_cl)
     np.random.seed()
     return hp.sphtfunc.synfast(clq, nside, lmax=lmax)
 
 
-def add_noise_nD(maps_TQU_list, nside: int, sigmas=None, lmax=None):
-    if sigmas is None:
-        return maps_TQU_list
-    else:
-        assert len(sigmas) == len(maps_TQU_list), (sigmas, maps_TQU_list)
-        size = len(maps_TQU_list[0, 0])
-
-        for i, maps_TQU in enumerate(maps_TQU_list):
-            rng = default_rng()
-
-            noise_map_q = limit_noise(rng.normal(size=size, scale=sigmas[i]), nside, lmax)
-            noise_map_u = limit_noise(rng.normal(size=size, scale=sigmas[i]), nside, lmax)
-            maps_TQU[1] += noise_map_q
-            maps_TQU[2] += noise_map_u
-
-        return maps_TQU_list
-
-
-def get_pcl_nD(maps_TQU_list, smooth_masks, fullsky=False):
+def add_noise_to_maps(maps, nside, noise_sigmas=None, lmax=None):
     """
-    measures sets of pseudo_cl. if nD, the pcl are ordered as 00,11,10,22,21,20,...
-
+    Add shape noise to Q and U maps for 1D or nD cases.
+    
     Parameters
     ----------
-    maps_TQU_list : _type_
-        _description_
-    smooth_masks : _type_
-        _description_
-    fullsky : bool, optional
-        _description_, by default False
-
+    maps : ndarray
+        Maps from create_maps_glass
+        - 1D case: shape (3, n_pix) 
+        - nD case: shape (n_fields, 3, n_pix)
+    nside : int
+        HEALPix resolution parameter
+    noise_sigmas : list or float, optional
+        Noise sigma for each field
+        - For 1D: single float or None
+        - For nD: list of floats matching number of fields
+    lmax : int, optional
+        Maximum multipole for noise maps
+        
     Returns
     -------
-    _type_
-        _description_
+    noisy_maps : ndarray
+        Maps with added noise (same shape as input)
     """
+    if noise_sigmas is None:
+        return maps
+    
+    # Handle 1D case - add extra dimension temporarily
+    if maps.ndim == 2:  # Shape (3, n_pix)
+        maps_nd = maps[None, ...]  # Shape (1, 3, n_pix)
+        if not isinstance(noise_sigmas, list):
+            noise_sigmas = [noise_sigmas]
+        is_1d = True
+    else:
+        maps_nd = maps
+        is_1d = False
+    
+    maps_noisy = maps_nd.copy()
+    n_pix = maps_nd.shape[-1]
+    
+    for i, sigma in enumerate(noise_sigmas):
+        if sigma is None:
+            continue
+            
+        rng = default_rng()
+        noise_q = limit_noise(rng.normal(size=n_pix, scale=sigma), nside, lmax)
+        noise_u = limit_noise(rng.normal(size=n_pix, scale=sigma), nside, lmax)
+        
+        maps_noisy[i, 1] += noise_q  # Q map
+        maps_noisy[i, 2] += noise_u  # U map
+    
+    # Return original shape
+    if is_1d:
+        return maps_noisy[0]  # Shape (3, n_pix)
+    else:
+        return maps_noisy     # Shape (n_fields, 3, n_pix)
+
+
+def compute_pseudo_cl(maps_list, masks, fullsky=False, healpy_datapath=None):
+    """
+    Compute pseudo-C_l from masked maps.
+    
+    Parameters
+    ----------
+    maps_list : ndarray
+        Maps of shape (n_fields, 3, n_pix)
+    masks : ndarray
+        Mask for each field, shape (n_fields, n_pix)
+    fullsky : bool, optional
+        If True, compute full-sky C_l, otherwise pseudo-C_l
+        
+    Returns
+    -------
+    pcl_array : ndarray
+        Pseudo-C_l array of shape (n_cross, 3, n_ell)
+        Order: 00, 11, 10, 22, 21, 20, ... (auto then cross)
+        Contains [cl_e, cl_b, cl_eb] for each cross-correlation
+    """
+    anafast_kwargs = {
+        'iter': 5,
+        'use_pixel_weights': True
+    }
+    
+    if healpy_datapath is not None:
+        anafast_kwargs['datapath'] = healpy_datapath
 
     if fullsky:
-        cl_s = []
-        for i, field_i in enumerate(maps_TQU_list):
-            for j, field_j in reversed(list(enumerate(maps_TQU_list[: i + 1]))):
-                # cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb order of cl_s
-                cl_s.append(hp.anafast(field_i, field_j))
-        cl_s = np.array(cl_s)[:, [1, 2, 4]]
-        return cl_s  # cl_e, cl_b, cl_eb
+        cl_list = []
+        for i, field_i in enumerate(maps_list):
+            for j, field_j in reversed(list(enumerate(maps_list[:i+1]))):
+                # cl_t, cl_e, cl_b, cl_te, cl_eb, cl_tb order
+                cl_results = hp.anafast(field_i, field_j)
+                cl_list.append([cl_results[1], cl_results[2], cl_results[4]])  # E, B, EB
+        return np.array(cl_list)
     else:
-        pcl_s = []
-        masked_fields = smooth_masks[:, None, :] * np.array(maps_TQU_list)
+        pcl_list = []
+        masked_fields = masks[:, None, :] * maps_list
+        
         for i, field_i in enumerate(masked_fields):
-            for j, field_j in reversed(list(enumerate(masked_fields[: i + 1]))):
+            for j, field_j in reversed(list(enumerate(masked_fields[:i+1]))):
+                try:
+                    pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
+                        field_i,
+                        field_j,
+                        **anafast_kwargs
+                    )
 
-                pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
-                    field_i,
-                    field_j,
-                    iter=5,
-                    use_pixel_weights=True,
-                    datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
-                )
+                except Exception as e:
+                    logger.warning(f"Failed with pixel weights: {e}")
+                    logger.warning("Retrying without pixel weights")
+                    pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
+                        field_i,
+                        field_j,
+                        iter=5,
+                        use_pixel_weights=False
+                    )
 
-                pcl_s.append([pcl_e, pcl_b, pcl_eb])  # (n_croco, 3, n_ell)
+                pcl_list.append([pcl_e, pcl_b, pcl_eb])  # (n_croco, 3, n_ell)
 
-        return np.array(pcl_s)
-
-
-def get_xi_namaster_nD(maps_TQU_list, smooth_masks, prefactors, lmax, lmin=0):
-    # pcl2xi should work for several angles at once.
-    assert len(maps_TQU_list) == len(smooth_masks), "need to provide as many masks as fields!"
-    pcl_ij = get_pcl_nD(maps_TQU_list, smooth_masks)
-    n_corr = len(pcl_ij)
-    xi_all = np.zeros((n_corr, 2, len(prefactors)))
-    for i, pcl in enumerate(pcl_ij):
-        xi_all[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
-    return pcl_ij, xi_all
+        return np.array(pcl_list)
 
 
-def xi_sim_nD(
-    theorycls,
+def compute_correlation_functions(pcl_array, prefactors, lmax, lmin=0):
+    """
+    Convert pseudo-C_l to correlation functions.
+    
+    Parameters
+    ----------
+    pcl_array : ndarray
+        Pseudo-C_l array from compute_pseudo_cl
+    prefactors : ndarray
+        Prefactors for C_l to xi transformation
+    lmax : int
+        Maximum multipole
+    lmin : int
+        Minimum multipole
+        
+    Returns
+    -------
+    xi_array : ndarray
+        Correlation functions of shape (n_cross, 2, n_bins)
+        [xi_plus, xi_minus] for each cross-correlation
+    """
+    n_cross = len(pcl_array)
+    n_ang_bins = len(prefactors)
+    xi_array = np.zeros((n_cross, 2, n_ang_bins))
+    
+    for i, pcl in enumerate(pcl_array):
+        xi_array[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
+    
+    return xi_array
+
+
+def simulate_correlation_functions(
+    theory_cl_list,
     masks,
-    j,
-    seps_in_deg,
+    angular_bins,
+    job_id=0,
+    n_batch=1,
+    method="pcl_estimator",
     lmax=None,
     lmin=0,
-    plot=False,
+    add_noise=True,
+    save_path=None,
     save_pcl=False,
-    ximode="namaster",
-    batchsize=1,
-    simpath="simulations",
-    runname="glasssim"
+    plot_diagnostics=False,
+    run_name="simulation"
 ):
-    xis, pcls = [], []
-    gls = np.array([cl.ee.copy() for cl in theorycls])
+    """
+    Simulate correlation functions for 1D or nD cases.
+    
+    Parameters
+    ----------
+    theory_cl_list : list of TheoryC_l
+        Theory power spectra objects
+    masks : list of SphereMask
+        Survey masks (same length as theory_cl_list)
+    angular_bins : array or list
+        Angular separation bins
+    job_id : int
+        Job identifier for batch processing
+    n_batch : int
+        Number of simulations in this batch
+    method : str
+        'pcl_estimator' or 'treecorr'
+    lmax : int, optional
+        Maximum multipole
+    lmin : int
+        Minimum multipole
+    add_noise : bool
+        Whether to add shape noise
+    save_path : str, optional
+        Path to save results
+    save_pcl : bool
+        Whether to save pseudo-C_l
+    plot_diagnostics : bool
+        Whether to create diagnostic plots
+    run_name : str
+        Name for this simulation run
+        
+    Returns
+    -------
+    results : dict
+        Dictionary with simulation results
+    """
+    # Validate method availability
+    if method == "treecorr" and not HAS_TREECORR:
+        raise ImportError("TreeCorr not available. Install with: pip install treecorr")
+    
+
+    
     if not check_property_equal(
         masks, "nside"
     ) or not check_property_equal(masks, "eff_area"):
         raise RuntimeError("Different masks not implemented yet.")
 
+    # Setup simulation parameters
     mask = masks[0]
-    if not hasattr(mask, "smooth_mask"):
-        logger.warning("Mask used for simulations is not smoothed!")
-        sim_mask = mask.mask
+    
+    # Set lmax
+    if lmax is None:
+        lmax = mask.lmax
+    
+  
+    # Auto-generate save path if not provided
+    if save_path is None:
+        sigma_name = theory_cl_list[0].sigmaname
+        folder_name = f"croco_{run_name}_{mask.name}_{sigma_name}_{method}_llim_{lmax}"
+        save_path = os.path.join("simulations", folder_name)
+    
+    os.makedirs(save_path, exist_ok=True)
+    logger.info(f"Simulation folder: {save_path}")
+    
+    
+
+    # Branch based on method
+    if method == "pcl_estimator":
+        return _simulate_pcl_estimator(
+            theory_cl_list, mask, angular_bins, job_id, n_batch,
+            lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics
+        )
+    elif method == "treecorr":
+        return _simulate_treecorr(
+            theory_cl_list, mask, angular_bins, job_id, n_batch,
+            add_noise, save_path, plot_diagnostics
+        )
     else:
-        sim_mask = mask.smooth_mask
+        raise ValueError(f"Unknown method: {method}")
 
-    logger.info("Saving mask visualization to mask.png")
-    hp.mollview(sim_mask)
-    plt.savefig("mask.png")
+
+
+def _simulate_pcl_estimator(
+    theory_cl_list, mask, angular_bins, job_id, n_batch,
+    lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics
+):
+    """Pseudo_C_ell estimator simulation implementation."""
+  
     nside = mask.nside
-    noises = [set_pixelsigma(cl, nside) for cl in theorycls if cl.sigma_e is not None]
-    if len(noises) == 0:
-        noises = None
-    sigmaname = theorycls[0].sigmaname
-    foldername = "croco_{}_{}_{}_llim_{}".format(
-        runname, mask.name, sigmaname, str(lmax)
+    
+    logger.info(f"Simulating using pcl_estimator with nside={nside}, lmax={lmax}, lmin={lmin}")
+    # Use smooth mask if available
+    if hasattr(mask, "smooth_mask"):
+        sim_mask = mask.smooth_mask
+    else:
+        logger.warning("Using unsmoothed mask for simulations")
+        sim_mask = mask.mask
+    # Prepare prefactors for C_l to xi transformation
+    prefactors = prep_prefactors(angular_bins, mask.wl, mask.lmax, mask.lmax)
+    
+    # Extract power spectra for GLASS
+    power_spectra = [cl.ee.copy() for cl in theory_cl_list]
+    
+    # Setup noise sigmas
+    noise_sigmas = None
+    if add_noise:
+        noise_sigmas = [get_noise_sigma(cl, nside) for cl in theory_cl_list]
+        if all(s is None for s in noise_sigmas):
+            noise_sigmas = None
+    
+    # Run simulations
+    xi_batch = []
+    pcl_batch = []
+    times = []
+    
+    for i in range(n_batch):
+        tic = time.perf_counter()
+        logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
+        
+        # Create maps using GLASS
+        maps = create_maps(power_spectra, nside, lmax)
+        
+        # Add noise if requested
+        if add_noise and noise_sigmas is not None:
+            maps = add_noise_to_maps(maps, nside, noise_sigmas, lmax)
+        
+        # Ensure maps are in nD format for consistent processing
+        if maps.ndim == 2:  # 1D case: (3, n_pix) -> (1, 3, n_pix)
+            maps = maps[None, ...]
+            masks_array = np.array([sim_mask])
+        else:  # nD case: already (n_fields, 3, n_pix)
+            masks_array = np.array([sim_mask for _ in range(len(maps))])
+        
+        # Compute pseudo-C_l and correlation functions
+        pcl_array = compute_pseudo_cl(maps, masks_array, fullsky=False)
+        xi_array = compute_correlation_functions(pcl_array, prefactors, lmax, lmin)
+        
+        xi_batch.append(xi_array)
+        pcl_batch.append(pcl_array)
+        
+        toc = time.perf_counter()
+        times.append(toc - tic)
+    
+    # Convert to arrays
+    xi_batch = np.array(xi_batch)
+    pcl_batch = np.array(pcl_batch)
+    
+    logger.info(f"Simulation times: {times}, Average: {np.mean(times):.2f}s")
+    
+    # Save and return results
+    results = _save_and_return_results(
+        xi_batch, pcl_batch, angular_bins, 'pcl_estimator', lmax, lmin, 
+        n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors
     )
-    path = os.path.join(simpath, foldername)
-    os.makedirs(path, exist_ok=True)  # Ensure both folders exist
-    simpath = path
-    logger.info(f"Simulation folder: {simpath}")
-    if ximode == "namaster":
-        if lmax is None:
-            lmax = mask.lmax
+    
+    return results
 
-        prefactors = prep_prefactors(seps_in_deg, mask.wl, mask.lmax, mask.lmax)
-        times = []
-        for _i in range(batchsize):
-            tic = time.perf_counter()
-            logger.info(f"Simulating xip and xim......{_i / batchsize * 100:.1f}%")
-            maps_TQU_list = create_maps_nD(gls, nside)
-            maps = add_noise_nD(maps_TQU_list, nside, sigmas=noises)
-            all_masks = np.array([sim_mask for _ in range(len(maps))])
-            pcl_all, xi_all = get_xi_namaster_nD(maps, all_masks, prefactors, lmax, lmin=0)
-            xis.append(xi_all)
-            pcls.append(pcl_all)  # (n_batch, n_corr, 3, n_ell)
-            toc = time.perf_counter()
-            times.append(toc - tic)
-        logger.info(f"Simulation times: {times}, Average time: {np.mean(times)}")
-        xis = np.array(xis)  # (n_batch,n_corr,2,n_angbins)
-        pcls = np.array(pcls)
-        if plot:
-            plt.figure()
-            plt.hist(xis[:, 2, 0, 1], bins=30)
-            plt.savefig("sim_demo_{:d}.png".format(j))
-            plt.figure()
-            # plt.plot(np.arange(pcls.shape[-1]), np.array(pcls[:, 2, 0, :]).T)
-            plt.plot(
-                np.arange(pcls.shape[-1]),
-                np.mean(np.array(pcls[:, 2, 0, :]).T, axis=-1),
-                color="black",
-            )
-            plt.plot(
-                np.arange(pcls.shape[-1]),
-                np.mean(np.array(pcls[:, 1, 0, :]).T, axis=-1),
-                color="gray",
-            )
-            theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise_test.npz")
-            theorypcl55 = np.load(
-                "pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault_test.npz"
-            )
-            plt.plot(np.arange(pcls.shape[-1]), theorypcl53["pcl_ee"], color="red")
-            plt.plot(np.arange(pcls.shape[-1]), theorypcl55["pcl_ee"], color="blue")
-            plt.savefig("sim_demo_pcle_35_{:d}.png".format(j))
 
+def _save_and_return_results(
+    xi_batch, pcl_batch, angular_bins, method, lmax, lmin, 
+    n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors
+):
+    """Save simulation results using existing file format for compatibility."""
+    
+    # Save in the EXISTING format that file_handling expects
+    save_file = os.path.join(save_path, f"job{job_id:d}.npz")
+    np.savez(
+        save_file,
+        mode=method,           
+        theta=angular_bins,    
+        lmin=lmin,
+        lmax=lmax,
+        xip=xi_batch[:, :, 0, :],  
+        xim=xi_batch[:, :, 1, :], 
+    )
+    logger.info(f"Saved results to {save_file}")
+    
+    # Save pseudo-C_l if requested (keep existing format)
+    if save_pcl and pcl_batch is not None:
+        pcl_file = os.path.join(save_path, f"pcljob{job_id:d}.npz")
         np.savez(
-            simpath + "/job{:d}.npz".format(j),
-            mode=ximode,
-            theta=seps_in_deg,
+            pcl_file,
             lmin=lmin,
             lmax=lmax,
-            xip=np.array(xis[:, :, 0, :]),
-            xim=np.array(xis[:, :, 1, :]),
+            pcl_e=pcl_batch[:, :, 0],   # Keep existing key names
+            pcl_b=pcl_batch[:, :, 1], 
+            pcl_eb=pcl_batch[:, :, 2],
+            prefactors=prefactors,
         )
-        if save_pcl:
-            np.savez(
-                simpath + "/pcljob{:d}.npz".format(j),
-                lmin=lmin,
-                lmax=lmax,
-                pcl_e=np.array(pcls[:, :, 0]),
-                pcl_b=np.array(pcls[:, :, 1]),
-                pcl_eb=np.array(pcls[:, :, 2]),
-                prefactors = prefactors,
-            )
-        return xis
+        logger.info(f"Saved pseudo-C_l to {pcl_file}")
+    
+    # Create diagnostic plots
+    if plot_diagnostics:
+        _create_diagnostic_plots(xi_batch, pcl_batch, save_path, job_id)
+    
+    # Return results in a convenient dictionary format for immediate use
+    # (but file format remains compatible)
+    results = {
+        'xi_plus': xi_batch[:, :, 0, :],
+        'xi_minus': xi_batch[:, :, 1, :], 
+        'theta': angular_bins,
+        'method': method,
+        'n_batch': n_batch,
+        'job_id': job_id,
+        'lmax': lmax,
+        'lmin': lmin
+    }
+    
+    return results
+
+def _create_diagnostic_plots(xi_batch, pcl_batch, save_path, job_id):
+    """Create diagnostic plots without hardcoded data loading."""
+    # Correlation function histogram
+    plt.figure(figsize=(8, 6))
+    plt.hist(xi_batch[:, 0, 0, 0], bins=30, alpha=0.7)
+    plt.xlabel('xi_plus value')
+    plt.ylabel('Count')
+    plt.title(f'Distribution of xi_plus (job {job_id})')
+    plt.savefig(os.path.join(save_path, f"xi_hist_{job_id}.png"))
+    plt.close()
+    
+    # Power spectrum plots (if available)
+    if pcl_batch is not None:
+        plt.figure(figsize=(10, 6))
+        ell_range = np.arange(pcl_batch.shape[-1])
+        mean_pcl = np.mean(pcl_batch, axis=0)
+        plt.plot(ell_range, mean_pcl[0, 0, :], 'k-', label='E-mode', linewidth=2)
+        plt.xlabel('Multipole l')
+        plt.ylabel('C_l^EE')
+        plt.title(f'Power spectrum (job {job_id})')
+        plt.legend()
+        plt.savefig(os.path.join(save_path, f"pcl_comparison_{job_id}.png"))
+        plt.close()
+
+
+
+
+def _simulate_treecorr(
+    theory_cl_list, mask, angular_bins, job_id, n_batch,
+    add_noise, save_path, plot_diagnostics
+):
+    """TreeCorr simulation implementation."""
+    if not HAS_TREECORR:
+        raise ImportError("TreeCorr not available")
+    
+    
+    nside = mask.nside
+
+    logger.info(f"Simulating using TreeCorr with nside={nside}, angular_bins={angular_bins}")
+
+    # Use smooth mask if available
+    if hasattr(mask, "smooth_mask"):
+        sim_mask = mask.smooth_mask
+    else:
+        logger.warning("Using unsmoothed mask for simulations")
+        sim_mask = mask.mask
+    
+    # Prepare catalog properties for TreeCorr
+    cat_props = prep_cat_treecorr(nside, sim_mask)
+    
+    # Extract power spectra for GLASS (TreeCorr mainly for 1D)
+    power_spectra = [theory_cl_list[0].ee.copy()]
+    
+    # Setup noise
+    noise_sigma = get_noise_sigma(theory_cl_list[0], nside) if add_noise else None
+    
+    # Run simulations
+    xi_batch = []
+    
+    for i in range(n_batch):
+        logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
+        
+        # Create maps using GLASS
+        maps = create_maps(power_spectra, nside)
+        
+        # Add noise if requested
+        if add_noise and noise_sigma is not None:
+            maps = add_noise_to_maps(maps, nside, noise_sigma)
+        
+        # Compute correlation functions using TreeCorr
+        xi_p, xi_m, theta = get_xi_treecorr(maps, angular_bins, cat_props)
+        
+        # Store results (reshape to match pcl format)
+        xi_array = np.array([xi_p, xi_m]).T[None, ...]  # (1, 2, n_bins)
+        xi_batch.append(xi_array)
+    
+    # Convert to arrays
+    xi_batch = np.array(xi_batch)
+    
+    # Save and return results
+    results = _save_and_return_results(
+        xi_batch, None, theta, "treecorr", None, None,
+        n_batch, job_id, save_path, False, plot_diagnostics, None
+    )
+    
+    return results
+
+
+
 
 
 def prep_cat_treecorr(nside, mask=None):
@@ -472,12 +648,8 @@ def prep_cat_treecorr(nside, mask=None):
         all_pix = np.arange(hp.nside2npix(nside))
         phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
         treecorr_mask_cat = (None, phi, thet)
-        sum_weights = None
     else:
         all_pix = np.arange(len(mask))
-        # mask = np.array(1 - mask, dtype=int)
-        # masked_pixs = np.ma.array(all_pixs, mask=mask).compressed()
-        # phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
         phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
         treecorr_mask_cat = (mask, phi, thet)
     return treecorr_mask_cat
@@ -522,11 +694,3 @@ def get_xi_treecorr(maps_TQU, ang_bins_in_deg, cat_props):
     return np.array(xip)[:, 0], np.array(xim)[:, 0], np.array(angs)
 
 
-def pcl_sim(cell_object, ells, mask_file):
-    lmax, cl_tup = set_cl(cl, nside)
-    pcls_e, pcls_b, pcls_eb = [], [], []
-    for i in range(batchsize):
-        maps_TQU = create_maps(cl_tup, lmax=lmax, nside=nside)
-        maps = add_noise(maps_TQU, sigma_n, lmax=lmax)
-        pcl_e, pcl_b, pcl_eb = get_pcl(maps_TQU, mask)
-    pass
