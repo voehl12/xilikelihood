@@ -20,13 +20,22 @@ Examples
 >>> smoothed = smooth_cl(l_arr, 30)
 """
 
-import wigner
+
 import healpy as hp
 import numpy as np
 import logging
 from scipy.special import factorial
 
 logger = logging.getLogger(__name__)
+
+try:
+    import wigner
+    HAS_WIGNER = True
+except ImportError:
+    HAS_WIGNER = False
+    logger.warning("wigner module not available - some functions will not work")
+
+
 
 __all__ = [
     # Core Wigner functions
@@ -55,18 +64,46 @@ __all__ = [
     'smooth_alm',
 ]
 
-
-
-def w_factor(l, l1, l2):
-    return np.sqrt((2 * l1 + 1) * (2 * l2 + 1) * (2 * l + 1) / (4 * np.pi))
-
+# ============================================================================
+# Core Wigner functions
+# ============================================================================
 
 def prepare_wigners(spin, L1, L2, M1, M2, lmax):
     # prepare an array of wigners (or products thereof) of allowed l to be summed for given m1,m2,l1,l2
-
-    m = M1 - M2
+    """
+    Prepare Wigner symbol arrays for given spins and quantum numbers.
+    
+    Parameters
+    ----------
+    spin : int
+        Spin of the field (0 or 2)
+    L1, L2 : int
+        Multipole indices
+    M1, M2 : int  
+        Azimuthal quantum numbers
+    lmax : int
+        Maximum multipole for computation
+        
+    Returns
+    -------
+    tuple
+        (l_array, wigner_products) for the specified spin
+        
+    Raises
+    ------
+    ValueError
+        If spin is not 0 or 2, or if lmax < 0
+    RuntimeError
+        If Wigner computation fails
+    """
+    # Input validation
+    if spin not in [0, 2]:
+        raise ValueError("Spin must be 0 or 2")
+    if lmax < 0:
+        raise ValueError("lmax must be non-negative")
+    
     l_arr = np.arange(lmax + 1)
-    len_wigners = len(l_arr)
+    
     wigners1 = wigners_on_array(L1, L2, -M1, M2, lmax)
 
     if spin == 0:
@@ -88,16 +125,6 @@ def prepare_wigners(spin, L1, L2, M1, M2, lmax):
         raise RuntimeError("Wigner 3j-symbols can only be calculated for spin 0 or 2 fields.")
 
 
-def get_wlm_l(wlm, m, allowed_l):
-    lmax = hp.sphtfunc.Alm.getlmax(len(wlm))
-    if m < 0:
-        wlm_l = (-1) ** -m * np.conj(wlm[hp.sphtfunc.Alm.getidx(lmax, allowed_l, -m)])
-    else:
-        wlm_l = wlm[hp.sphtfunc.Alm.getidx(lmax, allowed_l, m)]
-
-    return wlm_l
-
-
 def shorten_wigners(wigner_lmax, lmax, wigners_l):
     if wigner_lmax > lmax:
         diff = int(wigner_lmax) - lmax
@@ -108,6 +135,10 @@ def shorten_wigners(wigner_lmax, lmax, wigners_l):
 
 
 def wigners_on_array(l1, l2, m1, m2, lmax):
+    """Compute Wigner 3j symbols on array."""
+    if not HAS_WIGNER:
+        raise ImportError("wigner module required for Wigner 3j calculations")
+    
     l_array = np.arange(lmax + 1)
     wigners = np.zeros(len(l_array))
     wlmin, wlmax, wcof = wigner.wigner_3jj(l1, l2, m1, m2)
@@ -161,54 +192,9 @@ def wigners_0(l_arr, lp, lpp):
 
 
 
-def m_llp(wl, lmax, spin0=False):
-    # take wl of any length, return mllp arrays to max given lmax
-    wl_full = np.zeros(lmax + 1)
-    wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax+1]
-
-    m_3d_pp = np.zeros((lmax+1, lmax+1, lmax + 1))
-    m_3d_mm = np.zeros_like(m_3d_pp)
-    m_3d_zero = np.zeros_like(m_3d_pp)
-    l = lp = np.arange(lmax + 1)
-    lpp = np.arange(lmax + 1)
-
-    for cp, i in enumerate(lp):
-        for cpp, j in enumerate(lpp):
-            if i < 2:
-                # skip the first two rows for spin 2
-                continue
-            else:
-                prefac = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] / (4 * np.pi)
-                wigners_l = wigners_2(l, i, j)
-                m_3d = prefac * np.square(wigners_l)
-                m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
-                m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
-                if spin0:
-                    wigners0_l = wigners_0(l, i, j)
-                    m_3d_zero[:, cp, cpp] = prefac * np.square(wigners0_l)
-                
-    if not spin0:
-        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1) 
-    else:
-        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1), np.sum(m_3d_zero, axis=-1) 
-
-
-def smooth_gauss(l, l_smooth):
-    sigma2 = l_smooth**2 / 12 * np.log10(np.e)
-    return np.exp(-(l**2) / (2 * sigma2))
-
-
-def smooth_cl(l, l_smooth):
-    sigma2 = l_smooth**2 / 6 * np.log10(np.e)
-    return np.exp(-(l**2) / (2 * sigma2))
-
-
-def smooth_alm(l_smooth, lmax):
-    l_array = [np.arange(i, lmax + 1) for i in range(lmax + 1)]
-    l_array = np.concatenate(l_array, axis=0)
-    smoothing_arr = smooth_gauss(l_array, l_smooth)
-    return smoothing_arr
-
+# ============================================================================
+# W matrix computation
+# ============================================================================
 
 def calc_w_element_from_mask(wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0=True, spin2=True):
     """
@@ -254,27 +240,37 @@ def calc_w_element_from_mask(wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0=True, s
     
     return w0, wp, wm
 
-def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=True, verbose=True):
+def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=True, verbose=True,progress_interval=1000):
     """
     Compute full W arrays for mask coupling matrix.
     
+    This is a computationally intensive function that calculates all
+    elements of the mask coupling matrix. Progress is logged at regular intervals.
+    
     Parameters
     ----------
-    wlm_lmax : array
+    wlm_lmax : array_like
         Spherical harmonic coefficients of mask
     exact_lmax : int
         Maximum multipole for exact calculations
     cov_ell_buffer : int
-        Buffer in multipole space
-    spin0, spin2 : bool
-        Whether to compute spin components
-    verbose : bool
-        Whether to print progress
+        Buffer in multipole space for covariance calculations
+    spin0, spin2 : bool, optional
+        Whether to compute spin components (default: True)
+    verbose : bool, optional
+        Whether to log progress (default: True)
+    progress_interval : int, optional
+        How often to log progress (default: 1000)
         
     Returns
     -------
     tuple
-        (w0_arr, wpm_arr) - computed W arrays
+        (w0_arr, wpm_arr) - computed W arrays for each spin component
+        
+    Notes
+    -----
+    This function can be very slow for large lmax values. Consider using
+    multiprocessing for production calculations.
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -299,14 +295,15 @@ def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=Tru
                     m1_ind = np.where(M == M1)[0][0]  # Find index of M1 in M array
                     m2_ind = np.where(M == M2)[0][0]  # Find index of M2 in M array
                     arglist.append((l1, m1_ind, l2, m2_ind, L1, L2, M1, M2))
-    
-    logger.info(f"Computing W arrays for {len(arglist)} elements...")
+    total_elements = len(arglist)
+    logger.info(f"Computing W arrays for {total_elements} elements...")
     
     # Compute elements
     for i, (l1_ind, m1_ind, l2_ind, m2_ind, L1, L2, M1, M2) in enumerate(arglist):
-        if verbose and i % 1000 == 0:
-            logger.info(f"Progress: {i/len(arglist)*100:.1f}%")
-        
+        if verbose and i % progress_interval == 0:
+            progress = i / total_elements * 100
+            logger.info(f"Progress: {progress:.1f}% ({i}/{total_elements})")
+
         w0, wp, wm = calc_w_element_from_mask(
             wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0, spin2
         )
@@ -333,3 +330,80 @@ def assemble_w_array(w0_arr, wpm_arr, spin0=True, spin2=True):
         return wpm_arr
     else:
         raise ValueError("Must have at least one of spin0 or spin2")
+
+def w_factor(l, l1, l2):
+    """Compute normalization factor for Wigner symbols."""
+    return np.sqrt((2 * l1 + 1) * (2 * l2 + 1) * (2 * l + 1) / (4 * np.pi))
+
+
+
+def get_wlm_l(wlm, m, allowed_l):
+    lmax = hp.sphtfunc.Alm.getlmax(len(wlm))
+    if m < 0:
+        wlm_l = (-1) ** -m * np.conj(wlm[hp.sphtfunc.Alm.getidx(lmax, allowed_l, -m)])
+    else:
+        wlm_l = wlm[hp.sphtfunc.Alm.getidx(lmax, allowed_l, m)]
+
+    return wlm_l
+
+
+# ============================================================================
+# Coupling matrix functions
+# ============================================================================
+
+
+
+def m_llp(wl, lmax, spin0=False):
+    # take wl of any length, return mllp arrays to max given lmax
+    wl_full = np.zeros(lmax + 1)
+    wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax+1]
+
+    m_3d_pp = np.zeros((lmax+1, lmax+1, lmax + 1))
+    m_3d_mm = np.zeros_like(m_3d_pp)
+    m_3d_zero = np.zeros_like(m_3d_pp)
+    l = lp = np.arange(lmax + 1)
+    lpp = np.arange(lmax + 1)
+
+    for cp, i in enumerate(lp):
+        for cpp, j in enumerate(lpp):
+            if i < 2:
+                # skip the first two rows for spin 2
+                continue
+            else:
+                prefac = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] / (4 * np.pi)
+                wigners_l = wigners_2(l, i, j)
+                m_3d = prefac * np.square(wigners_l)
+                m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
+                m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
+                if spin0:
+                    wigners0_l = wigners_0(l, i, j)
+                    m_3d_zero[:, cp, cpp] = prefac * np.square(wigners0_l)
+                
+    if not spin0:
+        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1) 
+    else:
+        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1), np.sum(m_3d_zero, axis=-1) 
+
+
+# ============================================================================
+# Smoothing functions
+# ============================================================================
+
+
+def smooth_gauss(l, l_smooth):
+    sigma2 = l_smooth**2 / 12 * np.log10(np.e)
+    return np.exp(-(l**2) / (2 * sigma2))
+
+
+def smooth_cl(l, l_smooth):
+    sigma2 = l_smooth**2 / 6 * np.log10(np.e)
+    return np.exp(-(l**2) / (2 * sigma2))
+
+
+def smooth_alm(l_smooth, lmax):
+    l_array = [np.arange(i, lmax + 1) for i in range(lmax + 1)]
+    l_array = np.concatenate(l_array, axis=0)
+    smoothing_arr = smooth_gauss(l_array, l_smooth)
+    return smoothing_arr
+
+
