@@ -1,4 +1,4 @@
-from simulate import xi_sim_nD
+from simulate import simulate_correlation_functions
 from pseudo_alm_cov import Cov
 from mask_props import SphereMask
 from theory_cl import generate_theory_cl, prepare_theory_cl_inputs
@@ -40,4 +40,4 @@ if jobnumber == 1:
 else:
     plot = False
 
-xi_sim_nD(theory_cls,[mask], jobnumber, angular_separation_bins,lmin=0,lmax=xi_lmax,plot=plot,save_pcl=True,ximode='namaster',batchsize=batchsize,runname="KiDS_setup",simpath="/cluster/scratch/veoehl/xi_sims")
+simulate_correlation_functions(theory_cls,[mask], jobnumber, angular_separation_bins,lmin=0,lmax=xi_lmax,plot=plot,save_pcl=True,ximode='namaster',batchsize=batchsize,runname="KiDS_setup",simpath="/cluster/scratch/veoehl/xi_sims")
