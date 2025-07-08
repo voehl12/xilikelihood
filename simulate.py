@@ -1,3 +1,35 @@
+"""
+Correlation function simulation utilities.
+
+This module provides functions for simulating two-point correlation functions
+from theoretical power spectra using either pseudo-C_l estimators or TreeCorr.
+
+Main Functions
+--------------
+simulate_correlation_functions : Unified simulation interface
+create_maps : Create Gaussian random maps using GLASS
+compute_pseudo_cl : Compute pseudo-C_l from masked maps
+compute_correlation_functions : Convert pseudo-C_l to correlation functions or use TreeCorr directly
+
+Examples
+--------
+>>> # 1D simulation
+>>> results = simulate_correlation_functions(
+...     theory_cl_list=[theory_cl],
+...     masks=[mask],
+...     angular_bins=angular_bins,
+...     method="pcl_estimator"
+... )
+
+>>> # nD simulation  
+>>> results = simulate_correlation_functions(
+...     theory_cl_list=[cl1, cl2, cl3],
+...     masks=[mask1, mask2, mask3],
+...     angular_bins=angular_bins,
+...     method="pcl_estimator"
+... )
+"""
+
 import os
 import logging
 import warnings
@@ -22,6 +54,28 @@ from cl2xi_transforms import pcl2xi, prep_prefactors
 from noise_utils import get_noise_pixelsigma
 from pseudo_alm_cov import Cov
 from core_utils import check_property_equal
+
+__all__ = [
+    # Main unified API
+    'simulate_correlation_functions',
+    
+    # Core utilities that users might need
+    'create_maps',
+    'add_noise_to_maps',
+    'compute_pseudo_cl',
+    'compute_correlation_functions',
+    'get_noise_sigma',
+    'limit_noise',
+    
+    # TreeCorr utilities
+    'prep_cat_treecorr',
+    'prep_angles_treecorr',
+    'get_xi_treecorr',
+    
+    # Backward compatibility
+    'TwoPointSimulation',
+
+]
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -176,7 +230,7 @@ def add_noise_to_maps(maps, nside, noise_sigmas=None, lmax=None):
         return maps_noisy     # Shape (n_fields, 3, n_pix)
 
 
-def compute_pseudo_cl(maps_list, masks, fullsky=False):
+def compute_pseudo_cl(maps_list, masks, fullsky=False, healpy_datapath=None):
     """
     Compute pseudo-C_l from masked maps.
     
@@ -196,6 +250,13 @@ def compute_pseudo_cl(maps_list, masks, fullsky=False):
         Order: 00, 11, 10, 22, 21, 20, ... (auto then cross)
         Contains [cl_e, cl_b, cl_eb] for each cross-correlation
     """
+    anafast_kwargs = {
+        'iter': 5,
+        'use_pixel_weights': True
+    }
+    
+    if healpy_datapath is not None:
+        anafast_kwargs['datapath'] = healpy_datapath
 
     if fullsky:
         cl_list = []
@@ -211,29 +272,27 @@ def compute_pseudo_cl(maps_list, masks, fullsky=False):
         
         for i, field_i in enumerate(masked_fields):
             for j, field_j in reversed(list(enumerate(masked_fields[:i+1]))):
+                try:
+                    pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
+                        field_i,
+                        field_j,
+                        **anafast_kwargs
+                    )
 
-                pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
-                    field_i,
-                    field_j,
-                    iter=5,
-                    use_pixel_weights=True,
-                    datapath="/cluster/home/veoehl/2ptlikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
-                )
+                except Exception as e:
+                    logger.warning(f"Failed with pixel weights: {e}")
+                    logger.warning("Retrying without pixel weights")
+                    pcl_t, pcl_e, pcl_b, pcl_te, pcl_eb, pcl_tb = hp.anafast(
+                        field_i,
+                        field_j,
+                        iter=5,
+                        use_pixel_weights=False
+                    )
 
                 pcl_list.append([pcl_e, pcl_b, pcl_eb])  # (n_croco, 3, n_ell)
 
         return np.array(pcl_list)
 
-
-def get_xi_namaster_nD(maps_TQU_list, smooth_masks, prefactors, lmax, lmin=0):
-    # pcl2xi should work for several angles at once.
-    assert len(maps_TQU_list) == len(smooth_masks), "need to provide as many masks as fields!"
-    pcl_ij = get_pcl_nD(maps_TQU_list, smooth_masks)
-    n_corr = len(pcl_ij)
-    xi_all = np.zeros((n_corr, 2, len(prefactors)))
-    for i, pcl in enumerate(pcl_ij):
-        xi_all[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
-    return pcl_ij, xi_all
 
 def compute_correlation_functions(pcl_array, prefactors, lmax, lmin=0):
     """
@@ -257,8 +316,8 @@ def compute_correlation_functions(pcl_array, prefactors, lmax, lmin=0):
         [xi_plus, xi_minus] for each cross-correlation
     """
     n_cross = len(pcl_array)
-    n_bins = len(prefactors)
-    xi_array = np.zeros((n_cross, 2, n_bins))
+    n_ang_bins = len(prefactors)
+    xi_array = np.zeros((n_cross, 2, n_ang_bins))
     
     for i, pcl in enumerate(pcl_array):
         xi_array[i] = np.array(pcl2xi(pcl, prefactors, lmax, lmin=lmin))
@@ -272,7 +331,7 @@ def simulate_correlation_functions(
     angular_bins,
     job_id=0,
     n_batch=1,
-    method="namaster",
+    method="pcl_estimator",
     lmax=None,
     lmin=0,
     add_noise=True,
@@ -297,7 +356,7 @@ def simulate_correlation_functions(
     n_batch : int
         Number of simulations in this batch
     method : str
-        'namaster' or 'treecorr'
+        'pcl_estimator' or 'treecorr'
     lmax : int, optional
         Maximum multipole
     lmin : int
@@ -372,7 +431,7 @@ def _simulate_pcl_estimator(
   
     nside = mask.nside
     
-    logger.info(f"Simulating using {method} with nside={nside}, lmax={lmax}, lmin={lmin}")
+    logger.info(f"Simulating using pcl_estimator with nside={nside}, lmax={lmax}, lmin={lmin}")
     # Use smooth mask if available
     if hasattr(mask, "smooth_mask"):
         sim_mask = mask.smooth_mask
@@ -508,8 +567,6 @@ def _create_diagnostic_plots(xi_batch, pcl_batch, save_path, job_id):
         plt.figure(figsize=(10, 6))
         ell_range = np.arange(pcl_batch.shape[-1])
         mean_pcl = np.mean(pcl_batch, axis=0)
-        #theorypcl53 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_53_nonoise_test.npz")
-        #theorypcl55 = np.load("pcls/pcl_n256_circ10000smoothl30_3x2pt_kids_55_noisedefault_test.npz")
         plt.plot(ell_range, mean_pcl[0, 0, :], 'k-', label='E-mode', linewidth=2)
         plt.xlabel('Multipole l')
         plt.ylabel('C_l^EE')
@@ -531,6 +588,9 @@ def _simulate_treecorr(
     
     
     nside = mask.nside
+
+    logger.info(f"Simulating using TreeCorr with nside={nside}, angular_bins={angular_bins}")
+
     # Use smooth mask if available
     if hasattr(mask, "smooth_mask"):
         sim_mask = mask.smooth_mask
@@ -588,12 +648,8 @@ def prep_cat_treecorr(nside, mask=None):
         all_pix = np.arange(hp.nside2npix(nside))
         phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
         treecorr_mask_cat = (None, phi, thet)
-        sum_weights = None
     else:
         all_pix = np.arange(len(mask))
-        # mask = np.array(1 - mask, dtype=int)
-        # masked_pixs = np.ma.array(all_pixs, mask=mask).compressed()
-        # phi, thet = hp.pixelfunc.pix2ang(nside, masked_pixs, lonlat=True)
         phi, thet = hp.pixelfunc.pix2ang(nside, all_pix, lonlat=True)
         treecorr_mask_cat = (mask, phi, thet)
     return treecorr_mask_cat
