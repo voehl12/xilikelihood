@@ -1,5 +1,5 @@
 import numpy as np
-import approximations as app
+from theoretical_moments import moments_nd_jitted, convert_moments_to_cumulants_nd
 import configparser
 import postprocess_nd_likelihood
 import plotting
@@ -13,6 +13,7 @@ from scipy.interpolate import griddata
 from scipy.interpolate import PchipInterpolator
 import cl2xi_transforms
 import setup_m
+from distributions import get_exact
 
 #  1) stack/2024-06   3) swig/4.1.1-ipvpwcc   5) python/3.11.6
 #  2) gcc/12.2.0      4) cmake/3.27.7
@@ -78,12 +79,12 @@ vmax = 4e12
 
 print("Calculating analytical moments...")
 # extend the moments_nd function by also returning the 1d marginals
-firsts, seconds = app.moments_nd_jitted(mset, cov, 2, 2)
+firsts, seconds = moments_nd_jitted(mset, cov, 2, 2)
 print("Done.")
 moments = [firsts, seconds]
 print(moments)
 
-cumulants = app.ncmom2cum_nd(moments)
+cumulants = convert_moments_to_cumulants_nd(moments)
 
 
 def get_marginals(ms, cov):
@@ -92,7 +93,7 @@ def get_marginals(ms, cov):
     plt.figure()
     for m in ms:
         # replace this with a function that does moments and exact pdf at once (so the matrix multiplication is only done once)
-        exact_x, exact_pdf, _, _ = app.get_exact(m, cov, steps=2048)
+        exact_x, exact_pdf, _, _ = get_exact(m, cov, steps=2048)
         pchip_interp = PchipInterpolator(exact_x[500:-500], exact_pdf[500:-500])
 
         # Evaluate interpolated PDF

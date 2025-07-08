@@ -20,6 +20,7 @@ from scipy.stats import multivariate_normal
 from noise_utils import get_noisy_cl
 from cl2xi_transforms import get_integrated_wigners, pcls2xis
 from core_utils import check_property_equal
+from theoretical_moments import get_moments_from_combination_matrix_1d
 
 __all__ = [
     # Grid setup utilities
@@ -33,6 +34,7 @@ __all__ = [
     'batched_cf_1d_jitted',
     'high_ell_gaussian_cf_1d', 
     'cf_to_pdf_1d',
+    'get_exact'
 
     # Normalization/Marginalization
     'exp_norm_mean'
@@ -200,6 +202,15 @@ def cf_to_pdf_1d(t, cf):
         )  # I have found this tends to be more numerically stable
 
         return (np.array(x), np.array(pdf))
+
+def get_exact(m, cov, steps=4096):
+    mean_trace, second, _ = get_moments_from_combination_matrix_1d(m, cov)
+    var_trace = second - mean_trace**2
+    ximax = mean_trace + 20 * np.sqrt(var_trace)
+    # m = np.diag(m)
+    t, cf = calc_quadcf_1D(ximax, steps, cov, m, is_diag=False)
+    x_low, pdf_low = cf_to_pdf_1d(t, cf)
+    return x_low, pdf_low, t, cf
 
 # ============================================================================
 # Normalization/Marginalization

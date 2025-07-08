@@ -28,7 +28,7 @@ def validate_moments_calculation():
 
 def validate_hermite_polynomials():
     import scipy.stats as stats
-    from approximations import MultiNormalExpansion
+    from edgeworth_experiments import MultiNormalExpansion
     import itertools
 
     point_3d = np.random.random(3)
@@ -81,7 +81,8 @@ def validate_hermite_polynomials():
 def validate_edgeworth_expansion():
     import scipy.stats as stats
     import postprocess_nd_likelihood
-    import approximations
+    from theoretical_moments import convert_moments_to_cumulants_nd
+    from edgeworth_experiments import MultiNormalExpansion
     import matplotlib.pyplot as plt
 
     def compare_edgeworth_t_distribution(
@@ -114,11 +115,11 @@ def validate_edgeworth_expansion():
             samples = stats.multivariate_t.rvs(loc=mu, shape=Sigma, df=nu, size=n_samples).T
             moments = postprocess_nd_likelihood.get_stats_from_sims(samples, [1, 2, 3])
 
-            cumulants = approximations.ncmom2cum_nd(moments)
+            cumulants = convert_moments_to_cumulants_nd(moments)
             analytical_mean = mu
             analytical_cov = (nu / (nu - 2)) * Sigma
 
-            edgeworth_expansion = approximations.MultiNormalExpansion(cumulants)
+            edgeworth_expansion = MultiNormalExpansion(cumulants)
             third_cumulant_normalized = edgeworth_expansion.normalize_third_cumulant()
             print(f"Normalized third cumulant for nu={nu}: {third_cumulant_normalized}")
             gaussian = stats.multivariate_normal(mean=mu, cov=Sigma)

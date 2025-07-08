@@ -1,5 +1,6 @@
 import numpy as np
-from approximations import MultiNormalExpansion, GeneralizedLaplace, moments_nd_jitted, ncmom2cum_nd
+from edgeworth_experiments import MultiNormalExpansion, GeneralizedLaplace
+from theoretical_moments import moments_nd_jitted, convert_moments_to_cumulants_nd
 import configparser
 import postprocess_nd_likelihood
 import plotting
@@ -74,7 +75,7 @@ print(moments)
 # print(thirds_std)
 # print((np.array(thirds) - thirds_sims) / thirds_std)
 
-cumulants = ncmom2cum_nd(moments)
+cumulants = convert_moments_to_cumulants_nd(moments)
 gen_laplace_mix = [firsts, cumulants[1], thirds]
 approx = MultiNormalExpansion(cumulants)
 approx_laplace = GeneralizedLaplace(moments=gen_laplace_mix)
