@@ -1,10 +1,68 @@
+"""
+Theoretical power spectra computation and handling.
+
+This module provides classes and functions for working with theoretical
+angular power spectra, including C_l computation from cosmology and
+redshift bin handling.
+
+Classes
+-------
+RedshiftBin : Redshift distribution container
+TheoryCl : Theoretical power spectrum handler  
+BinCombinationMapper : Maps redshift bin combinations to indices
+
+Examples
+--------
+>>> # Create redshift bins
+>>> z = np.linspace(0, 2, 100)
+>>> bin1 = RedshiftBin(1, z=z, zmean=0.5, zsig=0.1)
+>>> bin2 = RedshiftBin(2, z=z, zmean=1.0, zsig=0.1)
+
+>>> # Create cosmology
+>>> cosmo_params = {'s8': 0.8, 'omega_m': 0.3}
+>>> theory_cl = TheoryCl(lmax=1000, cosmo=cosmo_params, z_bins=(bin1, bin2))
+"""
+
+
 import numpy as np
-import pyccl as ccl
 import os
 import scipy.stats 
-import noise_utils
-import wpm_funcs
+from pathlib import Path
 
+# Optional dependencies with graceful degradation
+try:
+    import pyccl as ccl
+    HAS_CCL = True
+except ImportError:
+    HAS_CCL = False
+    ccl = None
+
+# Local imports (fix based on your package structure)
+try:
+    from . import noise_utils
+    from . import wpm_funcs
+except ImportError:
+    # For backward compatibility during development
+    import noise_utils
+    import wpm_funcs
+
+__all__ = [
+    # Main classes
+    'RedshiftBin',
+    'TheoryCl', 
+    'BinCombinationMapper',
+    
+    # Utility functions
+    'create_cosmo',
+    'compute_angular_power_spectra',
+    'get_cl',
+    'prepare_theory_cl_inputs',
+    'generate_theory_cl',
+    
+    # Legacy functions (if needed)
+    'clnames',
+    'save_cl',
+]
 
 class RedshiftBin:
     """
@@ -42,6 +100,9 @@ class RedshiftBin:
     
     def _load_from_file(self, filepath):
         """Load redshift distribution from file."""
+        filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(f"Redshift file not found: {filepath}")
         zbin = np.loadtxt(filepath)
         self.z, self.nz = zbin[:, 0], zbin[:, 1]
     
@@ -67,14 +128,12 @@ class TheoryCl:
         smooth_signal=None,
         cosmo=None,
         z_bins=None,
-        working_dir=None,
     ):
         
         self.lmax = lmax
         self.theory_lmin = theory_lmin
         self.name = clname
         self.clpath = clpath # if clpath is set, cosmo will be ignored.
-        self.working_dir = working_dir or os.getcwd()
         self.cosmo = cosmo
         self.z_bins = z_bins
         self.smooth_signal = smooth_signal
@@ -188,7 +247,11 @@ class TheoryCl:
                 pass
 
     def read_clfile(self):
-        self.raw_spectra = np.loadtxt(self.clpath)
+        clpath = Path(self.clpath)
+        if not clpath.exists():
+            raise FileNotFoundError(f"C_l file not found: {clpath}")
+        
+        self.raw_spectra = np.loadtxt(clpath)
         
 
     def load_cl(self):
@@ -273,6 +336,9 @@ def create_cosmo(params):
     ccl.Cosmology
         CCL cosmology object
     """
+    if not HAS_CCL:
+        raise ImportError("pyccl is required for cosmology calculations. Install with: pip install pyccl")
+    
     s8 = params["s8"]
     omega_m = params["omega_m"]
     omega_b = 0.046
@@ -308,6 +374,9 @@ def compute_angular_power_spectra(cosmo, ell, z_bins):
     tuple
         (cl_ee, cl_ne, cl_nn) power spectra
     """
+    if not HAS_CCL:
+        raise ImportError("pyccl is required for power spectrum calculations")
+    
     bin1, bin2 = z_bins
     
     lens1 = ccl.WeakLensingTracer(cosmo, dndz=(bin1.z, bin1.nz))
