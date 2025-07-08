@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#SBATCH --mail-type=END,FAIL
+#SBATCH --time=10:00:00       
+#SBATCH --cpus-per-task=16
+#SBATCH --mem-per-cpu=4096
+#SBATCH --job-name=s8_example
+#SBATCH --array=1-1000
+#SBATCH --output=s8_example.out
+#SBATCH --error=s8_example.err
+
+module load stack/2024-06 swig/4.1.1-ipvpwcc python/3.11.6 gcc/12.2.0 cmake/3.27.7
+export JAX_PLATFORMS=cpu
+source /cluster/home/veoehl/2ptlikelihood/2ptlikelihood/bin/activate
+python /cluster/home/veoehl/2ptlikelihood/s8_example.py $SLURM_ARRAY_TASK_ID
