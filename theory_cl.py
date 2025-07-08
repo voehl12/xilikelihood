@@ -29,6 +29,8 @@ import os
 import scipy.stats 
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # Optional dependencies with graceful degradation
 try:
     import pyccl as ccl
@@ -151,7 +153,7 @@ class TheoryCl:
         # Set up noise
         self.set_noise_sigma()
 
-        print(f"Initialized TheoryCl with lmax = {self.lmax}")
+        logger.info(f"Initialized TheoryCl with lmax = {self.lmax}")
 
     def _initialize_spectra(self):
         """Initialize power spectra from various sources."""
@@ -172,6 +174,7 @@ class TheoryCl:
         if self.z_bins is None:
             self.z_bins = self._get_default_bins()
         
+        logger.debug("Computing C_l from cosmology parameters")
         cl = get_cl(self.cosmo, self.z_bins)
         cl = np.array(cl)
         
@@ -186,15 +189,16 @@ class TheoryCl:
         self.bb = np.zeros_like(self.ee)
         self.eb = np.zeros_like(self.ee)
         self.clpath = 'fromscratch'
+        logger.debug(f"Computed C_l with shape {cl.shape}")
     
     def _set_zero_spectra(self):
         """Set all spectra to zero."""
-        print("Warning: no theory Cl provided, calculating with Cl=0")
+        logger.warning("No theory C_l provided, calculating with C_l=0")
         self.set_cl_zero()
 
     def _get_default_bins(self):
         """Create default redshift bins."""
-        print("Warning: no redshift bins provided, using default bins.")
+        logger.warning("No redshift bins provided, using default bins")
         z = np.linspace(0, 1, 100)
         bin1 = RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1)
         bin2 = RedshiftBin(nbin=2, z=z, zmean=0.5, zsig=0.1)
@@ -207,7 +211,7 @@ class TheoryCl:
             if hasattr(self, attr):
                 setattr(self, attr, getattr(self, attr) * self.smooth_array)
         self.name += f"_smooth{self.smooth_signal:d}"
-        print(f"Theory C_l smoothed to lsmooth = {self.smooth_signal:d}")
+        logger.info(f"Theory C_l smoothed to lsmooth = {self.smooth_signal:d}")
 
 
     @property
@@ -250,8 +254,9 @@ class TheoryCl:
         clpath = Path(self.clpath)
         if not clpath.exists():
             raise FileNotFoundError(f"C_l file not found: {clpath}")
-        
+        logger.debug(f"Loading C_l from {clpath}")
         self.raw_spectra = np.loadtxt(clpath)
+        logger.debug(f"Loaded C_l with shape {self.raw_spectra.shape}")
         
 
     def load_cl(self):
