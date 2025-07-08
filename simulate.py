@@ -19,7 +19,7 @@ import glass.fields
 import time
 
 from cl2xi_transforms import pcl2xi, prep_prefactors
-from noise_utils import get_noise_cl, get_noise_pixelsigma
+from noise_utils import get_noise_pixelsigma
 from pseudo_alm_cov import Cov
 from core_utils import check_property_equal
 
@@ -110,7 +110,7 @@ def get_noise_sigma(theory_cl, nside):
     return None
 
 
-def limit_noise(noisemap, nside: int, lmax: Optional[int] = None):
+def limit_noise(noisemap, nside, lmax=None):
     almq = hp.map2alm(noisemap)
     clq = hp.sphtfunc.alm2cl(almq)
 
@@ -331,15 +331,12 @@ def simulate_correlation_functions(
 
     # Setup simulation parameters
     mask = masks[0]
-    nside = mask.nside
     
-    # Use smooth mask if available
-    if hasattr(mask, "smooth_mask"):
-        sim_mask = mask.smooth_mask
-    else:
-        logger.warning("Using unsmoothed mask for simulations")
-        sim_mask = mask.mask
-
+    # Set lmax
+    if lmax is None:
+        lmax = mask.lmax
+    
+  
     # Auto-generate save path if not provided
     if save_path is None:
         sigma_name = theory_cl_list[0].sigmaname
@@ -349,19 +346,17 @@ def simulate_correlation_functions(
     os.makedirs(save_path, exist_ok=True)
     logger.info(f"Simulation folder: {save_path}")
     
-    # Set lmax
-    if lmax is None:
-        lmax = mask.lmax
+    
 
     # Branch based on method
     if method == "pcl_estimator":
         return _simulate_pcl_estimator(
-            theory_cl_list, sim_mask, angular_bins, job_id, n_batch,
+            theory_cl_list, mask, angular_bins, job_id, n_batch,
             lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics
         )
     elif method == "treecorr":
         return _simulate_treecorr(
-            theory_cl_list, sim_mask, angular_bins, job_id, n_batch,
+            theory_cl_list, mask, angular_bins, job_id, n_batch,
             add_noise, save_path, plot_diagnostics
         )
     else:
@@ -377,6 +372,7 @@ def _simulate_pcl_estimator(
   
     nside = mask.nside
     
+    logger.info(f"Simulating using {method} with nside={nside}, lmax={lmax}, lmin={lmin}")
     # Use smooth mask if available
     if hasattr(mask, "smooth_mask"):
         sim_mask = mask.smooth_mask
@@ -437,7 +433,7 @@ def _simulate_pcl_estimator(
     
     # Save and return results
     results = _save_and_return_results(
-        xi_batch, pcl_batch, angular_bins, method, lmax, lmin, 
+        xi_batch, pcl_batch, angular_bins, 'pcl_estimator', lmax, lmin, 
         n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors
     )
     
@@ -454,12 +450,12 @@ def _save_and_return_results(
     save_file = os.path.join(save_path, f"job{job_id:d}.npz")
     np.savez(
         save_file,
-        mode=method,           # Keep 'mode' key name
-        theta=angular_bins,    # Keep 'theta' key name  
+        mode=method,           
+        theta=angular_bins,    
         lmin=lmin,
         lmax=lmax,
-        xip=xi_batch[:, :, 0, :],  # Keep 'xip' key name
-        xim=xi_batch[:, :, 1, :],  # Keep 'xim' key name
+        xip=xi_batch[:, :, 0, :],  
+        xim=xi_batch[:, :, 1, :], 
     )
     logger.info(f"Saved results to {save_file}")
     
@@ -526,16 +522,21 @@ def _create_diagnostic_plots(xi_batch, pcl_batch, save_path, job_id):
 
 
 def _simulate_treecorr(
-    theory_cl_list, masks, angular_bins, job_id, n_batch,
+    theory_cl_list, mask, angular_bins, job_id, n_batch,
     add_noise, save_path, plot_diagnostics
 ):
     """TreeCorr simulation implementation."""
     if not HAS_TREECORR:
         raise ImportError("TreeCorr not available")
     
-    mask = masks[0]
+    
     nside = mask.nside
-    sim_mask = mask.smooth_mask if hasattr(mask, "smooth_mask") else mask.mask
+    # Use smooth mask if available
+    if hasattr(mask, "smooth_mask"):
+        sim_mask = mask.smooth_mask
+    else:
+        logger.warning("Using unsmoothed mask for simulations")
+        sim_mask = mask.mask
     
     # Prepare catalog properties for TreeCorr
     cat_props = prep_cat_treecorr(nside, sim_mask)
@@ -562,7 +563,7 @@ def _simulate_treecorr(
         # Compute correlation functions using TreeCorr
         xi_p, xi_m, theta = get_xi_treecorr(maps, angular_bins, cat_props)
         
-        # Store results (reshape to match namaster format)
+        # Store results (reshape to match pcl format)
         xi_array = np.array([xi_p, xi_m]).T[None, ...]  # (1, 2, n_bins)
         xi_batch.append(xi_array)
     
