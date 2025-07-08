@@ -14,4 +14,8 @@
 *.npz
 *.npy
 *.fits
+*.err
+*.out
+*.ini
+*.log
 .python_version
