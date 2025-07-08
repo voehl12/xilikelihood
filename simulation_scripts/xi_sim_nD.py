@@ -40,4 +40,4 @@ if jobnumber == 1:
 else:
     plot = False
 
-simulate_correlation_functions(theory_cls,[mask], jobnumber, angular_separation_bins,lmin=0,lmax=xi_lmax,plot=plot,save_pcl=True,ximode='namaster',batchsize=batchsize,runname="KiDS_setup",simpath="/cluster/scratch/veoehl/xi_sims")
+simulate_correlation_functions(theory_cls,[mask], angular_separation_bins,job_id=jobnumber,lmin=0,lmax=xi_lmax,plot_diagnostics=plot,save_pcl=True,method='pcl_estimator',n_batch=batchsize,run_name="KiDS_setup",save_path="/cluster/scratch/veoehl/xi_sims")
