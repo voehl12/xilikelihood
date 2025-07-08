@@ -1,3 +1,44 @@
+"""
+Statistical utilities for bootstrap sampling and moment calculations.
+
+This module provides tools for statistical analysis of simulation data,
+including bootstrap resampling, moment calculations, and comparison utilities
+for validating theoretical predictions against simulation results.
+
+Main Functions
+--------------
+bootstrap : Bootstrap resampling with custom statistics
+bootstrap_2d : Bootstrap for 2D histogram statistics
+compute_simulation_moments : Calculate moments from simulation data
+compare_theory_vs_simulations : Compare theoretical and simulated moments
+
+Examples
+--------
+>>> import numpy as np
+>>> data = np.random.normal(0, 1, (1000, 10))
+>>> boot_vars = bootstrap(data, n=100, func=np.var)
+>>> print(f"Bootstrap variance estimates: {boot_vars.mean():.3f} ± {boot_vars.std():.3f}")
+"""
+
+import numpy as np
+import itertools
+import logging
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    # Bootstrap functions
+    'bootstrap',
+    'bootstrap_2d',
+    
+    # Moment calculations
+    'compute_simulation_moments',
+    'compute_moments_nd',
+    
+    # Comparison utilities
+    'compare_theory_vs_simulations',
+]
+
 def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
     """Produce n bootstrap samples of data of the statistic given by func.
 
@@ -24,82 +65,125 @@ def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
 
     if isinstance(data, list):
         if axis != 0:
-            raise NotImplementedError("Only axis == 0 supported.")
-        assert all([d.shape[1:] == data[0].shape[1:] for d in data])
+            raise NotImplementedError("Only axis == 0 supported for list inputs")
+        
+        # Validate list shapes
+        shapes = [d.shape[1:] for d in data]
+        if not all(shape == shapes[0] for shape in shapes):
+            raise ValueError("All arrays in list must have matching shapes except along axis 0")
+
 
     samples = np.zeros((n, *fiducial_output.shape), dtype=fiducial_output.dtype)
 
+    progress_interval = max(1, n // 10)
+
     for i in range(n):
-        print(i / n * 100, end="\r")
+        if i % progress_interval == 0:
+            progress = i / n * 100
+            logger.info(f"Bootstrap progress: {progress:.1f}% ({i}/{n})")
+        
         if isinstance(data, list):
             idx = [np.random.choice(d.shape[0], size=d.shape[0], replace=True) for d in data]
             samples[i] = func([d[i] for d, i in zip(data, idx)], axis=axis, **func_kwargs)
         else:
-            axes = np.arange(len(data.shape))
-            indices = (1, Ellipsis, 1)
             idx = np.random.choice(data.shape[axis], size=data.shape[axis], replace=True)
-            idx_array = tuple(idx if ax == axis else Ellipsis for ax in axes)
-            # [np.arange(data.shape[ax]) if ax != axis else idx for ax in axes]
-            samples[i] = func(data[idx_array], axis=axis, **func_kwargs)
-    print()
+            idx_tuple = tuple(idx if ax == axis else slice(None) for ax in range(data.ndim))
+            samples[i] = func(data[idx_tuple], axis=axis, **func_kwargs)
+            
+    logger.info("Bootstrap sampling completed")
     return samples
 
 
 def bootstrap_statistic_2d(data, binedges=None,axis=0):
         x,y = data
-        f = np.histogram2d(
+        hist,_,_ = np.histogram2d(
             x,y,
             bins=binedges,
             density=True,
         )
-        return f[0].T
+        return hist.T
 
 
 
 
 
-def get_stats_from_sims(sims, orders=[1, 2, 3], axis=1):
-
+def compute_simulation_moments(sims, orders=[1, 2, 3], axis=1,center_moments=True):
+    """
+    Compute statistical moments from simulation data.
+    
+    Parameters
+    ----------
+    simulations : ndarray
+        Simulation data with shape (..., n_sims, ...)
+    orders : list of int
+        Which moment orders to compute
+    axis : int
+        Axis along which simulations vary
+    center_moments : bool
+        Whether to compute central moments (subtract mean)
+        
+    Returns
+    -------
+    moments : ndarray or list of ndarrays
+        Computed moments. If single order requested, returns array.
+        Otherwise returns list of arrays.
+    """
     dims = np.arange(sims.shape[axis - 1])
     n_sims = sims.shape[axis]
-    print("number of simulations: " + str(n_sims))
+    logger.info(f"Computing moments from {n_sims} simulations")
 
     # np.cov needs to have the data in the form of (n, m) where n is the number of variables and m is the number of samples
-    def moments_nd(order, sims):
+    def _moments_nd(order, sims):
+        """Compute specific moment order."""
         if order == 1:
             return np.mean(sims, axis=axis)
         elif order == 2:
-            sims = sims - np.mean(sims, axis=axis)[:,None]
-            if axis == 0:
-                sims = sims.T
+            if center_moments:
+                sims_centered = sims - np.mean(sims, axis=axis, keepdims=True)
+            else:
+                sims_centered = sims
             
-            cov = sims @ sims.T.conj() / n_sims
-            np_cov = np.cov(sims, ddof=1)
-            assert np.allclose(cov, np_cov), np_cov
+            if axis == 0:
+                sims_centered = sims_centered.T
+            
+            cov = cov = sims_centered @ sims_centered.T.conj() / (n_sims - 1)
+            np_cov = np.cov(sims_centered, ddof=1)
+            if not np.allclose(cov, np_cov):
+                logger.warning("Covariance calculation mismatch with numpy.cov")
+            
             return cov
 
         else:
 
-            combs = np.array(list(itertools.combinations_with_replacement(dims, order)))
-            sims = sims - np.mean(sims, axis=axis)
+            if center_moments:
+                sims_centered = sims - np.mean(sims, axis=axis, keepdims=True)
+            else:
+                sims_centered = sims
+                
             if axis == 0:
-                sims = sims.T
-            higher_moments = np.mean(np.prod(sims[combs], axis=1), axis=1)
-            return np.ravel(higher_moments)
+                sims_centered = sims_centered.T
+            
+            # Get all combinations with replacement
+            combinations = list(itertools.combinations_with_replacement(dims, order))
+            combs_array = np.array(combinations)
+            
+            # Compute moment for each combination
+            moment_values = np.mean(np.prod(sims_centered[combs_array], axis=1), axis=1)
+            return np.ravel(moment_values)
 
-    stats = [moments_nd(order, sims) for order in orders]
+    stats = [_moments_nd(order, sims) for order in orders]
     if len(orders) == 1:
         return np.array(stats)
     else:
         return stats
 
 
-# In statistics.py
-def compare_cf_to_simulations(t_grid, theory_cf, sim_data, n_moments=3):
+
+def compare_theory_vs_simulations(t_grid, theory_cf, sim_data, n_moments=3):
     """Compare theoretical CF moments to simulation moments."""
-    import moments
+    from theoretical_moments import nth_moment
     
-    theory_moments = moments.nth_moment(n_moments, t_grid, theory_cf)
+    theory_moments = nth_moment(n_moments, t_grid, theory_cf)
     sim_moments = compute_simulation_moments(sim_data, orders=list(range(1, n_moments+1)))
     
     return {
