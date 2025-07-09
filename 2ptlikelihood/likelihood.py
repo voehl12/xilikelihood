@@ -27,8 +27,15 @@ import logging
 import gc
 from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
-import jax.numpy as jnp
 from scipy.stats import multivariate_normal
+
+# Graceful JAX import
+try:
+    import jax.numpy as jnp
+    HAS_JAX = True
+except ImportError:
+    HAS_JAX = False
+    
 
 
 # Internal imports

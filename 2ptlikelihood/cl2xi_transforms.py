@@ -31,12 +31,8 @@ import numpy as np
 from scipy.integrate import quad_vec
 from scipy.special import eval_legendre
 import logging
-import jax.numpy as jnp
-import wigner
 
 logger = logging.getLogger(__name__)
-
-import jax
 
 try:
     import jax
@@ -214,7 +210,11 @@ def pcls2xis(pcls, prefactors, out_lmax=None, lmin=0):
     return xips, xims
 
 
-pcls2xis_jit = jax.jit(pcls2xis, static_argnums=(2, 3))
+# Only create jitted version if JAX is available
+if 'jax' in locals():
+    pcls2xis_jit = jax.jit(pcls2xis, static_argnums=(2, 3))
+else:
+    pcls2xis_jit = pcls2xis  # Fallback to non-jitted version
 
 
 def cl2xi(cl, ang_bin_in_deg, out_lmax, lmin=0):
@@ -296,13 +296,17 @@ def cl2pseudocl(mllp, theorycls):
     return jnp.array([p_ee, p_bb, p_eb])
 
 
-@jax.jit
+# Conditionally apply JIT if available
 def cl2pseudocl_einsum(mllp, cl_e, cl_b):
     cl_eb = cl_be = cl_b
     p_ee = jnp.einsum("lm,nm->nl", mllp[0], cl_e) + jnp.einsum("lm,nm->nl", mllp[1], cl_b)
     p_bb = jnp.einsum("lm,nm->nl", mllp[1], cl_e) + jnp.einsum("lm,nm->nl", mllp[0], cl_b)
     p_eb = jnp.einsum("lm,nm->nl", mllp[0], cl_eb) - jnp.einsum("lm,nm->nl", mllp[1], cl_be)
     return p_ee, p_bb, p_eb
+
+# Apply JIT decoration if JAX is available
+if 'jax' in locals():
+    cl2pseudocl_einsum = jax.jit(cl2pseudocl_einsum)
 
 # ============================================================================
 # Prefactor calculation
