@@ -17,7 +17,7 @@ import glob
 import re  # Import regular expressions
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Any
 
 from cl2xi_transforms import pcls2xis
 
@@ -199,14 +199,14 @@ def generate_filename(
     Examples
     --------
     >>> # Covariance matrix
-    >>> filename = generate_analysis_filename(
+    >>> filename = generate_filename(
     ...     "cov", 
     ...     {"lmax": 100, "nside": 256, "mask": "kids", "theory": "fiducial"}
     ... )
     >>> print(filename)  # "cov_l100_n256_kids_fiducial.npz"
     
     >>> # Pseudo-Cl
-    >>> filename = generate_analysis_filename(
+    >>> filename = generate_filename(
     ...     "pcl",
     ...     {"nside": 256, "mask": "circular", "sigma": "default"},
     ...     base_dir="/data"
@@ -769,8 +769,11 @@ def read_xi_sims(*args, **kwargs):
 
 def save_covariance_matrix(cov_matrix: np.ndarray, filepath: str) -> None:
     """Save covariance matrix to compressed numpy file."""
-    raise DeprecationWarning(
-        "save_covariance_matrix is deprecated. Use save_arrays with 'cov' key instead."
+    import warnings
+    warnings.warn(
+        "save_covariance_matrix is deprecated. Use save_arrays({'cov': matrix}, filepath) instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     logger.info(f"Saving covariance matrix to: {filepath}")
     
@@ -786,8 +789,11 @@ def save_covariance_matrix(cov_matrix: np.ndarray, filepath: str) -> None:
 
 def load_covariance_matrix(filepath: str) -> np.ndarray:
     """Load covariance matrix from numpy file."""
-    raise DeprecationWarning(
-        "load_covariance_matrix is deprecated. Use load_arrays with 'cov' key instead."
+    import warnings
+    warnings.warn(
+        "load_covariance_matrix is deprecated. Use load_arrays(filepath)['cov'] instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     if not check_for_file(filepath):
         raise FileNotFoundError(f"Covariance file not found: {filepath}")
@@ -817,8 +823,11 @@ def generate_pseudo_cl_filename(
     base_dir: Optional[str] = None
 ) -> str:
     """Generate standardized filename for pseudo-Cl."""
-    raise DeprecationWarning(
-        "generate_pseudo_cl_filename is deprecated. Use generate_filename with pcl key instead."
+    import warnings
+    warnings.warn(
+        "generate_pseudo_cl_filename is deprecated. Use generate_filename with pcl key instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     filename = f"pcl_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
     
@@ -831,8 +840,11 @@ def generate_pseudo_cl_filename(
 
 def save_pseudo_cl(pseudo_cl_dict: Dict[str, np.ndarray], filepath: str) -> None:
     """Save pseudo power spectra to file."""
-    raise DeprecationWarning(
-        "save_pseudo_cl is deprecated. Use save_arrays with pcl dictionary instead."
+    import warnings
+    warnings.warn(
+        "save_pseudo_cl is deprecated. Use save_arrays with pcl dictionary instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     logger.info(f"Saving pseudo-Cl to: {filepath}")
     
@@ -844,8 +856,11 @@ def save_pseudo_cl(pseudo_cl_dict: Dict[str, np.ndarray], filepath: str) -> None
 
 def load_pseudo_cl(filepath: str) -> Optional[Dict[str, np.ndarray]]:
     """Load pseudo power spectra from file."""
-    raise DeprecationWarning(
-        "load_pseudo_cl is deprecated. Use load_arrays instead."
+    import warnings
+    warnings.warn(
+        "load_pseudo_cl is deprecated. Use load_arrays instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     if not check_for_file(filepath):
         return None
@@ -865,8 +880,11 @@ def load_pseudo_cl(filepath: str) -> Optional[Dict[str, np.ndarray]]:
 def generate_array_filename(prefix: str, lmax: int, nside: int, name: str, 
                            buffer: int = 0) -> str:
     """Generate standardized filename for array storage."""
-    raise DeprecationWarning(
-        "generate_array_filename is deprecated. Use generate_filename instead."
+    import warnings
+    warnings.warn(
+        "generate_array_filename is deprecated. Use generate_filename instead.",
+        DeprecationWarning,
+        stacklevel=2
     )
     if buffer > 0:
         return f"{prefix}_l{lmax + buffer}_n{nside}_{name}.npz"
