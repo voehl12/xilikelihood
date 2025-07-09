@@ -75,7 +75,7 @@ def get_noise_cl(sigma_e=(0.282842712474619, 1.207829761642)):
         raise ValueError("sigma_e must be tuple (sigma_single_component, n_gal_per_arcmin2)")
     
     sigma, n_gal_per_arcmin2 = sigma_e
-    return (sigma) ** 2 / (n_gal_per_arcmin2 * 3600 * 41253 / (4 * np.pi))
+    return (sigma) ** 2 / (n_gal_per_arcmin2 * 3600 * FULL_SKY_AREA_SQDEQ / (4 * np.pi))
 
 
 def get_noise_pixelsigma(nside=256, sigma_e=(0.282842712474619, 1.207829761642)):

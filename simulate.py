@@ -56,7 +56,7 @@ from pseudo_alm_cov import Cov
 from core_utils import check_property_equal
 
 __all__ = [
-    # Main unified API
+    # Main API
     'simulate_correlation_functions',
     
     # Core utilities that users might need
@@ -79,32 +79,6 @@ __all__ = [
 
 # Initialize logging
 logger = logging.getLogger(__name__)
-
-class TwoPointSimulation:
-    """
-    Two-point correlation function simulation class.
-    
-    .. deprecated:: 
-        TwoPointSimulation is deprecated and will be removed in a future version.
-        This class has been moved to papers/first_paper_method/analysis/simulate_1d.py
-        and is maintained there for reproducibility of the first paper results.
-        
-        For new simulations, use the functional simulation API:
-        - simulate_correlation_functions() for single redshift bins
-        - simulate_correlation_functions_nd() for multiple redshift bins
-        
-    This class is limited to single redshift bin combinations and has been
-    superseded by more flexible functional approaches.
-    """
-    
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "TwoPointSimulation is deprecated. Use the functional simulation API instead. "
-            "This class will be removed in a future version. "
-            "See papers/first_paper_method/analysis/ for the maintained version.",
-            DeprecationWarning,
-            stacklevel=2
-        )
 
 
 def create_maps(power_spectra, nside, lmax=None):
@@ -693,4 +667,30 @@ def get_xi_treecorr(maps_TQU, ang_bins_in_deg, cat_props):
     cat.clear_cache()
     return np.array(xip)[:, 0], np.array(xim)[:, 0], np.array(angs)
 
+
+class TwoPointSimulation:
+    """
+    Two-point correlation function simulation class.
+    
+    .. deprecated:: 
+        TwoPointSimulation is deprecated and will be removed in a future version.
+        This class has been moved to papers/first_paper_method/analysis/simulate_1d.py
+        and is maintained there for reproducibility of the first paper results.
+        
+        For new simulations, use the functional simulation API:
+        - simulate_correlation_functions() for single redshift bins
+        - simulate_correlation_functions_nd() for multiple redshift bins
+        
+    This class is limited to single redshift bin combinations and has been
+    superseded by more flexible functional approaches.
+    """
+    
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "TwoPointSimulation is deprecated. Use the functional simulation API instead. "
+            "This class will be removed in a future version. "
+            "See papers/first_paper_method/analysis/ for the maintained version.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 

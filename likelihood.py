@@ -702,7 +702,7 @@ def fiducial_dataspace(
     matched_files = []
     for f in redshift_filepaths:
         match = pattern.search(f)
-        if match:  # ✅ Check if match exists before calling .group()
+        if match:  
             nbins.append(int(match.group(1)))
             matched_files.append(f)
 

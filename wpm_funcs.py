@@ -240,7 +240,7 @@ def calc_w_element_from_mask(wlm_lmax, exact_lmax, L1, L2, M1, M2, spin0=True, s
     
     return w0, wp, wm
 
-def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=True, verbose=True,progress_interval=1000):
+def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=True, progress_interval=1000):
     """
     Compute full W arrays for mask coupling matrix.
     
@@ -257,8 +257,6 @@ def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=Tru
         Buffer in multipole space for covariance calculations
     spin0, spin2 : bool, optional
         Whether to compute spin components (default: True)
-    verbose : bool, optional
-        Whether to log progress (default: True)
     progress_interval : int, optional
         How often to log progress (default: 1000)
         
@@ -300,7 +298,7 @@ def compute_w_arrays(wlm_lmax, exact_lmax, cov_ell_buffer, spin0=True, spin2=Tru
     
     # Compute elements
     for i, (l1_ind, m1_ind, l2_ind, m2_ind, L1, L2, M1, M2) in enumerate(arglist):
-        if verbose and i % progress_interval == 0:
+        if i % progress_interval == 0:
             progress = i / total_elements * 100
             logger.info(f"Progress: {progress:.1f}% ({i}/{total_elements})")
 
