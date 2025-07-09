@@ -50,7 +50,7 @@ from .distributions import (
     gaussian_2d,
 )
 from .cl2xi_transforms import prep_prefactors, cl2pseudocl
-import copula_funcs as cop
+from . import copula_funcs as cop
 from .core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal
 
 logger = logging.getLogger(__name__)
