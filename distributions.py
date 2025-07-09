@@ -40,7 +40,7 @@ __all__ = [
     'exp_norm_mean'
        
     # Gaussian covariance functions
-    'gaussian_2d'
+    'gaussian_2d',
     'cov_xi_gaussian_nD',
     'mean_xi_gaussian_nD',
     'cov_xi_nD',
@@ -499,10 +499,14 @@ def cov_cl_gaussian_mixed(mixed_cl_objects, lmax):
 
 def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
     """DEPRECATED: Use likelihood module instead."""
-    raise DeprecationWarning(
-        "cf_to_pdf_nd is deprecated. Use likelihood module for new analyses. "
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+    import warnings
+    warnings.warn(
+        "cf_to_pdf_nd is deprecated. Use likelihood module for new analyses.",
+        DeprecationWarning,
+        stacklevel=2
     )
+    raise NotImplementedError("Use likelihood module for new analyses")
+
 
 
 def pdf_xi_1D(*args, **kwargs):
