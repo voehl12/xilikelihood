@@ -16,7 +16,7 @@ import time
 import logging
 import cov_funcs
 import noise_utils
-from file_handling import generate_covariance_filename, save_covariance_matrix, check_for_file, load_covariance_matrix, generate_pseudo_cl_filename, load_pseudo_cl, save_pseudo_cl
+from file_handling import generate_filename, save_arrays, check_for_file, load_arrays
 from core_utils import check_property_equal
 
 # Set up module logger
@@ -106,13 +106,13 @@ class Cov:
         self._lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self._cov_ell_buffer = cov_ell_buffer
         # Set up file paths
-        self.covalm_path = generate_covariance_filename(
-            self._exact_lmax,
-            self.mask.nside,
-            self.mask.name,
-            self.theorycl.name,
-            self.theorycl.sigmaname,
-            self.working_dir
+        self.covalm_path = generate_filename("cov_xi", {
+            "lmax":self._exact_lmax,
+            "nside":self.mask.nside,
+            "mask":self.mask.name,
+            "theory":self.theorycl.name,
+            "sigma":self.theorycl.sigmaname,},
+            base_dir=self.working_dir
         )
 
     @property
@@ -502,7 +502,7 @@ class Cov:
 
     def save_cov(self):
         """Save covariance matrix using centralized file handling."""
-        save_covariance_matrix(self.cov_alm, self.covalm_path)
+        save_arrays(data={"cov": self.cov_alm}, filepath=self.covalm_path)
 
     def check_cov(self):
         """Check if covariance file exists."""
@@ -510,16 +510,20 @@ class Cov:
 
     def load_cov(self):
         """Load covariance matrix using centralized file handling."""
-        self.cov_alm = load_covariance_matrix(self.covalm_path)
+        cov_dict = load_arrays(self.covalm_path, "cov")
+        self.cov_alm = cov_dict['cov']
 
     def _get_pseudo_cl_path(self):
         """Generate file path for pseudo-Cl cache."""
-        return generate_pseudo_cl_filename(
-            self.mask.nside,
-            self.mask.name,
-            self.theorycl.name,
-            self.theorycl.sigmaname,
-            self.working_dir
+        return generate_filename(
+            "pcl",
+            {
+                "nside": self.mask.nside,
+                "mask": self.mask.name,
+                "theory": self.theorycl.name,
+                "sigma": self.theorycl.sigmaname,
+            },
+            base_dir=self.working_dir
         )
     
     def cl2pseudocl(self, ischain=False):
@@ -553,7 +557,7 @@ class Cov:
             pcl_path = self._get_pseudo_cl_path()
             
             # Try to load from cache first
-            cached_pcl = load_pseudo_cl(pcl_path)
+            cached_pcl = load_arrays(pcl_path)
             if cached_pcl is not None:
                 self.p_ee = cached_pcl["pcl_ee"]
                 self.p_bb = cached_pcl["pcl_bb"] 
@@ -583,7 +587,8 @@ class Cov:
             if hasattr(self, 'p_tt'):
                 save_dict["pcl_tt"] = self.p_tt
             
-            save_pseudo_cl(save_dict, pcl_path)
+            
+            save_arrays(save_dict, pcl_path)
         logger.info("Pseudo-Cl computation completed")
         
   
