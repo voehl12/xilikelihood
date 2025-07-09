@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "2ptlikelihood"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+description = "Two-point correlation function likelihood for cosmic shear surveys"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "jax>=0.3.0",
+    "jaxlib>=0.3.0",
+    "healpy>=1.14.0",
+    "treecorr>=4.0.0",
+    "pyccl>=2.0.0",
+    # Note: glass requires custom version - see README for installation
+    "matplotlib>=3.5.0",
+    "seaborn>=0.11.0",
+    "wigner>=1.0.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.0.0",
+]
+docs = [
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.18.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/2ptlikelihood"
+"Bug Tracker" = "https://github.com/yourusername/2ptlikelihood/issues"
+Documentation = "https://2ptlikelihood.readthedocs.io/"
+"Source Code" = "https://github.com/yourusername/2ptlikelihood"
+
+[tool.setuptools]
+packages = ["2ptlikelihood"]
+
+[tool.setuptools.dynamic]
+version = {attr = "2ptlikelihood.__version__"}
+
+[tool.setuptools.package-data]
+"2ptlikelihood" = ["*.txt", "*.md", "*.rst"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--cov=2ptlikelihood --cov-report=html --cov-report=term-missing"
