@@ -337,7 +337,7 @@ class SphereMask:
         return self._eff_area
       
 
-    def w_arr(self, cov_ell_buffer=0, verbose=True, path=None):
+    def w_arr(self, cov_ell_buffer=0, path=None):
         """Compute or load W coupling arrays."""
         logger.info(f"Computing W arrays with buffer={cov_ell_buffer}")
         
@@ -365,7 +365,6 @@ class SphereMask:
                 cov_ell_buffer,
                 spin0=self.spin0,
                 spin2=self.spin2,
-                verbose=verbose
             )
 
             # Assemble final array
