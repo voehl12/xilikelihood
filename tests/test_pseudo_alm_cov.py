@@ -17,12 +17,12 @@ def test_cov_xi(snapshot):
     assert np.allclose(nomask_cov_array, diag_arr)
 
     nomask_cov.mask.name = "disguised_fullsky"
-    nomask_cov.covalm_path = file_handling.generate_covariance_filename(
-            nomask_cov.exact_lmax,
-            nomask_cov.mask.nside,
-            nomask_cov.mask.name,
-            nomask_cov.theorycl.name,
-            nomask_cov.theorycl.sigmaname,
+    nomask_cov.covalm_path = file_handling.generate_filename("cov_xi", {
+            "lmax":nomask_cov.exact_lmax,
+            "nside":nomask_cov.mask.nside,
+            "mask":nomask_cov.mask.name,
+            "theory":nomask_cov.theorycl.name,
+            "sigma":nomask_cov.theorycl.sigmaname},
             nomask_cov.working_dir
         )
 

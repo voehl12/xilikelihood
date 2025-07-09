@@ -1,5 +1,3 @@
-# needs to be revisited after adding general utility functions that can be used in specific naming /loading etc.
-
 """
 File I/O utilities for cosmological data analysis.
 
@@ -19,7 +17,7 @@ import glob
 import re  # Import regular expressions
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Any
 
 from cl2xi_transforms import pcls2xis
 
@@ -29,16 +27,10 @@ __all__ = [
     # Core file operations
     'ensure_directory_exists',
     'check_for_file',
-    
-    # Covariance matrix I/O
-    'save_covariance_matrix',
-    'load_covariance_matrix', 
-    'generate_covariance_filename',
-    
-    # Pseudo-Cl I/O
-    'save_pseudo_cl',
-    'load_pseudo_cl',
-    'generate_pseudo_cl_filename',
+    'save_arrays',
+    'load_arrays',
+    'create_array_directory',
+    'generate_filename',
     
     # Simulation data readers
     'read_sims_nd',
@@ -108,13 +100,160 @@ def create_array_directory(base_dir: str, subdir_name: str) -> Path:
     array_dir.mkdir(exist_ok=True)
     return array_dir
 
-def generate_array_filename(prefix: str, lmax: int, nside: int, name: str, 
-                           buffer: int = 0) -> str:
-    """Generate standardized filename for array storage."""
-    if buffer > 0:
-        return f"{prefix}_l{lmax + buffer}_n{nside}_{name}.npz"
-    else:
-        return f"{prefix}_l{lmax}_n{nside}_{name}.npz"
+def save_arrays(
+    data: Union[np.ndarray, Dict[str, np.ndarray]],
+    filepath: str,
+    compress: bool = True,
+    metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    General purpose array saving with optional metadata.
+    
+    Parameters
+    ----------
+    data : ndarray or dict
+        Single array or dictionary of arrays to save
+    filepath : str
+        Output file path
+    compress : bool
+        Whether to use compression (default: True)
+    metadata : dict, optional
+        Additional metadata to store
+    """
+    ensure_directory_exists(os.path.dirname(filepath))
+    
+    if isinstance(data, np.ndarray):
+        data = {"data": data}
+    
+    if metadata:
+        data.update(metadata)
+    
+    save_func = np.savez_compressed if compress else np.savez
+    save_func(filepath, **data)
+    
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.info(f"Saved arrays to {filepath}: {file_size_mb:.1f} MB")
+
+
+
+
+
+def load_arrays(filepath: str, keys: Optional[List[str]] = None) -> Dict[str, np.ndarray]:
+    """
+    General purpose array loading.
+    
+    Parameters
+    ----------
+    filepath : str
+        File to load from
+    keys : list of str, optional
+        Specific keys to load (loads all if None)
+        
+    Returns
+    -------
+    dict
+        Dictionary of loaded arrays
+    """
+    if not check_for_file(filepath):
+        raise FileNotFoundError(f"Array file not found: {filepath}")
+    
+    logger.debug(f"Loading arrays from: {filepath}")
+    try:
+        with np.load(filepath) as data_file:
+            if keys is None:
+                result = {key: data_file[key].copy() for key in data_file.files}
+            else:
+                result = {key: data_file[key].copy() for key in keys if key in data_file.files}
+            
+            logger.debug(f"Loaded arrays with keys: {list(result.keys())}")
+            return result
+    except Exception as e:
+        raise RuntimeError(f"Failed to load array from {filepath}: {e}")
+    
+
+def generate_filename(
+    data_type: str,
+    parameters: Dict[str, Union[int, str]],
+    base_dir: Optional[str] = None,
+    extension: str = ".npz"
+) -> str:
+    """
+    Generate standardized filenames for analysis data.
+    
+    Parameters
+    ----------
+    data_type : str
+        Type of data ("cov", "pcl", "sims", etc.)
+    parameters : dict
+        Dictionary of parameters to include in filename
+    base_dir : str, optional
+        Base directory (creates subdirectory based on data_type)
+    extension : str
+        File extension (default: ".npz")
+        
+    Returns
+    -------
+    str
+        Generated filename
+        
+    Examples
+    --------
+    >>> # Covariance matrix
+    >>> filename = generate_filename(
+    ...     "cov", 
+    ...     {"lmax": 100, "nside": 256, "mask": "kids", "theory": "fiducial"}
+    ... )
+    >>> print(filename)  # "cov_l100_n256_kids_fiducial.npz"
+    
+    >>> # Pseudo-Cl
+    >>> filename = generate_filename(
+    ...     "pcl",
+    ...     {"nside": 256, "mask": "circular", "sigma": "default"},
+    ...     base_dir="/data"
+    ... )
+    >>> print(filename)  # "/data/pcls/pcl_n256_circular_default.npz"
+    """
+    # Build filename components
+    components = [data_type]
+    
+    # Add parameters in a standardized order
+    param_order = ["lmax", "nside", "mask", "theory", "sigma", "job", "batch"]
+    
+    for param in param_order:
+        if param in parameters:
+            value = parameters[param]
+            if param in ["lmax", "nside"]:
+                components.append(f"{param[0]}{value}")  # l100, n256
+            else:
+                components.append(str(value))
+    
+    # Add any remaining parameters
+    for key, value in parameters.items():
+        if key not in param_order:
+            components.append(f"{key}_{value}")
+    
+    filename = "_".join(components) + extension
+    
+    if base_dir:
+        # Create subdirectory based on data type
+        subdir_map = {
+            "cov_xi": "covariances",
+            "cov": "covariances",
+            "pcl": "pcls", 
+            "sims": "simulations",
+            "pdf": "pdfs",
+            "post": "posteriors",
+            "wpm": "wpm_arrays",
+            "mllp": "mllp_arrays",
+        }
+        subdir = subdir_map.get(data_type, data_type + "s")
+        full_dir = os.path.join(base_dir, subdir)
+        ensure_directory_exists(full_dir)
+        return os.path.join(full_dir, filename)
+    
+    return filename
+
+
 
 def check_array_file_size(filepath: str) -> str:
     """Check and return human-readable file size."""
@@ -123,106 +262,8 @@ def check_array_file_size(filepath: str) -> str:
         return f"{size_mb:.1f} MB"
     return "File not found"
 
-# ============================================================================
-# Covariance Matrix I/O
-# ============================================================================
 
 
-def save_covariance_matrix(cov_matrix: np.ndarray, filepath: str) -> None:
-    """Save covariance matrix to compressed numpy file."""
-    logger.info(f"Saving covariance matrix to: {filepath}")
-    
-    # Ensure directory exists
-    ensure_directory_exists(os.path.dirname(filepath))
-    
-    np.savez_compressed(filepath, cov=cov_matrix)
-    
-    # Log file size
-    file_size_mb = os.path.getsize(filepath) / 1024**2
-    logger.info(f"Saved covariance matrix: {file_size_mb:.1f} MB")
-
-def load_covariance_matrix(filepath: str) -> np.ndarray:
-    """Load covariance matrix from numpy file."""
-    if not check_for_file(filepath):
-        raise FileNotFoundError(f"Covariance file not found: {filepath}")
-    
-    logger.info(f"Loading covariance matrix from: {filepath}")
-    
-    try:
-        with np.load(filepath) as cov_file:
-            cov_matrix = cov_file["cov"]
-            logger.debug(f"Loaded covariance matrix shape: {cov_matrix.shape}")
-            return cov_matrix.copy()  # Return copy to avoid file handle issues
-    except Exception as e:
-        raise RuntimeError(f"Failed to load covariance matrix from {filepath}: {e}")
-
-def generate_covariance_filename(
-    exact_lmax: int, 
-    nside: int, 
-    mask_name: str, 
-    theory_name: str, 
-    sigma_name: str, 
-    base_dir: Optional[str] = None
-) -> str:
-    """Generate standardized filename for covariance matrix."""
-    filename = f"cov_xi_l{exact_lmax:d}_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
-    
-    if base_dir:
-        cov_dir = os.path.join(base_dir, "covariances")
-        ensure_directory_exists(cov_dir)
-        return os.path.join(cov_dir, filename)
-    
-    return filename
-
-# ============================================================================
-# Pseudo Power Spectra I/O
-# ============================================================================
-
-
-def save_pseudo_cl(pseudo_cl_dict: Dict[str, np.ndarray], filepath: str) -> None:
-    """Save pseudo power spectra to file."""
-    logger.info(f"Saving pseudo-Cl to: {filepath}")
-    
-    ensure_directory_exists(os.path.dirname(filepath))
-    np.savez_compressed(filepath, **pseudo_cl_dict)
-    
-    file_size_mb = os.path.getsize(filepath) / 1024**2
-    logger.debug(f"Saved pseudo-Cl file: {file_size_mb:.2f} MB")
-
-def load_pseudo_cl(filepath: str) -> Optional[Dict[str, np.ndarray]]:
-    """Load pseudo power spectra from file."""
-    if not check_for_file(filepath):
-        return None
-    
-    logger.info(f"Loading cached pseudo-Cl from: {filepath}")
-    
-    try:
-        with np.load(filepath) as pcl_file:
-            result = {key: pcl_file[key].copy() for key in pcl_file.files}
-            logger.debug(f"Successfully loaded pseudo-Cl with keys: {list(result.keys())}")
-            return result
-    except Exception as e:
-        logger.warning(f"Failed to load pseudo-Cl from {filepath}: {e}")
-        return None
-
-
-
-def generate_pseudo_cl_filename(
-    nside: int, 
-    mask_name: str, 
-    theory_name: str, 
-    sigma_name: str, 
-    base_dir: Optional[str] = None
-) -> str:
-    """Generate standardized filename for pseudo-Cl."""
-    filename = f"pcl_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
-    
-    if base_dir:
-        pcl_dir = os.path.join(base_dir, "pcls")
-        ensure_directory_exists(pcl_dir)
-        return os.path.join(pcl_dir, filename)
-    
-    return filename
 
 # ============================================================================
 # Simulation Data Readers
@@ -720,3 +761,132 @@ def read_xi_sims(*args, **kwargs):
         stacklevel=2
     )
     raise NotImplementedError("Use read_sims_nd() instead - provides better functionality.")
+
+
+# ============================================================================
+# Covariance Matrix I/O
+# ============================================================================
+
+def save_covariance_matrix(cov_matrix: np.ndarray, filepath: str) -> None:
+    """Save covariance matrix to compressed numpy file."""
+    import warnings
+    warnings.warn(
+        "save_covariance_matrix is deprecated. Use save_arrays({'cov': matrix}, filepath) instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.info(f"Saving covariance matrix to: {filepath}")
+    
+    # Ensure directory exists
+    ensure_directory_exists(os.path.dirname(filepath))
+    
+    np.savez_compressed(filepath, cov=cov_matrix)
+    
+    # Log file size
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.info(f"Saved covariance matrix: {file_size_mb:.1f} MB")
+
+
+def load_covariance_matrix(filepath: str) -> np.ndarray:
+    """Load covariance matrix from numpy file."""
+    import warnings
+    warnings.warn(
+        "load_covariance_matrix is deprecated. Use load_arrays(filepath)['cov'] instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if not check_for_file(filepath):
+        raise FileNotFoundError(f"Covariance file not found: {filepath}")
+    
+    logger.info(f"Loading covariance matrix from: {filepath}")
+    
+    try:
+        with np.load(filepath) as cov_file:
+            cov_matrix = cov_file["cov"]
+            logger.debug(f"Loaded covariance matrix shape: {cov_matrix.shape}")
+            return cov_matrix.copy()  # Return copy to avoid file handle issues
+    except Exception as e:
+        raise RuntimeError(f"Failed to load covariance matrix from {filepath}: {e}")
+
+
+
+
+# ============================================================================
+# Pseudo Power Spectra I/O
+# ============================================================================
+
+def generate_pseudo_cl_filename(
+    nside: int, 
+    mask_name: str, 
+    theory_name: str, 
+    sigma_name: str, 
+    base_dir: Optional[str] = None
+) -> str:
+    """Generate standardized filename for pseudo-Cl."""
+    import warnings
+    warnings.warn(
+        "generate_pseudo_cl_filename is deprecated. Use generate_filename with pcl key instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    filename = f"pcl_n{nside:d}_{mask_name}_{theory_name}_{sigma_name}.npz"
+    
+    if base_dir:
+        pcl_dir = os.path.join(base_dir, "pcls")
+        ensure_directory_exists(pcl_dir)
+        return os.path.join(pcl_dir, filename)
+    
+    return filename
+
+def save_pseudo_cl(pseudo_cl_dict: Dict[str, np.ndarray], filepath: str) -> None:
+    """Save pseudo power spectra to file."""
+    import warnings
+    warnings.warn(
+        "save_pseudo_cl is deprecated. Use save_arrays with pcl dictionary instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.info(f"Saving pseudo-Cl to: {filepath}")
+    
+    ensure_directory_exists(os.path.dirname(filepath))
+    np.savez_compressed(filepath, **pseudo_cl_dict)
+    
+    file_size_mb = os.path.getsize(filepath) / 1024**2
+    logger.debug(f"Saved pseudo-Cl file: {file_size_mb:.2f} MB")
+
+def load_pseudo_cl(filepath: str) -> Optional[Dict[str, np.ndarray]]:
+    """Load pseudo power spectra from file."""
+    import warnings
+    warnings.warn(
+        "load_pseudo_cl is deprecated. Use load_arrays instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if not check_for_file(filepath):
+        return None
+    
+    logger.info(f"Loading cached pseudo-Cl from: {filepath}")
+    
+    try:
+        with np.load(filepath) as pcl_file:
+            result = {key: pcl_file[key].copy() for key in pcl_file.files}
+            logger.debug(f"Successfully loaded pseudo-Cl with keys: {list(result.keys())}")
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to load pseudo-Cl from {filepath}: {e}")
+        return None
+
+
+def generate_array_filename(prefix: str, lmax: int, nside: int, name: str, 
+                           buffer: int = 0) -> str:
+    """Generate standardized filename for array storage."""
+    import warnings
+    warnings.warn(
+        "generate_array_filename is deprecated. Use generate_filename instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if buffer > 0:
+        return f"{prefix}_l{lmax + buffer}_n{nside}_{name}.npz"
+    else:
+        return f"{prefix}_l{lmax}_n{nside}_{name}.npz"

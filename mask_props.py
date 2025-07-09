@@ -18,7 +18,7 @@ import healpy as hp
 # Local imports
 import wpm_funcs
 import cov_funcs
-import file_handling
+from file_handling import save_arrays, load_arrays, generate_filename, check_for_file
 from core_utils import computation_phase
 
 logger = logging.getLogger(__name__)
@@ -346,7 +346,7 @@ class SphereMask:
         else:
             self.wpm_path = path
         
-        if file_handling.check_for_file(self.wpm_path, kind="wpm"):
+        if check_for_file(self.wpm_path, kind="wpm"):
             logger.info("Loading existing W arrays from disk")
             self.load_w_arr()
             return self._w_arr
@@ -388,7 +388,7 @@ class SphereMask:
             return self._m_llp
             
         self.set_mllppath()
-        if file_handling.check_for_file(self.mllp_path, kind="mllp"):
+        if check_for_file(self.mllp_path, kind="mllp"):
             self.load_mllp_arr()
         else:
             self._m_llp = wpm_funcs.m_llp(self.wl, self.lmax, spin0=self.spin0)
@@ -435,50 +435,43 @@ class SphereMask:
             return "partially_computed"
 
     def save_w_arr(self):
-        logger.info("Saving W arrays to disk")
-        np.savez(self.wpm_path, wpm0=self._w_arr)
-        size_info = file_handling.check_array_file_size(self.wpm_path)
-        logger.info(f"Saved W arrays: {size_info} MB at {self.wpm_path}")
+        save_arrays(data={"wpm0": self._w_arr}, path=self.wpm_path)
+        
 
     def save_mllp_arr(self):
         """Save M_ll' arrays to disk."""
-        logger.info("Saving M_ll' arrays to disk")
-        np.savez(self.mllp_path, m_llp_p=self._m_llp[0], m_llp_m=self._m_llp[1])
-        size_info = file_handling.check_array_file_size(self.mllp_path)
-        logger.info(f"Saved M_ll' arrays: {size_info} at {self.mllp_path}")
+        save_arrays(data={"m_llp_p": self._m_llp[0], "m_llp_m": self._m_llp[1]}, path=self.mllp_path)
 
     def load_w_arr(self):
         """Load WPM arrays from disk."""
-        logger.info("Loading W arrays from disk")
-        wpmfile = np.load(self.wpm_path)
-        size_info = file_handling.check_array_file_size(self.wpm_path)
-        logger.info(f"Loaded W arrays: {size_info}")
+        wpmfile = load_arrays(self.wpm_path, keys=["wpm0"])
         self._w_arr = wpmfile["wpm0"]
 
     def load_mllp_arr(self):
         """Load M_ll' arrays from disk."""
-        logger.info("Loading M_ll' arrays from disk")
-        mllpfile = np.load(self.mllp_path)
-        m_llp_p, m_llp_m = mllpfile["m_llp_p"], mllpfile["m_llp_m"]
-        self._m_llp = m_llp_p, m_llp_m
+        mllpfile = load_arrays(self.mllp_path, keys=["m_llp_p", "m_llp_m"])
+        self._m_llp = mllpfile["m_llp_p"], mllpfile["m_llp_m"]
 
 
 
     def set_wpmpath(self, cov_ell_buffer):
         """Set path for WPM arrays."""
-        array_dir = file_handling.create_array_directory(str(self.working_dir), "wpm_arrays")
-        filename = file_handling.generate_array_filename(
-            "wpm", self._exact_lmax, self.nside, self.name, buffer=cov_ell_buffer
-        )
-        self.wpm_path = str(array_dir / filename)
+        self.wpm_path = generate_filename('wpm', {
+            "lmax": self._exact_lmax+cov_ell_buffer,
+            "nside": self.nside,
+            "mask": self.name,
+        }, base_dir=self.working_dir)
+        
 
     def set_mllppath(self):
         """Set path for MLLP arrays."""
-        array_dir = file_handling.create_array_directory(str(self.working_dir), "mllp_arrays")
-        filename = file_handling.generate_array_filename(
-            "mllp", self._exact_lmax, self.nside, self.name
-        )
-        self.mllp_path = str(array_dir / filename)
+        self.mllp_path = generate_filename(
+            "mllp", {
+                "lmax": self._exact_lmax,
+                "nside": self.nside,
+                "mask": self.name
+            }, base_dir=self.working_dir)
+        
 
 
 def save_maskobject(maskobject: SphereMask, directory: str = "") -> str:
