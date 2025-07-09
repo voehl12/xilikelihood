@@ -16,10 +16,10 @@ import numpy as np
 import healpy as hp
 
 # Local imports
-import wpm_funcs
-import cov_funcs
-from file_handling import save_arrays, load_arrays, generate_filename, check_for_file
-from core_utils import computation_phase
+from . import wpm_funcs
+from . import cov_funcs
+from .file_handling import save_arrays, load_arrays, generate_filename, check_for_file
+from .core_utils import computation_phase
 
 logger = logging.getLogger(__name__)
 

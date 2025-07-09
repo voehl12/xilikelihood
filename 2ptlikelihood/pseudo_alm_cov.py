@@ -14,10 +14,10 @@ import os.path
 from sys import getsizeof
 import time
 import logging
-import cov_funcs
-import noise_utils
-from file_handling import generate_filename, save_arrays, check_for_file, load_arrays
-from core_utils import check_property_equal
+from . import cov_funcs
+from . import noise_utils
+from .file_handling import generate_filename, save_arrays, check_for_file, load_arrays
+from .core_utils import check_property_equal
 
 # Set up module logger
 logger = logging.getLogger(__name__)

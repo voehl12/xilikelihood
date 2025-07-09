@@ -32,9 +32,9 @@ from scipy.stats import multivariate_normal
 
 
 # Internal imports
-from theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
-from pseudo_alm_cov import Cov
-from distributions import (
+from .theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
+from .pseudo_alm_cov import Cov
+from .distributions import (
     mean_xi_gaussian_nD,
     batched_cf_1d_jitted, 
     high_ell_gaussian_cf_1d,
@@ -42,9 +42,9 @@ from distributions import (
     cov_xi_gaussian_nD,
     gaussian_2d,
 )
-from cl2xi_transforms import prep_prefactors, cl2pseudocl
+from .cl2xi_transforms import prep_prefactors, cl2pseudocl
 import copula_funcs as cop
-from core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal
+from .core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal
 
 logger = logging.getLogger(__name__)
 

@@ -50,10 +50,10 @@ except ImportError:
 import glass.fields
 import time
 
-from cl2xi_transforms import pcl2xi, prep_prefactors
-from noise_utils import get_noise_pixelsigma
-from pseudo_alm_cov import Cov
-from core_utils import check_property_equal
+from .cl2xi_transforms import pcl2xi, prep_prefactors
+from .noise_utils import get_noise_pixelsigma
+from .pseudo_alm_cov import Cov
+from .core_utils import check_property_equal
 
 __all__ = [
     # Main API

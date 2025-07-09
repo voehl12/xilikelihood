@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union, Any
 
-from cl2xi_transforms import pcls2xis
+from .cl2xi_transforms import pcls2xis
 
 logger = logging.getLogger(__name__)
 

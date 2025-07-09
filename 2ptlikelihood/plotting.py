@@ -3,17 +3,17 @@ import numpy as np
 import os
 from scipy.stats import norm
 import configparser
-from cl2xi_transforms import pcls2xis, prep_prefactors, compute_kernel
+from .cl2xi_transforms import pcls2xis, prep_prefactors, compute_kernel
 import traceback
 import matplotlib.colors as colors
 import numpy as np
 import scipy.stats as stats
 import seaborn as sns  # Add seaborn for better corner plot aesthetics
-from file_handling import read_sims_nd
+from .file_handling import read_sims_nd
 import pickle  # Add import for loading cache files
 from itertools import product
 import random
-from postprocess_nd_likelihood import bootstrap, compare_to_sims_2d, bootstrap_statistic_2d
+# from .postprocess_nd_likelihood import bootstrap, compare_to_sims_2d, bootstrap_statistic_2d
 from scipy.interpolate import RegularGridInterpolator, griddata
 from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})

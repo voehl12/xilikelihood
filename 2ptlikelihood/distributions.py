@@ -17,10 +17,10 @@ import jax.numpy as jnp
 from scipy.interpolate import UnivariateSpline
 from scipy.stats import multivariate_normal
 
-from noise_utils import get_noisy_cl
-from cl2xi_transforms import get_integrated_wigners, pcls2xis
-from core_utils import check_property_equal
-from theoretical_moments import get_moments_from_combination_matrix_1d
+from .noise_utils import get_noisy_cl
+from .cl2xi_transforms import get_integrated_wigners, pcls2xis
+from .core_utils import check_property_equal
+from .theoretical_moments import get_moments_from_combination_matrix_1d
 
 __all__ = [
     # Grid setup utilities
