@@ -35,7 +35,8 @@ html_static_path = ['_static']
 # -- Options for autodoc ----------------------------------------------------
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'description'
-autodoc_mock_imports = ['glass', 'pyccl', 'healpy', 'treecorr', 'wigner']
+# Mock imports for heavy dependencies that are hard to install on ReadTheDocs
+autodoc_mock_imports = ['glass', 'pyccl', 'healpy', 'treecorr', 'wigner', 'jax', 'jaxlib']
 
 # -- Options for Napoleon (Google/NumPy style docstrings) ------------------
 napoleon_google_docstring = True

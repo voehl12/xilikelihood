@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
-    "numpy>=1.20.0",
+    "numpy>=1.20.0,<2.0",  # JAX compatibility requires NumPy < 2.0
     "scipy>=1.7.0",
     "jax>=0.3.0",
     "jaxlib>=0.3.0",
