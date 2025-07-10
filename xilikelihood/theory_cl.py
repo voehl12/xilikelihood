@@ -417,7 +417,7 @@ def save_cl(cl, clpath):
 
 
 
-def prepare_theory_cl_inputs(redshift_bins, noise):
+def prepare_theory_cl_inputs(redshift_bins, noise='default'):
     """
     Prepares redshift bin combinations, cross-/autocorrelation flags, and noise values.
 
