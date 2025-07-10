@@ -1,0 +1,14 @@
+# Documentation build requirements for ReadTheDocs
+# These are the minimal dependencies needed to build the docs
+
+# Core documentation tools
+sphinx>=4.0.0
+sphinx-rtd-theme>=1.0.0
+myst-parser>=0.18.0
+
+# For mocking imports during doc build (avoiding heavy dependencies)
+numpy>=1.20.0,<2.0
+scipy>=1.7.0
+
+# Mock these heavy dependencies during doc builds
+# ReadTheDocs will use autodoc_mock_imports for: glass, pyccl, healpy, treecorr, wigner, jax, jaxlib
