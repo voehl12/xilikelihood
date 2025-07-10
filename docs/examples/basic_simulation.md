@@ -5,38 +5,50 @@ This example demonstrates how to set up and run a basic two-point correlation fu
 ## Setup
 
 ```python
-import xilikelihood as xi
+import xilikelihood as xlh
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Define the angular bins (in degrees)
-angular_bins = [(2, 3), (3, 4), (4, 5), (5, 7), (7, 10)]
+# Create a survey mask
+mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
 
-# Create the simulation object
-simulation = xi.TwoPointSimulation(
-    angular_bins=angular_bins,
-    circmaskattr=(10000, 256),  # 10000 sq deg circular mask, nside=256
-    l_smooth_mask=30,           # smoothing scale for mask
-    clpath="Cl_3x2pt_kids55.txt",  # power spectrum file
-    sigma_e=None                # no intrinsic ellipticity noise
+# Set up redshift bins
+z = np.linspace(0.01, 3.0, 100)
+redshift_bins = [xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1)]
+
+# Define the angular bins (in degrees)  
+angular_bins_in_deg = [(2, 3), (3, 4), (4, 5), (5, 7), (7, 10)]
+
+# Prepare theory inputs
+numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper = xlh.prepare_theory_cl_inputs(redshift_bins)
+
+# Generate theory power spectra
+theory_cls = xlh.generate_theory_cl(
+    mask.lmax,
+    redshift_bin_combinations,
+    shot_noise,
+    cosmo={'omega_m': 0.31, 's8': 0.8}
 )
 ```
 
 ## Running the Simulation
 
 ```python
-# Generate correlation functions for job number 1
-job_number = 1
-simulation.xi_sim_1D(job_number)
+# Generate correlation functions
+result = xlh.simulate_correlation_functions(
+    theory_cls, [mask], angular_bins_in_deg, n_batch=100
+)
 
-# Load the results
-results = np.load(f"job{job_number}.npz")
-theta = results['theta']  # angular scales
-xip = results['xip']      # xi_plus correlation function
-xim = results['xim']      # xi_minus correlation function
+# Extract results
+xi_plus = result['xi_plus']
+xi_minus = result['xi_minus']
+theta_list = result['theta']
 
-print(f"Generated xi for {len(angular_bins)} angular bins")
-print(f"Angular scales: {theta} degrees")
+print(f"Generated xi for {len(angular_bins_in_deg)} angular bins")
+print(f"Simulation shape: xi_plus {xi_plus.shape}, xi_minus {xi_minus.shape}")
+
+# Extract angular scales (bin centers)
+theta = np.array([(bins[0] + bins[1])/2 for bins in angular_bins_in_deg])
 ```
 
 ## Visualizing Results
@@ -45,8 +57,9 @@ print(f"Angular scales: {theta} degrees")
 # Plot the correlation functions
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-# Xi plus
-ax1.errorbar(theta, xip[0, 0], fmt='o-', label='ξ₊')
+# Xi plus - take mean over simulations
+xip_mean = np.mean(xi_plus, axis=0)
+ax1.errorbar(theta, xip_mean[0, 0], fmt='o-', label='ξ₊')
 ax1.set_xlabel('θ (degrees)')
 ax1.set_ylabel('ξ₊(θ)')
 ax1.set_xscale('log')
@@ -55,8 +68,9 @@ ax1.grid(True, alpha=0.3)
 ax1.legend()
 ax1.set_title('Xi Plus')
 
-# Xi minus  
-ax2.errorbar(theta, np.abs(xim[0, 0]), fmt='s-', label='|ξ₋|', color='orange')
+# Xi minus - take mean over simulations
+xim_mean = np.mean(xi_minus, axis=0)
+ax2.errorbar(theta, np.abs(xim_mean[0, 0]), fmt='s-', label='|ξ₋|', color='orange')
 ax2.set_xlabel('θ (degrees)')
 ax2.set_ylabel('|ξ₋(θ)|')
 ax2.set_xscale('log')
@@ -72,32 +86,34 @@ plt.show()
 ## Multiple Realizations
 
 ```python
-# Generate multiple realizations for statistical analysis
-n_realizations = 10
-xip_realizations = []
-xim_realizations = []
+# Generate multiple batches for statistical analysis
+n_batches = 10
+batch_size = 50
+all_xip = []
+all_xim = []
 
-for job in range(1, n_realizations + 1):
-    simulation.xi_sim_1D(job)
-    data = np.load(f"job{job}.npz")
-    xip_realizations.append(data['xip'][0, 0])
-    xim_realizations.append(data['xim'][0, 0])
+for batch in range(n_batches):
+    batch_result = xlh.simulate_correlation_functions(
+        theory_cls, [mask], angular_bins_in_deg, n_batch=batch_size
+    )
+    all_xip.append(batch_result['xi_plus'])
+    all_xim.append(batch_result['xi_minus'])
 
-# Convert to arrays
-xip_array = np.array(xip_realizations)
-xim_array = np.array(xim_realizations)
+# Combine all realizations
+xip_array = np.concatenate(all_xip, axis=0)
+xim_array = np.concatenate(all_xim, axis=0)
 
 # Compute statistics
 xip_mean = np.mean(xip_array, axis=0)
 xip_std = np.std(xip_array, axis=0)
 
-print(f"Mean ξ₊ across {n_realizations} realizations:")
-for i, (angle, mean_val, std_val) in enumerate(zip(theta, xip_mean, xip_std)):
+print(f"Mean ξ₊ across {n_batches * batch_size} realizations:")
+for i, (angle, mean_val, std_val) in enumerate(zip(theta, xip_mean[0, :], xip_std[0, :])):
     print(f"  Bin {i+1} ({angle:.1f}°): {mean_val:.2e} ± {std_val:.2e}")
 ```
 
 ## Next Steps
 
-- Learn how to use these simulations in [Likelihood Analysis](likelihood_analysis.md)
-- Explore [Parameter Estimation](parameter_estimation.md) workflows
-- See [Advanced Usage](advanced_usage.md) for customization options
+- Learn how to use these simulations in [Likelihood Analysis](../api/likelihood.md)
+- Explore parameter estimation workflows in the [Quick Start Guide](../quickstart.md)
+- See the [API Reference](../api/index.md) for more customization options

@@ -7,71 +7,66 @@ This guide will help you get started with xilikelihood for two-point correlation
 ### 1. Import the Package
 
 ```python
-import xilikelihood as xi
+import xilikelihood as xlh
 import numpy as np
 ```
 
-### 2. Set Up a Simulation
+### 2. Set Up Survey Mask and Bins
 
 ```python
-# Define angular bins (in degrees)
-angular_bins = [(2, 3), (3, 4), (4, 5)]
+# Create a survey mask
+mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
 
-# Create a simulation instance
-simulation = xi.TwoPointSimulation(
-    angular_bins,
-    circmaskattr=(10000, 256),  # circular mask: area and nside
-    l_smooth_mask=30,            # smoothing scale
-    clpath="Cl_3x2pt_kids55.txt",  # path to power spectrum
-    sigma_e=None                 # intrinsic ellipticity noise
+# Set up redshift bins (option 1: from file)
+redshift_bins = [xlh.RedshiftBin(nbin=1, filepath='path/to/redshift_file.txt')]
+
+# Set up redshift bins (option 2: Gaussian distribution)
+z = np.linspace(0.01, 3.0, 100)
+redshift_bins = [
+    xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1),
+    xlh.RedshiftBin(nbin=2, z=z, zmean=1.0, zsig=0.1)
+]
+
+# Set up redshift bins (option 3: custom z, nz arrays)
+redshift_bins = [
+    xlh.RedshiftBin(nbin=1, z=z_array, nz=nz_array)
+]
+
+# Angular bins in degrees
+angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
+
+# Or use fiducial setup
+# redshift_bins, angular_bins_in_deg = xlh.fiducial_dataspace()
+```
+
+### 3. Generate Theory Power Spectra
+
+```python
+# Prepare theory inputs and generate power spectra
+numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper = xlh.prepare_theory_cl_inputs(redshift_bins)
+theory_cls = xlh.generate_theory_cl(
+    mask.lmax,
+    redshift_bin_combinations,
+    shot_noise,
+    cosmo={'omega_m': 0.31, 's8': 0.8}
 )
 ```
 
-### 3. Generate Correlation Functions
+### 4. Simulate Correlation Functions (Optional)
 
 ```python
-# Generate xi for a specific job/realization
-job_number = 1
-simulation.xi_sim_1D(job_number)
-
-# Load the results
-xi_data = np.load(f"job{job_number}.npz")
-xip = xi_data['xip']  # xi_plus
-xim = xi_data['xim']  # xi_minus
-```
-
-### 4. Set Up a Likelihood
-
-```python
-# Load or define your data vector
-data_vector = np.array([...])  # your measured xi values
-
-# Create likelihood instance
-likelihood = xi.XiLikelihood(
-    data_vector=data_vector,
-    angular_bins=angular_bins,
-    redshift_bins=[(0, 1), (1, 2)],  # redshift bin combinations
-    simulation_params={
-        'circmaskattr': (10000, 256),
-        'l_smooth_mask': 30,
-        'clpath': 'Cl_3x2pt_kids55.txt'
-    }
+# Generate correlation functions from theory
+result = xlh.simulate_correlation_functions(
+    theory_cls, [mask], angular_bins_in_deg, n_batch=100
 )
+xi_plus, xi_minus = result['xi_plus'], result['xi_minus']
 ```
 
-### 5. Evaluate the Likelihood
-
+### 5. Set Up Likelihood Analysis
 ```python
-# Define cosmological parameters
-cosmology = {
-    's8': 0.8,
-    'omega_m': 0.3,
-    # ... other parameters
-}
-
-# Compute log-likelihood
-log_likelihood = likelihood.loglikelihood(data_vector, cosmology)
-print(f"Log-likelihood: {log_likelihood}")
+# Create and setup likelihood instance
+likelihood = xlh.XiLikelihood(mask, redshift_bins, angular_bins_in_deg)
+likelihood.setup_likelihood()
 ```
 
 ## Example: Parameter Estimation
@@ -79,21 +74,22 @@ print(f"Log-likelihood: {log_likelihood}")
 Here's a complete example for estimating σ₈:
 
 ```python
-import xilikelihood as xi
+import xilikelihood as xlh
 import numpy as np
 
 # Set up the analysis
-angular_bins = [(2, 3), (3, 4)]
-likelihood = xi.XiLikelihood(
-    data_vector=measured_data,
-    angular_bins=angular_bins,
-    redshift_bins=[(0, 1)],
-    simulation_params={
-        'circmaskattr': (10000, 256),
-        'l_smooth_mask': 30,
-        'clpath': 'fiducial_cl.txt'
-    }
-)
+mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
+
+# Create redshift bins
+z = np.linspace(0.01, 3.0, 100)
+redshift_bins = [xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1)]
+
+# Angular bins in degrees
+angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
+
+# Set up likelihood
+likelihood = xlh.XiLikelihood(mask, redshift_bins, angular_bins_in_deg)
+likelihood.setup_likelihood()
 
 # Parameter grid
 s8_values = np.linspace(0.7, 0.9, 100)
@@ -102,8 +98,8 @@ log_likelihoods = []
 # Evaluate likelihood over parameter grid
 for s8 in s8_values:
     cosmology = {'s8': s8, 'omega_m': 0.3}
-    log_like = likelihood.loglikelihood(measured_data, cosmology)
-    log_likelihoods.append(log_like)
+    log_likelihood = likelihood.loglikelihood(measured_data, cosmology)
+    log_likelihoods.append(log_likelihood)
 
 # Find maximum likelihood estimate
 best_s8 = s8_values[np.argmax(log_likelihoods)]

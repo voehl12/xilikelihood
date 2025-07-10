@@ -7,7 +7,7 @@ __version__ = "0.1.0"
 
 # Core user-facing functions
 from .simulate import simulate_correlation_functions, TwoPointSimulation
-from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs  
+from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin
 from .likelihood import XiLikelihood, fiducial_dataspace
 from .mask_props import SphereMask
 from .file_handling import save_arrays, load_arrays, generate_filename
@@ -31,6 +31,7 @@ __all__ = [
     
     # Essential objects
     'SphereMask',
+    'RedshiftBin',
     
     # Key utilities
     'save_arrays',
