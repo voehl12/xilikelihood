@@ -1,21 +1,56 @@
+# Build and installation artifacts
 **/bin
 **/results
 **/plots
 **/__pycache__
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Test outputs
+_regtest_outputs/
+
+# Documentation build output (exclude built docs, but keep source)
+docs/_build/
+
 # Generated plots and outputs
 *.html
 *.png
 *.pdf
 *.svg
 *.eps
+
 # Python bytecode files
+*.pyc
+*.pyo
 *.obj
+
+# Data files (you may want to be more selective here)
 *.txt
 *.npz
 *.npy
 *.fits
+
+# Log files
 *.err
 *.out
 *.ini
 *.log
+
+# Environment files
 .python_version
+.env
+.venv
+venv/
+env/
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
