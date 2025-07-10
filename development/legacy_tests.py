@@ -896,7 +896,7 @@ def high_low_s8():
     measured_cl = cl_paths[3]
     lims = -0.25e-6, 1e-6
     angbin = [(2,3)]
-    measurement = TwoPointSimulation(angbin,circmaskattr=(10000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/2ptlikelihood",sigma_e=None )
+    measurement = TwoPointSimulation(angbin,circmaskattr=(10000,256),l_smooth_mask=30,clpath=measured_cl[0],clname = measured_cl[1],batchsize=1,simpath="/cluster/home/veoehl/xilikelihood",sigma_e=None )
     jobnumber = 1
     measurement.xi_sim_1D(jobnumber)
     xi_measured = np.load(measurement.simpath + "/job{:d}.npz".format(jobnumber))

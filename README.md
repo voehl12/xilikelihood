@@ -1,4 +1,4 @@
-# 2ptlikelihood
+# xilikelihood
 
 Two-point correlation function likelihood analysis for cosmic shear surveys.
 
@@ -6,7 +6,7 @@ Two-point correlation function likelihood analysis for cosmic shear surveys.
 
 ### Standard Installation
 ```bash
-pip install 2ptlikelihood
+pip install xilikelihood
 ```
 
 ### Development Installation
@@ -16,7 +16,7 @@ For development or if you need the custom GLASS version:
 ```bash
 # Clone the repository
 git clone [repository_url]
-cd 2ptlikelihood
+cd xilikelihood
 
 # Install custom GLASS version (required for simulations)
 pip install -e ../glass
@@ -30,7 +30,7 @@ pip install -e .
 This package requires a custom version of GLASS located in the `../glass` directory. To install it:
 
 ```bash
-# From the parent directory of 2ptlikelihood
+# From the parent directory of xilikelihood
 pip install -e glass
 ```
 
@@ -39,7 +39,7 @@ If you don't have the custom GLASS version, simulation functions will raise an i
 ## Quick Start
 
 ```python
-import 2ptlikelihood as tpl
+import xilikelihood as tpl
 
 # 1. Create a survey mask
 mask = tpl.SphereMask(spins=[2], circmaskattr=(10000, 256))
@@ -96,7 +96,7 @@ This package implements the methods described in:
 
 ## Documentation
 
-Full documentation: https://2ptlikelihood.readthedocs.io
+Full documentation: https://xilikelihood.readthedocs.io
 
 ## Examples
 

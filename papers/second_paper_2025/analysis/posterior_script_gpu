@@ -12,5 +12,5 @@
 
 module load stack/2024-06 swig/4.1.1-ipvpwcc python_cuda/3.11.6 gcc/12.2.0 cmake/3.27.7
 
-source /cluster/home/veoehl/2ptlikelihood/2ptlikelihood/bin/activate
-python /cluster/home/veoehl/2ptlikelihood/s8_example.py $SLURM_ARRAY_TASK_ID
+source /cluster/home/veoehl/xilikelihood/venv/bin/activate
+python /cluster/home/veoehl/xilikelihood/s8_example.py $SLURM_ARRAY_TASK_ID

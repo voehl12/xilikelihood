@@ -1,6 +1,6 @@
-# 2ptlikelihood/__init__.py
+# xilikelihood/__init__.py
 """
-2ptlikelihood: Two-point correlation function likelihood analysis.
+xilikelihood: Two-point correlation function likelihood analysis.
 """
 
 __version__ = "0.1.0"

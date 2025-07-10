@@ -27,8 +27,8 @@ Examples
 import numpy as np
 import os
 import scipy.stats 
-import logging
 from pathlib import Path
+import logging
 
 logger = logging.getLogger(__name__)
 

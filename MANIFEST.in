@@ -1,8 +1,8 @@
 include README.md
 include LICENSE
 include requirements*.txt
-recursive-include 2ptlikelihood *.py
-recursive-include 2ptlikelihood *.txt *.dat *.json
+recursive-include xilikelihood *.py
+recursive-include xilikelihood *.txt *.dat *.json
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
 exclude .gitignore

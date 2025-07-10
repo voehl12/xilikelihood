@@ -121,7 +121,7 @@ def posterior_from_1d_autocorr(jobnumber):
 
 
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_auto.npz".format(jobnumber),
+        "/cluster/home/veoehl/xilikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_auto.npz".format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,
@@ -236,7 +236,7 @@ def posterior_from_1d_croco(jobnumber,ns8=200):
     post_gauss, mean_gauss = exp_norm_mean(s8,gauss_posts,reg=20)
 
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz".format(jobnumber),
+        "/cluster/home/veoehl/xilikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz".format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,
@@ -269,7 +269,7 @@ def posterior_from_subset(jobnumber,ns8=200):
         gauss_posts.append(gauss_post)
     
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_largescales_{:d}.npz".format(jobnumber),
+        "/cluster/home/veoehl/xilikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_largescales_{:d}.npz".format(jobnumber),
         exact=posts,
         gauss=gauss_posts,
         s8=this_s8_prior,)
@@ -291,7 +291,7 @@ def posterior_from_nd(jobnumber):
         posts.append(post)
         gauss_posts.append(gauss_post)
     np.savez(
-        "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_nd_{:d}.npz".format(jobnumber),
+        "/cluster/home/veoehl/xilikelihood/s8posts/s8post_10000sqd_fiducial_nonoise_nd_{:d}.npz".format(jobnumber),
         exact=posts,
         gauss=gauss_posts,
         s8=this_s8_prior,

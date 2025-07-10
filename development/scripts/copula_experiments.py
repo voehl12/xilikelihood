@@ -19,7 +19,7 @@ from distributions import get_exact
 #  2) gcc/12.2.0      4) cmake/3.27.7
 # module load stack/2024-06 swig/4.1.1-ipvpwcc python/3.11.6 gcc/12.2.0 cmake/3.27.7
 # should eventually become a class
-configpath = "/cluster/home/veoehl/2ptlikelihood/config_adjusted.ini"
+configpath = "/cluster/home/veoehl/xilikelihood/config_adjusted.ini"
 configpath = "config_adjusted.ini"
 simspath = (
     "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ1000smoothl30_noisedefault/"

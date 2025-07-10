@@ -12,8 +12,8 @@ sleep(randint(1,10))
 
 jobnumber = int(sys.argv[1])
 
-rootfolder = '/cluster/home/veoehl/2ptlikelihood/'
-""" rootfolder = '/cluster/home/veoehl/2ptlikelihood/'
+rootfolder = '/cluster/home/veoehl/xilikelihood/'
+""" rootfolder = '/cluster/home/veoehl/xilikelihood/'
 cl_55 = rootfolder+"Cl_3x2pt_kids55.txt"
 cl_53 = rootfolder+"Cl_3x2pt_kids53.txt"
 cl_33 = rootfolder+"Cl_3x2pt_kids33.txt"

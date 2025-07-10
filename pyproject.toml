@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "2ptlikelihood"
+name = "xilikelihood"
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
-description = "Two-point correlation function likelihood for cosmic shear surveys"
+description = "Two-point correlation function (xi) likelihood for cosmic shear surveys"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -53,19 +53,19 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/2ptlikelihood"
-"Bug Tracker" = "https://github.com/yourusername/2ptlikelihood/issues"
-Documentation = "https://2ptlikelihood.readthedocs.io/"
-"Source Code" = "https://github.com/yourusername/2ptlikelihood"
+Homepage = "https://github.com/yourusername/xilikelihood"
+"Bug Tracker" = "https://github.com/yourusername/xilikelihood/issues"
+Documentation = "https://xilikelihood.readthedocs.io/"
+"Source Code" = "https://github.com/yourusername/xilikelihood"
 
 [tool.setuptools]
-packages = ["2ptlikelihood"]
+packages = ["xilikelihood"]
 
 [tool.setuptools.dynamic]
-version = {attr = "2ptlikelihood.__version__"}
+version = {attr = "xilikelihood.__version__"}
 
 [tool.setuptools.package-data]
-"2ptlikelihood" = ["*.txt", "*.md", "*.rst"]
+"xilikelihood" = ["*.txt", "*.md", "*.rst"]
 
 [tool.black]
 line-length = 88
@@ -78,4 +78,4 @@ line_length = 88
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "--cov=2ptlikelihood --cov-report=html --cov-report=term-missing"
+addopts = "--cov=xilikelihood --cov-report=html --cov-report=term-missing"

@@ -23,7 +23,7 @@ and parameter tuning during package development.
 
 ```bash
 # Activate environment
-source ../../2ptlikelihood/bin/activate
+source ../../venv/bin/activate
 
 # Start Jupyter
 jupyter notebook
