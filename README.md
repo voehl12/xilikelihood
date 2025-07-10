@@ -1,10 +1,11 @@
 # xilikelihood
 
-Two-point correlation function likelihood analysis for cosmic shear surveys.
+Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood.
 
 ## Installation
 
 ### Standard Installation
+The package is not published on PyPI yet, but will be.
 ```bash
 pip install xilikelihood
 ```
@@ -15,11 +16,11 @@ For development or if you need the custom GLASS version:
 
 ```bash
 # Clone the repository
-git clone [repository_url]
+git clone https://github.com/voehl12/xilikelihood.git
 cd xilikelihood
 
 # Install custom GLASS version (required for simulations)
-pip install -e ../glass
+# Please reach out if you need it.
 
 # Install the package in development mode
 pip install -e .
@@ -27,47 +28,60 @@ pip install -e .
 
 ### Custom GLASS Installation
 
-This package requires a custom version of GLASS located in the `../glass` directory. To install it:
+This package requires a custom version of GLASS. If you need it, please reach out. To install it:
 
 ```bash
 # From the parent directory of xilikelihood
 pip install -e glass
 ```
 
+
 If you don't have the custom GLASS version, simulation functions will raise an informative error message.
 
 ## Quick Start
 
 ```python
-import xilikelihood as tpl
+import xilikelihood as xlh
 
 # 1. Create a survey mask
-mask = tpl.SphereMask(spins=[2], circmaskattr=(10000, 256))
+mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
 
-# 2. Generate theory predictions
-theory_cls = tpl.generate_theory_cl(
-    lmax=100, 
+# 2. Set up redshift bins and angular bins
+redshift_bins = [xlh.RedshiftBin(z_min=0.1, z_max=0.3), 
+                 xlh.RedshiftBin(z_min=0.3, z_max=0.5)]
+angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
+
+# Or use fiducial setup
+# angular_bins, redshift_bins = xlh.fiducial_dataspace()
+
+# 3. Prepare theory inputs and generate power spectra
+numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper = xlh.prepare_theory_cl_inputs(redshift_bins) # by default with shot noise
+theory_cls = xlh.generate_theory_cl(
+    mask.lmax,
+    redshift_bin_combinations,
+    shot_noise,
     cosmo={'omega_m': 0.31, 's8': 0.8}
 )
 
-# 3. Simulate correlation functions
-angular_bins = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
-xi_plus, xi_minus = tpl.simulate_correlation_functions(
-    theory_cls, [mask], angular_bins, n_batch=100
+# 4. Simulate correlation functions (optional)
+xi_plus, xi_minus = xlh.simulate_correlation_functions(
+    theory_cls, [mask], angular_bins_in_deg, n_batch=100
 )
 
-# 4. Run likelihood analysis
-likelihood = tpl.XiLikelihood(xi_plus, xi_minus, angular_bins)
-posterior = likelihood.sample_posterior()
+# 5. Set up likelihood analysis
+likelihood = xlh.XiLikelihood(mask, redshift_bins, ang_bins_in_deg)
+likelihood.setup_likelihood()
+
+# 6. Evaluate likelihood with data
+# log_likelihood = likelihood.loglikelihood(data_vector, cosmology)
 ```
 
 ## Key Features
 
+- **Likelihood**: Exact likelihoods for correlation functions (currently only xi^+)
 - **Simulations**: Generate correlation functions from cosmological models
 - **Theory**: Compute power spectra and correlation functions
-- **Likelihood**: Bayesian parameter estimation
 - **Masks**: Handle realistic survey geometries
-- **Statistics**: Bootstrap resampling and moment calculations
 
 ## Dependencies
 
