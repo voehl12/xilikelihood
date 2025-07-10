@@ -16,6 +16,7 @@ import jax
 import jax.numpy as jnp
 from scipy.interpolate import UnivariateSpline
 from scipy.stats import multivariate_normal
+import warnings
 
 from .noise_utils import get_noisy_cl
 from .cl2xi_transforms import get_integrated_wigners, pcls2xis
@@ -505,44 +506,54 @@ def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
         DeprecationWarning,
         stacklevel=2
     )
-    raise NotImplementedError("Use likelihood module for new analyses")
+    
 
 
 
 def pdf_xi_1D(*args, **kwargs):
     """DEPRECATED: Use likelihood module instead."""
-    raise DeprecationWarning(
+    warnings.warn(
         "pdf_xi_1D is deprecated. Use likelihood module for new analyses. "
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+        "For reproducibility of first paper, see legacy/calc_pdf_v1.py",
+        DeprecationWarning,
+        stacklevel=2
     )
 
 def high_ell_gaussian_cf(t_lowell, cov_object, angbin):
     """DEPRECATED: Use high_ell_gaussian_cf_1d instead."""
-    raise DeprecationWarning(
+    warnings.warn(
         "high_ell_gaussian_cf is deprecated. Use high_ell_gaussian_cf_1d for new analyses. "
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+        "For reproducibility of first paper, see legacy/calc_pdf_v1.py",
+        DeprecationWarning,
+        stacklevel=2
     )
 
 def get_cf_nD(tset, mset, cov):
     """DEPRECATED: Use likelihood module instead."""
-    raise DeprecationWarning(
+    warnings.warn(
         "get_cf_nD is deprecated. Use likelihood module for new analyses. "
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+        "For reproducibility of first paper, see legacy/calc_pdf_v1.py",
+        DeprecationWarning,
+        stacklevel=2
     )
 
 def high_ell_gaussian_cf_nD(t_sets, mu, cov):
     """DEPRECATED: Use high_ell_gaussian_cf_1d instead."""
-    raise DeprecationWarning(
+    warnings.warn(
         "high_ell_gaussian_cf_nD is deprecated. Use high_ell_gaussian_cf_1d for new analyses. "
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+        "For reproducibility of first paper, see legacy/calc_pdf_v1.py",
+        DeprecationWarning,
+        stacklevel=2
     )
     # gauss_cf = helper_funcs.gaussian_cf_nD(t_sets, mu, cov)
     # return gauss_cf
 
 def generate_combinations(n):
-    raise DeprecationWarning(
+    warnings.warn(
         "generate_combinations is deprecated, use comb_mapper in theory_cl. "
-        "This will be removed in a future version."
+        "This will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2
     )
     combinations = []
     for i in range(n):
@@ -550,11 +561,12 @@ def generate_combinations(n):
             combinations.append([i, j])
     return np.array(combinations)
 
-
 def get_cov_n(comb):
-    raise DeprecationWarning(
+    warnings.warn(
         "get_cov_n is deprecated, use comb_mapper in theory_cl. "
-        "This will be removed in a future version."
+        "This will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2
     )
     row, column = get_cov_pos(comb)
     if row == 0:
@@ -564,11 +576,12 @@ def get_cov_n(comb):
         n = np.sum(rowlengths) + column
         return n
 
-
 def get_combs(cov_n):
-    raise DeprecationWarning(
+    warnings.warn(
         "get_combs is deprecated, use comb_mapper in theory_cl. "
-        "This will be removed in a future version."
+        "This will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2
     )
     row = -1
     sum_rows = 0
@@ -581,19 +594,25 @@ def get_combs(cov_n):
 
 def get_cov_pos(comb):
     """DEPRECATED: Use BinCombinationMapper instead."""
-    raise DeprecationWarning("Use BinCombinationMapper instead of get_cov_pos.")
+    warnings.warn(
+        "Use BinCombinationMapper instead of get_cov_pos.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if comb[0] < comb[1]:
         raise RuntimeError("Cross-correlation: provide combination with larger number first.")
     column = int(np.fabs(comb[1] - comb[0]))
     row = comb[0]
     return (row, column)
 
-
 def get_cov_triang(cov_objects):
     # order of cov_objects: as in GLASS gaussian fields creation
     """DEPRECATED: Use BinCombinationMapper instead."""
-
-    raise DeprecationWarning("Use BinCombinationMapper instead of get_cov_triang.")
+    warnings.warn(
+        "Use BinCombinationMapper instead of get_cov_triang.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     n = len(cov_objects)
     sidelen_xicov = int(0.5 * (-1 + np.sqrt(1 + 8 * n)))
     rowlengths = np.arange(1, sidelen_xicov + 1)
@@ -608,12 +627,13 @@ def calc_quadcf_1D(val_max, steps, cov, m, is_diag=False):
     """
     DEPRECATED: Use batched_cf_1d_jitted instead where eigenvalues are directly provided. Use likelihood module for new analyses.
     """
-    raise DeprecationWarning(
+    warnings.warn(
         "calc_quadcf_1D is deprecated. Use batched_cf_1d_jitted instead where eigenvalues are directly provided. "
         "Use likelihood module for new analyses."
-        "For reproducibility of first paper, see legacy/calc_pdf_v1.py"
+        "For reproducibility of first paper, see legacy/calc_pdf_v1.py",
+        DeprecationWarning,
+        stacklevel=2
     )
-
     all_dt = 0.45 * 2 * np.pi / val_max
     all_t0 = -0.5 * all_dt * (steps - 1)
     all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
