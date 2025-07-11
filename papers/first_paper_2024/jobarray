@@ -1,0 +1,13 @@
+#!/bin/bash
+
+#SBATCH -n 1024
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mem-per-cpu=4096
+#SBATCH --time=48:00:00                   
+#SBATCH --job-name=skew_plots
+#SBATCH --output=skew_plots_ell150.out
+#SBATCH --error=skew_plots.err
+
+module load gcc/8.2.0 cfitsio/4.0.0 fftw/3.3.5 python/3.11.2
+source plotenv/bin/activate 
+python  /cluster/home/veoehl/2ptlikelihood/paperplots.py
