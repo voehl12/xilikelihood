@@ -19,11 +19,17 @@ from scipy.stats import multivariate_normal
 import warnings
 
 from .noise_utils import get_noisy_cl
-from .cl2xi_transforms import get_integrated_wigners, pcls2xis
+from .cl2xi_transforms import get_integrated_wigners, pcls2xis, precompute_wigners_cache
 from .core_utils import check_property_equal
 from .theoretical_moments import get_moments_from_combination_matrix_1d
 
+# Constants
+FULL_SKY_AREA_DEG2 = 4 * np.pi * (180 / np.pi)**2  # Full sky area in square degrees
+
 __all__ = [
+    # Constants
+    'FULL_SKY_AREA_DEG2',
+    
     # Grid setup utilities
     'setup_t',
 
@@ -35,10 +41,10 @@ __all__ = [
     'batched_cf_1d_jitted',
     'high_ell_gaussian_cf_1d', 
     'cf_to_pdf_1d',
-    'get_exact'
+    'get_exact',
 
     # Normalization/Marginalization
-    'exp_norm_mean'
+    'exp_norm_mean',
        
     # Gaussian covariance functions
     'gaussian_2d',
@@ -235,13 +241,17 @@ def exp_norm_mean(x,posterior,reg=350):
         raise ValueError("No values in posterior satisfy the condition for normalization.")
     integral = np.trapz(posterior[cond], x=x[cond])
     if not np.isfinite(integral) or integral <= 0:
-        
-        debugfig, ax = plt.subplots()
-        ax.plot(x, posterior)
-        ax.set_yscale("log")
-        ax.set_title("Posterior not finite or integral <= 0")
-        debugfig.savefig("posterior_not_finite.png")
-        plt.close(debugfig)
+        # Import matplotlib only when needed for debugging
+        try:
+            import matplotlib.pyplot as plt
+            debugfig, ax = plt.subplots()
+            ax.plot(x, posterior)
+            ax.set_yscale("log")
+            ax.set_title("Posterior not finite or integral <= 0")
+            debugfig.savefig("posterior_not_finite.png")
+            plt.close(debugfig)
+        except ImportError:
+            pass  # Skip plotting if matplotlib not available
         raise ValueError("Integral of posterior is not finite or less than or equal to zero.")
     # check convergence
     conditioned_posterior = posterior[cond]
@@ -279,46 +289,73 @@ def gaussian_2d(xs,mean,cov):
     gaussian_pdf_reshaped = gaussian_pdf.reshape(shape)
     return gaussian_pdf_reshaped
 
-def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None):
+def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None, include_ximinus=True):
     # cov_xi_gaussian(lmin=0, noise_apo=False)
     # Calculates Gaussian  covariance (shot noise and sample variance) of a xi_plus correlation function
-    # cov_objects order like in GLASS. assume mask and lmax is the same as for cov_object[0] for all
+    # cl_objects order like in GLASS. assume mask and lmax is the same as for cl_object[0] for all
 
     # e.g. https://www.aanda.org/articles/aa/full_html/2018/07/aa32343-17/aa32343-17.html
 
-    # take only cl_objects, not covariance objects because they are really not needed and the noise is now part of the cl_objects
-
-    """assert len(redshift_bin_combs) == len(
-        angbins_in_deg
-    )"""  # need to specify the angular bins for each redshift bin combination, it's a bit more flexible than the likelihood setup
-
+    
     if lmax is None:
         if not check_property_equal(cl_objects, "lmax"):
-            raise RuntimeError("lmax not equal for all cl objects.")
+            raise ValueError("lmax not equal for all cl objects.")
         else:
             lmax = cl_objects[0].lmax
     cov_cl2 = cov_cl_nD(cl_objects, lmax, redshift_bin_combs=redshift_bin_combs)
 
-    fsky = eff_area / 41253  # assume that all fields have at least similar enough fsky
+    fsky = eff_area / FULL_SKY_AREA_DEG2  # assume that all fields have at least similar enough fsky
     c_tot = cov_cl2[:, :, lmin : lmax + 1] / fsky
     ell = 2 * np.arange(lmin, lmax + 1) + 1
-    xi_cov_shape = tuple(dim * len(angbins_in_deg) for dim in cov_cl2.shape[:2])
-    xi_cov = np.full(xi_cov_shape, np.nan)
-
-    n, m = 0, 0
-    for i in range(len(cov_cl2)):
-        for k in range(len(angbins_in_deg)):
-            m = 0
-            for j in range(len(cov_cl2)):
-                for l in range(len(angbins_in_deg)):
-                    if n <= m:
-                        # could get these for all bins before the loop
-                        wigners1 = get_integrated_wigners(lmin, lmax, angbins_in_deg[k])
-                        wigners2 = get_integrated_wigners(lmin, lmax, angbins_in_deg[l])
-                        xi_cov[n, m] = np.sum(wigners1 * wigners2 * c_tot[i, j] * ell)
-                    m += 1
-            n += 1
-    xi_cov = np.where(np.isnan(xi_cov), xi_cov.T, xi_cov)
+    
+    # Double angular bins if ximinus is included
+    n_angbins_orig = len(angbins_in_deg)
+    if include_ximinus:
+        n_angbins_effective = 2 * n_angbins_orig  # [xi+, xi+, ..., xi-, xi-, ...]
+    else:
+        n_angbins_effective = n_angbins_orig
+    
+    # Shape: (n_redshift_combs * n_angbins_effective, n_redshift_combs * n_angbins_effective)
+    n_redshift_combs = len(cov_cl2)
+    data_vector_size = n_redshift_combs * n_angbins_effective
+    xi_cov = np.zeros((data_vector_size, data_vector_size))
+    
+    # Pre-compute Wigner functions once
+    wigners_cache = precompute_wigners_cache(lmin, lmax, angbins_in_deg, include_ximinus)
+    
+    # Use np.ndindex to efficiently iterate over upper triangle only
+    for flat_idx1, flat_idx2 in np.ndindex(data_vector_size, data_vector_size):
+        # Only compute upper triangle (including diagonal)
+        if flat_idx1 <= flat_idx2:
+            # Convert flat indices back to (redshift_comb, angbin) pairs
+            i = flat_idx1 // n_angbins_effective  # redshift comb for first index
+            k = flat_idx1 % n_angbins_effective   # angular bin for first index
+            j = flat_idx2 // n_angbins_effective  # redshift comb for second index
+            l = flat_idx2 % n_angbins_effective   # angular bin for second index
+            
+            # Determine correlation type and original angular bin index
+            k_orig = k % n_angbins_orig
+            k_is_minus = k >= n_angbins_orig if include_ximinus else False
+            l_orig = l % n_angbins_orig  
+            l_is_minus = l >= n_angbins_orig if include_ximinus else False
+            
+            # Get appropriate Wigner functions from cache
+            if include_ximinus:
+                wigners1_plus, wigners1_minus = wigners_cache[angbins_in_deg[k_orig]]
+                wigners2_plus, wigners2_minus = wigners_cache[angbins_in_deg[l_orig]]
+                
+                wigners1 = wigners1_minus if k_is_minus else wigners1_plus
+                wigners2 = wigners2_minus if l_is_minus else wigners2_plus
+            else:
+                wigners1 = wigners_cache[angbins_in_deg[k_orig]][0]  # Only xi+ 
+                wigners2 = wigners_cache[angbins_in_deg[l_orig]][0]
+            
+            # Compute covariance element
+            xi_cov[flat_idx1, flat_idx2] = np.sum(wigners1 * wigners2 * c_tot[i, j] * ell)
+    
+    # Fill lower triangle by symmetry
+    xi_cov = xi_cov + xi_cov.T - np.diag(np.diag(xi_cov))
+    
     assert np.all(np.linalg.eigvals(xi_cov) >= 0), "Covariance matrix not positive-semidefinite"
     assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
 
@@ -351,7 +388,10 @@ def mean_xi_gaussian_nD(prefactors, pseudo_cl, lmin=0, lmax=None, kind="p"):
         return np.array(pcl_means_p)
     elif kind == "m":
         return np.array(pcl_means_m)
+    elif kind == "both":
+        return np.array(pcl_means_p), np.array(pcl_means_m)
     else:
+        # Default: return both for backward compatibility
         return np.array(pcl_means_p), np.array(pcl_means_m)
 
 
@@ -404,18 +444,18 @@ def cov_cl_nD(cl_objects, lmax, redshift_bin_combs=None, n_redshift_bins=None):
     ndarray
         Covariance matrix of shape (n_combinations, n_combinations, lmax+1)
     """
-    from theory_cl import BinCombinationMapper
+    from .theory_cl import BinCombinationMapper
     
     n_cl_objects = len(cl_objects)
     # Determine number of redshift bins and combinations
     if redshift_bin_combs is None:
         if n_redshift_bins is None:
-            raise RuntimeError("Provide either redshift_bin_combs or n_redshift_bins.")
+            raise ValueError("Provide either redshift_bin_combs or n_redshift_bins.")
         
         # Verify consistency
         expected_combinations = n_redshift_bins * (n_redshift_bins + 1) // 2
         if n_cl_objects != expected_combinations:
-            raise RuntimeError(
+            raise ValueError(
                 f"Number of cl_objects ({n_cl_objects}) not compatible with "
                 f"n_redshift_bins ({n_redshift_bins}). Expected {expected_combinations}."
             )

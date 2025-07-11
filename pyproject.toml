@@ -42,6 +42,7 @@ dynamic = ["version"]
 dev = [
     "pytest>=6.0.0",
     "pytest-cov>=2.0.0",
+    "pytest-regtest>=1.0.0",
     "black>=22.0.0",
     "flake8>=4.0.0",
     "isort>=5.0.0",
@@ -78,4 +79,6 @@ line_length = 88
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "--cov=xilikelihood --cov-report=html --cov-report=term-missing"
+# Coverage options - install with: pip install -e ".[dev]"
+# Comment out addopts line below if pytest-cov is not installed
+# addopts = "--cov=xilikelihood --cov-report=html --cov-report=term-missing"

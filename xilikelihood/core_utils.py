@@ -35,6 +35,9 @@ class LikelihoodConfig:
     log_memory_usage: bool = True
     max_memory_gb: float = 8.0
     
+    # Validation and debugging
+    validate_means: bool = False  # Expensive validation check for mean calculations
+    
     # File paths
     working_dir: Optional[str] = None
     

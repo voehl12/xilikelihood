@@ -275,7 +275,10 @@ class Cov:
             condition_number = np.max(eigenvals) / max(min_eigenval, 1e-16)
             
             if min_eigenval <= 0:
-                logger.warning(f"Non-positive definite matrix: min eigenvalue = {min_eigenval:.2e}")
+                if abs(min_eigenval) < 1e-15:
+                    logger.debug(f"Small negative eigenvalue (numerical precision): min eigenvalue = {min_eigenval:.2e}")
+                else:
+                    logger.warning(f"Non-positive definite matrix: min eigenvalue = {min_eigenval:.2e}")
             if condition_number > 1e12:
                 logger.warning(f"Ill-conditioned matrix: condition number = {condition_number:.2e}")
                 
@@ -511,6 +514,7 @@ class Cov:
     def load_cov(self):
         """Load covariance matrix using centralized file handling."""
         cov_dict = load_arrays(self.covalm_path, "cov")
+        print(cov_dict.keys())
         self.cov_alm = cov_dict['cov']
 
     def _get_pseudo_cl_path(self):

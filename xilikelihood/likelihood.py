@@ -6,8 +6,29 @@ cosmological parameters from shear correlation function measurements using
 characteristic function methods.
 
 Key features:
-- Exact low-ℓ likelihood via characteristic functions
-- Gaussian high-ℓ approximation for computational efficiency  
+- Exact low-ℓ likelihood via characteristic functions    def _compute_variances(self, auto_prods, cross_prods, cross_combs):
+        logger.info("Computing variances...")
+        auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
+        
+        # Handle doubled data vector when xi_minus is included
+        n_correlation_types = 2 if self.include_ximinus else 1
+        variances = np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
+
+        # Auto terms
+        variances[~self._is_cov_cross] = 2 * np.sum(
+            auto_prods * auto_transposes, axis=(-2, -1)
+        )
+
+        # Cross terms
+        cross_transposes = np.transpose(cross_prods, (0, 1, 3, 2))
+        auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
+        variances[self._is_cov_cross] = np.sum(
+            cross_prods * cross_transposes, axis=(-2, -1)
+        ) + np.sum(
+            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
+        )
+
+        return variancespproximation for computational efficiency  
 - Copula-based joint PDF construction
 - Support for tomographic redshift bins
 - JAX-optimized computations for performance
@@ -119,6 +140,7 @@ class XiLikelihood:
         exact_lmax: Optional[int] = None,
         lmax: Optional[int] = None,
         noise: str = 'default',
+        include_ximinus: bool = True,
         **kwargs
     ):
         # Input validation
@@ -128,8 +150,6 @@ class XiLikelihood:
         if not redshift_bins:
             raise ValueError("redshift_bins cannot be empty")
             
-        if len(ang_bins_in_deg) < 2:
-            raise ValueError("Need at least 2 angular bins")
             
         # Validate angular bins are in ascending order
         for i, (min_ang, max_ang) in enumerate(ang_bins_in_deg):
@@ -156,6 +176,7 @@ class XiLikelihood:
         self.mask = mask
         self.lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self.noise = noise
+        self.include_ximinus = include_ximinus
         
         # Angular bins
         self.ang_bins_in_deg = ang_bins_in_deg
@@ -200,7 +221,9 @@ class XiLikelihood:
         self._eff_area = self.mask.eff_area
 
     def prep_data_array(self):
-        return np.zeros((self._n_redshift_bin_combs, len(self.ang_bins_in_deg)))
+        # Data array size depends on whether xi_minus is included
+        n_correlation_types = 2 if self.include_ximinus else 1
+        return np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
 
     def check_pdfs(self):
         """
@@ -215,12 +238,32 @@ class XiLikelihood:
         )
         self._prefactors = prefactors
         len_sub_m = self._exact_lmax + 1
-        xiplus_prefactors = prefactors[:, 0, :self._exact_lmax + 1]  # Only xi_plus, now is (len(angles),exact_lmax+1) array
-        #ximinus_prefactors = prefactors[:, 1, :self._exact_lmax + 1]  # Only xi_minus
-        #m = 2 * np.repeat(prefactors[:, :, : self._exact_lmax + 1], len_sub_m, axis=2)
-        m_xiplus = 2 * np.repeat(xiplus_prefactors, len_sub_m, axis=1)
-        m_xiplus[ :, ::len_sub_m] *= 0.5
-        self._m_xiplus = np.tile(m_xiplus, (1, 4))
+        
+        if self.include_ximinus:
+            # Use both xi_plus and xi_minus prefactors
+            xiplus_prefactors = prefactors[:, 0, :self._exact_lmax + 1]
+            ximinus_prefactors = prefactors[:, 1, :self._exact_lmax + 1]
+            
+            # Create xi_plus matrices
+            m_xiplus = 2 * np.repeat(xiplus_prefactors, len_sub_m, axis=1)
+            m_xiplus[:, ::len_sub_m] *= 0.5
+            self._m_xiplus = np.tile(m_xiplus, (1, 4))
+            
+            # Create xi_minus matrices  
+            m_ximinus = 2 * np.repeat(ximinus_prefactors, len_sub_m, axis=1)
+            m_ximinus[:, ::len_sub_m] *= 0.5
+            self._m_ximinus = np.tile(m_ximinus, (1, 4))
+            
+            # Concatenate xi_plus and xi_minus matrices
+            # This preserves the is_cov_cross indexing for both correlation functions
+            self._m_combined = np.concatenate([self._m_xiplus, self._m_ximinus], axis=0)
+        else:
+            # Only xi_plus (legacy behavior)
+            xiplus_prefactors = prefactors[:, 0, :self._exact_lmax + 1]
+            m_xiplus = 2 * np.repeat(xiplus_prefactors, len_sub_m, axis=1)
+            m_xiplus[:, ::len_sub_m] *= 0.5
+            self._m_xiplus = np.tile(m_xiplus, (1, 4))
+            self._m_combined = self._m_xiplus
         
    
        
@@ -250,30 +293,57 @@ class XiLikelihood:
         with computation_phase("matrix products preparation", log_memory=self.config.log_memory_usage):
     
             covs = self._get_pseudo_alm_covariances()
+            # Use combined matrices for both xi_plus and xi_minus (or just xi_plus if flag is False)
             self._products = np.array(
-                [self._m_xiplus[:, :,None] * covs[i] for i in range(len(covs))]
-            )  # all angular bins eacn, all covariances
-            # products is a 4D array with shape (n_redshift_bin_combs, len(angular_bins), len(cov), len(cov))
-            # these means are not right yet, need to take care of the cross terms
+                [self._m_combined[:, :, None] * covs[i] for i in range(len(covs))]
+            )  # all angular bins each, all covariances, includes xi+ and optionally xi-
+            # products shape: (n_redshift_bin_combs, n_correlation_types*len(angular_bins), len(cov), len(cov))
+            
             logger.info("Calculating 1D means...")
-            einsum_means = np.einsum("cbll->cb", self._products.copy())
             self.pseudo_cl = cl2pseudocl(self.mask.m_llp, self._theory_cl)
-            self._means_lowell = mean_xi_gaussian_nD(
-                self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax
-            )
-            diff = einsum_means - self._means_lowell
-        
-            if np.any(np.abs(diff) > 1e-10):
-                logger.error("Means do not match: %s, %s", einsum_means, self._means_lowell)
-                # raise RuntimeError("Means do not match")
+            
+            if self.include_ximinus:
+                # Calculate both xi_plus and xi_minus means at once
+                means_both = mean_xi_gaussian_nD(
+                    self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax, kind="both"
+                )
+                means_xiplus, means_ximinus = means_both
+                # Concatenate along the angular bin axis (axis=1), not redshift bin axis (axis=0)
+                self._means_lowell = np.concatenate([means_xiplus, means_ximinus], axis=1)
+            else:
+                # Only xi_plus
+                self._means_lowell = mean_xi_gaussian_nD(
+                    self._prefactors, self.pseudo_cl, lmin=0, lmax=self._exact_lmax, kind="p"
+                )
+            
+            # Optional validation check (can be expensive for large matrices)
+            if self.config.validate_means:
+                logger.info("Validating means with einsum computation...")
+                einsum_means = np.einsum("cbll->cb", self._products.copy())
+                diff = einsum_means - self._means_lowell
+                
+                if np.any(np.abs(diff) > 1e-10):
+                    logger.error("Means do not match: max diff = %.2e", np.max(np.abs(diff)))
+                    logger.error("Einsum means: %s", einsum_means)
+                    logger.error("Analytical means: %s", self._means_lowell)
+                    # raise RuntimeError("Means do not match")
+                else:
+                    logger.debug("Means validation passed: max diff = %.2e", np.max(np.abs(diff)))
+                
+                if self.config.enable_memory_cleanup:
+                    del einsum_means, diff
+            
             if self.config.enable_memory_cleanup:
-                del covs, einsum_means, diff
+                del covs
             
         
     def _compute_variances(self, auto_prods, cross_prods, cross_combs):
         logger.info("Computing variances...")
         auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
-        variances = np.zeros((self._n_redshift_bin_combs, len(self.ang_bins_in_deg)))
+        
+        # Handle doubled data vector when xi_minus is included
+        n_correlation_types = 2 if self.include_ximinus else 1
+        variances = np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
 
         # Auto terms
         variances[~self._is_cov_cross] = 2 * np.sum(
@@ -331,9 +401,13 @@ class XiLikelihood:
             
             logger.info("Starting CF computation...")
         
-            self._variances = np.zeros((self._n_redshift_bin_combs, len(self.ang_bins_in_deg)))
+            # Handle doubled data vector when xi_minus is included
+            n_correlation_types = 2 if self.include_ximinus else 1
+            n_data_points = n_correlation_types * len(self.ang_bins_in_deg)
+            
+            self._variances = np.zeros((self._n_redshift_bin_combs, n_data_points))
             self._eigvals = jnp.zeros(
-                (self._n_redshift_bin_combs, len(self.ang_bins_in_deg), 2 * len(self._products[0, 0])),
+                (self._n_redshift_bin_combs, n_data_points, 2 * len(self._products[0, 0])),
                 dtype=complex,
             )
             products = self._products.view()
@@ -369,16 +443,19 @@ class XiLikelihood:
     def get_covariance_matrix_lowell(self):
         # get the covariance matrix for the full data vector exact part
         # use products of combination matrix and pseudo alm covariance
-        cov_length = self._n_redshift_bin_combs * len(self.ang_bins_in_deg)
+        n_correlation_types = 2 if self.include_ximinus else 1
+        n_data_points_per_redshift = n_correlation_types * len(self.ang_bins_in_deg)
+        cov_length = self._n_redshift_bin_combs * n_data_points_per_redshift
         self._cov_lowell = np.full((cov_length, cov_length), np.nan)
 
         i = 0
         products = self._products.copy()
         for rcomb1 in self._numerical_redshift_bin_combinations:
-            for k in range(len(self.ang_bins_in_deg)):
+            # Iterate over all data points (xi+ and optionally xi- for each angular bin)
+            for k in range(n_data_points_per_redshift):
                 j = 0
                 for rcomb2 in self._numerical_redshift_bin_combinations:
-                    for l in range(len(self.ang_bins_in_deg)):
+                    for l in range(n_data_points_per_redshift):
                         if i <= j:
                             all_combs = [
                                 (rcomb1[0], rcomb2[0]),
@@ -400,7 +477,8 @@ class XiLikelihood:
                             )
                         j += 1
                 i += 1
-            # xi_cov = np.where(np.isnan(xi_cov), xi_cov.T, xi_cov)
+        
+        # Fill lower triangle by symmetry
         self._cov_lowell = np.where(
             np.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
         )
@@ -416,18 +494,30 @@ class XiLikelihood:
             self._eff_area,
             lmin=self._exact_lmax + 1,
             lmax=self.lmax,
+            include_ximinus=self.include_ximinus,
         )
 
     def _get_means_highell(self):
         # get the mean for the full data vector Gaussian part
-        self._means_highell = mean_xi_gaussian_nD(
-            self._prefactors, self.pseudo_cl, lmin=self._exact_lmax + 1, lmax=self.lmax
-        )
+        if self.include_ximinus:
+            # Calculate both xi_plus and xi_minus means for high-ell
+            means_both = mean_xi_gaussian_nD(
+                self._prefactors, self.pseudo_cl, lmin=self._exact_lmax + 1, lmax=self.lmax, kind="both"
+            )
+            means_xiplus, means_ximinus = means_both
+            # Concatenate along the angular bin axis (axis=1)
+            self._means_highell = np.concatenate([means_xiplus, means_ximinus], axis=1)
+        else:
+            # Only xi_plus (legacy behavior)
+            self._means_highell = mean_xi_gaussian_nD(
+                self._prefactors, self.pseudo_cl, lmin=self._exact_lmax + 1, lmax=self.lmax
+            )
 
     def _get_cfs_1d_highell(self):
         # get the Gaussian cf for the high ell part
         vars = np.diag(self._cov_highell)
-        vars = vars.reshape((self._n_redshift_bin_combs, len(self.ang_bins_in_deg)))
+        n_correlation_types = 2 if self.include_ximinus else 1
+        vars = vars.reshape((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
 
         return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
 

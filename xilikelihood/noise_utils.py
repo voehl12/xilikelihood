@@ -144,6 +144,6 @@ def get_noisy_cl(cl_objects, lmax):
 
                 cl_e += noise_E
                 cl_b += noise_B
-        cl_es.append(cl_e)
-        cl_bs.append(cl_b)
+        cl_es.append(cl_e[:lmax + 1])
+        cl_bs.append(cl_b[:lmax + 1])
     return tuple(cl_es), tuple(cl_bs)

@@ -1,26 +1,24 @@
 import numpy as np
 from nautilus import Prior, Sampler
-from likelihood import XiLikelihood, fiducial_dataspace
-from mask_props import SphereMask
+import xilikelihood as xili
 from functools import partial
 
 
 exact_lmax = 30
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
+mask = xili.SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
 
 
-redshift_bins, ang_bins_in_deg = fiducial_dataspace()
+redshift_bins, ang_bins_in_deg = xili.fiducial_dataspace()
 ang_bins_in_deg = ang_bins_in_deg[:-1]
 
 
 
-mock_data = np.load("fiducial_data_10000sqd.npz")["data"]
-gaussian_covariance = np.load("gaussian_covariance_10000sqd.npz")["cov"]
+mock_data = np.load("../data/fiducial_data_10000sqd.npz")["data"]
+gaussian_covariance = np.load("../data/gaussian_covariance_10000sqd.npz")["cov"]
 
-xilikelihood = XiLikelihood(
+xilikelihood = xili.XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg)
-xilikelihood.initiate_mask_specific()
-xilikelihood.precompute_combination_matrices()
+xilikelihood.setup_likelihood()
 
 xilikelihood.gaussian_covariance = gaussian_covariance
 

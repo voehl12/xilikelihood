@@ -434,12 +434,12 @@ class SphereMask:
             return "partially_computed"
 
     def save_w_arr(self):
-        save_arrays(data={"wpm0": self._w_arr}, path=self.wpm_path)
+        save_arrays(data={"wpm0": self._w_arr}, filepath=self.wpm_path)
         
 
     def save_mllp_arr(self):
         """Save M_ll' arrays to disk."""
-        save_arrays(data={"m_llp_p": self._m_llp[0], "m_llp_m": self._m_llp[1]}, path=self.mllp_path)
+        save_arrays(data={"m_llp_p": self._m_llp[0], "m_llp_m": self._m_llp[1]}, filepath=self.mllp_path)
 
     def load_w_arr(self):
         """Load WPM arrays from disk."""

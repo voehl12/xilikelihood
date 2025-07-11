@@ -87,6 +87,10 @@ likelihood.setup_likelihood()
 - **Theory**: Compute power spectra and correlation functions
 - **Masks**: Handle realistic survey geometries
 
+### Planned Features
+- **ξ⁻ likelihood support**: Extension to include xi_minus correlations
+- **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
+
 ## Dependencies
 
 ### Required Dependencies

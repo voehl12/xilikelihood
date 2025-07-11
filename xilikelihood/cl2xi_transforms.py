@@ -432,6 +432,22 @@ def get_int_lims(bin_in_deg):
     binmin_in_deg, binmax_in_deg = bin_in_deg
     return np.radians(binmin_in_deg), np.radians(binmax_in_deg)
 
+def precompute_wigners_cache(lmin, lmax, angbins_in_deg, include_ximinus=True):
+    """
+    Pre-compute all needed Wigner integrals once.
+    
+    Returns
+    -------
+    dict
+        Cache with angular bins as keys, Wigner arrays as values
+    """
+    cache = {}
+    for angbin in angbins_in_deg:
+        if include_ximinus:
+            cache[angbin] = get_integrated_wigners_both(lmin, lmax, angbin)
+        else:
+            cache[angbin] = (get_integrated_wigners(lmin, lmax, angbin), None)
+    return cache
 
 def get_integrated_wigners(lmin, lmax, bin_in_deg):
     wigner_int = lambda theta_in_rad: theta_in_rad * wigner.wigner_dl(
@@ -442,6 +458,34 @@ def get_integrated_wigners(lmin, lmax, bin_in_deg):
     integrated_wigners = quad_vec(wigner_int, lower, upper)[0]
     norm = 1 / (4 * np.pi)
     return norm * integrated_wigners * t_norm
+
+
+def get_integrated_wigners_both(lmin, lmax, bin_in_deg):
+    """
+    Get integrated Wigner d-functions for both xi_plus and xi_minus.
+    
+    Returns
+    -------
+    tuple
+        (wigners_plus, wigners_minus) for (2,2) and (2,-2) spin combinations
+    """
+    # Define separate integration functions
+    def wigner_int_plus(theta_in_rad):
+        return theta_in_rad * wigner.wigner_dl(lmin, lmax, 2, 2, theta_in_rad)
+    
+    def wigner_int_minus(theta_in_rad):
+        return theta_in_rad * wigner.wigner_dl(lmin, lmax, 2, -2, theta_in_rad)
+    
+    lower, upper = get_int_lims(bin_in_deg)
+    t_norm = 2 / (upper**2 - lower**2)
+    norm = 1 / (4 * np.pi)
+    
+    # Separate integrations for each function
+    integrated_plus = quad_vec(wigner_int_plus, lower, upper)[0]
+    integrated_minus = quad_vec(wigner_int_minus, lower, upper)[0]
+    
+    return (norm * integrated_plus * t_norm, 
+            norm * integrated_minus * t_norm)
 
 
 

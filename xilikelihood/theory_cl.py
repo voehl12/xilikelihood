@@ -226,30 +226,42 @@ class TheoryCl:
         self.set_noise_sigma()  # Recalculate noise when sigma_e changes
 
     def set_noise_sigma(self):
-
-        if self._sigma_e is not None:
-            if isinstance(self._sigma_e, str):
-                self._noise_sigma = noise_utils.get_noise_cl()
-                self.sigmaname = "noise" + self._sigma_e
-
-            elif isinstance(self._sigma_e, tuple):
-                self._noise_sigma = noise_utils.get_noise_cl(*self._sigma_e)
-                self.sigmaname = "noise" + str(self._sigma_e).replace(".", "")
-
-            else:
-                raise RuntimeError(
-                    "sigma_e needs to be string for default or tuple (sigma_e,n_gal)"
-                )
-            self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
-            if self.smooth_signal is not None:
-                self.noise_cl *= self.smooth_array
+        """Set noise sigma and related attributes based on sigma_e type."""
+        if self._sigma_e is None:
+            self._set_no_noise()
+            return
+            
+        self._compute_noise_sigma()
+        self._create_noise_cl()
+        
+    def _set_no_noise(self):
+        """Configure for no noise case."""
+        self.sigmaname = "nonoise"
+        if hasattr(self, '_noise_sigma'):
+            delattr(self, '_noise_sigma')
+            
+    def _compute_noise_sigma(self):
+        """Compute noise sigma based on sigma_e type."""
+        if isinstance(self._sigma_e, str):
+            self._noise_sigma = noise_utils.get_noise_cl()
+            self.sigmaname = f"noise{self._sigma_e}"
+            
+        elif isinstance(self._sigma_e, tuple):
+            self._noise_sigma = noise_utils.get_noise_cl(*self._sigma_e)
+            sigma_str = str(self._sigma_e).replace(".", "")
+            self.sigmaname = f"noise{sigma_str}"
+            
         else:
-            self.sigmaname = "nonoise"
-            try:
-                del self._noise_sigma
-
-            except:
-                pass
+            raise ValueError(
+                "sigma_e must be either a string for default noise or "
+                "a tuple (sigma_e, n_gal) for custom noise parameters"
+            )
+            
+    def _create_noise_cl(self):
+        """Create the noise power spectrum array."""
+        self.noise_cl = np.ones(self.lmax + 1) * self._noise_sigma
+        if self.smooth_signal is not None:
+            self.noise_cl *= self.smooth_array
 
     def read_clfile(self):
         clpath = Path(self.clpath)
