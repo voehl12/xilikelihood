@@ -39,15 +39,12 @@ result = xlh.simulate_correlation_functions(
     theory_cls, [mask], angular_bins_in_deg, n_batch=100
 )
 
-# Extract results
+print(f"Generated xi for {len(angular_bins_in_deg)} angular bins")
+print(f"Simulation shape: xi_plus {result['xi_plus'].shape}, xi_minus {result['xi_minus'].shape}")
+
+# Extract results explicitly
 xi_plus = result['xi_plus']
 xi_minus = result['xi_minus']
-theta_list = result['theta']
-
-print(f"Generated xi for {len(angular_bins_in_deg)} angular bins")
-print(f"Simulation shape: xi_plus {xi_plus.shape}, xi_minus {xi_minus.shape}")
-
-# Extract angular scales (bin centers)
 theta = np.array([(bins[0] + bins[1])/2 for bins in angular_bins_in_deg])
 ```
 
@@ -57,9 +54,14 @@ theta = np.array([(bins[0] + bins[1])/2 for bins in angular_bins_in_deg])
 # Plot the correlation functions
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-# Xi plus - take mean over simulations
+# Compute statistics
 xip_mean = np.mean(xi_plus, axis=0)
-ax1.errorbar(theta, xip_mean[0, 0], fmt='o-', label='ξ₊')
+xip_std = np.std(xi_plus, axis=0)
+xim_mean = np.mean(xi_minus, axis=0)
+xim_std = np.std(xi_minus, axis=0)
+
+# Xi plus
+ax1.errorbar(theta, xip_mean[0, :], yerr=xip_std[0, :], fmt='o-', label='ξ₊')
 ax1.set_xlabel('θ (degrees)')
 ax1.set_ylabel('ξ₊(θ)')
 ax1.set_xscale('log')
@@ -68,16 +70,14 @@ ax1.grid(True, alpha=0.3)
 ax1.legend()
 ax1.set_title('Xi Plus')
 
-# Xi minus - take mean over simulations
-xim_mean = np.mean(xi_minus, axis=0)
-ax2.errorbar(theta, np.abs(xim_mean[0, 0]), fmt='s-', label='|ξ₋|', color='orange')
+# Xi minus (can be negative!)
+ax2.errorbar(theta, xim_mean[0, :], yerr=xim_std[0, :], fmt='s-', label='ξ₋', color='orange')
 ax2.set_xlabel('θ (degrees)')
-ax2.set_ylabel('|ξ₋(θ)|')
+ax2.set_ylabel('ξ₋(θ)')
 ax2.set_xscale('log')
-ax2.set_yscale('log')
 ax2.grid(True, alpha=0.3)
 ax2.legend()
-ax2.set_title('Xi Minus (absolute value)')
+ax2.set_title('Xi Minus')
 
 plt.tight_layout()
 plt.show()

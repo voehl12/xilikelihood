@@ -57,7 +57,8 @@ angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
 # redshift_bins, angular_bins_in_deg = xlh.fiducial_dataspace()
 
 # 3. Prepare theory inputs and generate power spectra
-numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper = xlh.prepare_theory_cl_inputs(redshift_bins) # by default with shot noise
+numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, 
+mapper = xlh.prepare_theory_cl_inputs(redshift_bins) # by default with shot noise
 theory_cls = xlh.generate_theory_cl(
     mask.lmax,
     redshift_bin_combinations,
