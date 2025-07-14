@@ -23,15 +23,14 @@ from . import pseudo_alm_cov
 __all__ = [
     # Main workflow functions
     'simulate_correlation_functions',
-    'TwoPointSimulation',
     'generate_theory_cl', 
     'prepare_theory_cl_inputs',
-    'XiLikelihood',
     'fiducial_dataspace',
     
     # Essential objects
     'SphereMask',
     'RedshiftBin',
+    'XiLikelihood',
     
     # Key utilities
     'save_arrays',
