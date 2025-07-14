@@ -47,6 +47,8 @@ papers/paper2_copula_likelihood/
 ### REMAINING TASKS
 - [x] **Update SLURM scripts** - Still reference old `s8_example.py` path
 - [x] **Integrate config.py** - `s8_posteriors.py` has duplicate config 
+- [x] **Confirm xi-minus support** - Verified working through existing architecture
+- [ ] **Scale-dependent marginals** - Implement scale cuts for Gaussian marginals
 - [ ] **Clean function names** (optional) - `posterior_from_1d_firstpaper()` → `posterior_from_measurement()`
 
 ## ✅ REFACTORING COMPLETE!
@@ -59,5 +61,10 @@ All major tasks have been completed successfully:
 - ✅ Comprehensive documentation and README
 - ✅ Updated job submission scripts
 - ✅ Integrated config.py across all analysis files
+- ✅ Confirmed xi-minus support working correctly
 
 The S8 analysis pipeline is now well-organized and maintainable!
+
+## 🚀 NEXT: Scale-Dependent Marginals
+
+Implement scale cuts for Gaussian marginals to enable scale-dependent analysis.

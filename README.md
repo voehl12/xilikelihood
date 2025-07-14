@@ -1,6 +1,7 @@
 # xilikelihood
 
 Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood.
+Spin-0 fields are not fully supported yet.
 
 ## Installation
 
