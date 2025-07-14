@@ -1,33 +1,29 @@
-from plotting import plot_corner
 import numpy as np
-from likelihood import XiLikelihood, fiducial_dataspace
-from mask_props import SphereMask
 import os
 from itertools import product, combinations
-import shutil  # Add this import for deleting files
-
-exact_lmax = 30
-fiducial_cosmo = {
-    
-    "omega_m": 0.31,  # Matter density parameter
-    "s8": 0.8,  # Amplitude of matter fluctuations
-}
-
-mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=exact_lmax, l_smooth=30)
+import xilikelihood as xlh
+from xilikelihood.plotting import plot_corner
+from config import (
+    EXACT_LMAX,
+    FIDUCIAL_COSMO,
+    MASK_CONFIG,
+)
 
 
-redshift_bins, ang_bins_in_deg = fiducial_dataspace()
+mask = xlh.SphereMask(MASK_CONFIG['spins'], MASK_CONFIG['circmaskattr'], exact_lmax=EXACT_LMAX, l_smooth=MASK_CONFIG['l_smooth'])
+
+
+redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
 
 rs = np.array([2,4])
 ab = np.array([2, 3])
 rs_selection = [redshift_bins[i] for i in rs]
 ab_selection = [ang_bins_in_deg[i] for i in ab]
 print(ab_selection)
-likelihood = XiLikelihood(
+likelihood = xlh.XiLikelihood(
         mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None)
-likelihood.initiate_mask_specific()
-likelihood.precompute_combination_matrices()
-likelihood._prepare_likelihood_components(fiducial_cosmo,highell=True)
+likelihood.setup_likelihood()
+likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=True)
 #xs,pdfs = likelihood._xs,likelihood._pdfs
 data_subset = list(product(np.arange(3), np.arange(2)))
 
