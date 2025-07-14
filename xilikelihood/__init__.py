@@ -6,7 +6,7 @@ xilikelihood: Two-point correlation function likelihood analysis.
 __version__ = "0.1.0"
 
 # Core user-facing functions
-from .simulate import simulate_correlation_functions, TwoPointSimulation
+from .simulate import simulate_correlation_functions
 from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin
 from .likelihood import XiLikelihood, fiducial_dataspace
 from .mask_props import SphereMask
