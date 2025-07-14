@@ -239,12 +239,14 @@ class XiLikelihood:
 
     def precompute_combination_matrices(self):
         # prefactors is a 3D array with shape (len(angles), 2, out_lmax)
+        # only necessary for exact data dimensions: idea: only pass large angles, or actually...
         prefactors = prep_prefactors(
             self.ang_bins_in_deg, self.mask.wl, self.lmax, self.lmax
         )
+        # ...compute prefactors for all angles, because needed for means and covariances also for Gaussian marginals
         self._prefactors = prefactors
         len_sub_m = self._exact_lmax + 1
-        
+        # need all combination matrices because we need products of all scales for full covariance matrix
         if self.include_ximinus:
             # Use both xi_plus and xi_minus prefactors
             xiplus_prefactors = prefactors[:, 0, :self._exact_lmax + 1]
@@ -316,6 +318,7 @@ class XiLikelihood:
                 means_xiplus, means_ximinus = means_both
                 # Concatenate along the angular bin axis (axis=1), not redshift bin axis (axis=0)
                 self._means_lowell = np.concatenate([means_xiplus, means_ximinus], axis=1)
+                # should contain means for all scales
             else:
                 # Only xi_plus
                 self._means_lowell = mean_xi_gaussian_nD(
@@ -324,6 +327,7 @@ class XiLikelihood:
             
             # Optional validation check (can be expensive for large matrices)
             if self.config.validate_means:
+                # careful, this can only be run if all scales are included in the _products....
                 logger.info("Validating means with einsum computation...")
                 einsum_means = np.einsum("cbll->cb", self._products.copy())
                 diff = einsum_means - self._means_lowell
@@ -409,14 +413,15 @@ class XiLikelihood:
         
             # Handle doubled data vector when xi_minus is included
             n_correlation_types = 2 if self.include_ximinus else 1
-            n_data_points = n_correlation_types * len(self.ang_bins_in_deg)
+            n_data_points = n_correlation_types * len(self.ang_bins_in_deg) # need to adjust to only large angles here
             
             self._variances = np.zeros((self._n_redshift_bin_combs, n_data_points))
             self._eigvals = jnp.zeros(
                 (self._n_redshift_bin_combs, n_data_points, 2 * len(self._products[0, 0])),
                 dtype=complex,
             )
-            products = self._products.view()
+            products = self._products.view() # extract large scale products at this point, possibly use data_subset
+            # Make products read-only to prevent accidental modifications
             products.flags.writeable = False
             cross_prods = products[self._is_cov_cross]
             auto_prods = products[~self._is_cov_cross]
@@ -438,7 +443,7 @@ class XiLikelihood:
                 self._eigvals = self._eigvals.at[self._is_cov_cross].set(cross_eigvals)
 
             # Compute CFs
-            self._t_lowell, self._cfs_lowell = self._compute_cfs()
+            self._t_lowell, self._cfs_lowell = self._compute_cfs() # now should only have the large scales
 
             # Cleanup
             if self.config.enable_memory_cleanup:
@@ -449,6 +454,7 @@ class XiLikelihood:
     def get_covariance_matrix_lowell(self):
         # get the covariance matrix for the full data vector exact part
         # use products of combination matrix and pseudo alm covariance
+        # here I need products of all scales - maybe keep products after all
         n_correlation_types = 2 if self.include_ximinus else 1
         n_data_points_per_redshift = n_correlation_types * len(self.ang_bins_in_deg)
         cov_length = self._n_redshift_bin_combs * n_data_points_per_redshift
@@ -470,7 +476,7 @@ class XiLikelihood:
                                 (rcomb1[0], rcomb2[1]),
                             ]
                             sorted = [tuple(np.sort(comb)[::-1]) for comb in all_combs]
-                            # fix with combination mapper:
+                            
                             cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
                             # make this into a jax function? is quite slow...
                             self._cov_lowell[i, j] = np.sum(
@@ -538,6 +544,8 @@ class XiLikelihood:
             self._cfs = self._cfs_lowell
         # need to build in a test here checking that the boundaries of the pdfs are converged to zero
         self._marginals = cf_to_pdf_1d(self._t_lowell, self._cfs)
+        # these marginals now need to be extended with the gaussian small scale end. make sure this extension is in 1st axis (angles axis)
+        # after that, marginals should be usable as before and no other changes should be necessary
         return self._marginals
 
     def gauss_compare(self, data, data_subset=None):
