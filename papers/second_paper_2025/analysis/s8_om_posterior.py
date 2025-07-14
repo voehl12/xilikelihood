@@ -3,6 +3,15 @@ import time
 import sys, os
 import logging
 from pathlib import Path
+from config import (
+    EXACT_LMAX,
+    FIDUCIAL_COSMO, 
+    DATA_DIR,
+    MASK_CONFIG,
+    PARAM_GRIDS,
+    N_JOBS_2D,
+    DATA_FILES
+)
 
 # Configure logging
 logging.basicConfig(
@@ -42,11 +51,15 @@ except ValueError as e:
     sys.exit(1)
 
 # Setup analysis parameters
-EXACT_LMAX = 30
 logger.info(f"Setting up analysis with exact_lmax={EXACT_LMAX}")
 
 try:
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=EXACT_LMAX, l_smooth=30)
+    mask = xlh.SphereMask(
+        spins=MASK_CONFIG["spins"], 
+        circmaskattr=MASK_CONFIG["circmaskattr"], 
+        exact_lmax=EXACT_LMAX, 
+        l_smooth=MASK_CONFIG["l_smooth"]
+    )
     logger.info("Created spherical mask")
     
     redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
@@ -59,13 +72,13 @@ except Exception as e:
 
 # Load data files with error checking
 try:
-    if not Path("fiducial_data_1000sqd.npz").exists():
+    if not Path(DATA_FILES["1000sqd"]["mock_data"]).exists():
         raise FileNotFoundError("fiducial_data_1000sqd.npz not found")
-    if not Path("gaussian_covariance_1000sqd.npz").exists():
+    if not Path(DATA_FILES["1000sqd"]["covariance"]).exists():
         raise FileNotFoundError("gaussian_covariance_1000sqd.npz not found")
-        
-    mock_data = np.load("fiducial_data_1000sqd.npz")["data"]
-    gaussian_covariance = np.load("gaussian_covariance_1000sqd.npz")["cov"]
+
+    mock_data = xlh.load_arrays(DATA_FILES["1000sqd"]["mock_data"])["data"]
+    gaussian_covariance = xlh.load_arrays(DATA_FILES["1000sqd"]["covariance"])["cov"]
     logger.info(f"Loaded data: shape {mock_data.shape}, covariance: shape {gaussian_covariance.shape}")
     
 except Exception as e:
@@ -86,13 +99,15 @@ except Exception as e:
 
 
 # Set up parameter grid
-omega_m_prior = np.linspace(0.1, 0.5, 100)
-s8_prior = np.linspace(0.5, 1.1, 100)
+omega_m_min, omega_m_max, omega_m_points = PARAM_GRIDS["omega_m"]
+s8_min, s8_max, s8_points = PARAM_GRIDS["s8"]
+
+omega_m_prior = np.linspace(omega_m_min, omega_m_max, omega_m_points)
+s8_prior = np.linspace(s8_min, s8_max, s8_points)
 prior_pairs = np.meshgrid(omega_m_prior, s8_prior)
 prior_pairs = np.vstack([prior_pairs[0].ravel(), prior_pairs[1].ravel()]).T
 
-n_jobs = 500
-split_prior_pairs = np.array_split(prior_pairs, n_jobs)
+split_prior_pairs = np.array_split(prior_pairs, N_JOBS_2D)
 
 # Validate job number
 if jobnumber >= len(split_prior_pairs):
@@ -101,7 +116,7 @@ if jobnumber >= len(split_prior_pairs):
 
 # Get the subset for the current job
 subset_pairs = split_prior_pairs[jobnumber]
-logger.info(f"Processing {len(subset_pairs)} parameter combinations for job {jobnumber + 1}/{n_jobs}")
+logger.info(f"Processing {len(subset_pairs)} parameter combinations for job {jobnumber + 1}/{N_JOBS_2D}")
 
 # Set up output directory
 output_dir = Path("/cluster/scratch/veoehl/posteriors")

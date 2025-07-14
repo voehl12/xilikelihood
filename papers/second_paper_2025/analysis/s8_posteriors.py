@@ -14,27 +14,38 @@ from time import time
 from pathlib import Path
 import xilikelihood as xlh
 from mock_data_generation import create_mock_data
+from config import (
+    EXACT_LMAX, 
+    FIDUCIAL_COSMO, 
+    DATA_DIR, 
+    OUTPUT_DIR, 
+    MASK_CONFIG,
+    S8_GRIDS,
+    REDSHIFT_BINS_PATH,
+    DATA_FILES,
+    ANG_BINS
+)
 
 # Add package root to path
 package_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(package_root))
 
-
-# Configuration
-EXACT_LMAX = 30
-FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
-DATA_DIR = Path(__file__).parent / "data"
-OUTPUT_DIR = Path(__file__).parent / "data" / "s8posts"
+# Ensure output directory exists
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 
 def setup_likelihood_1d_example(create_data=False):
     """Set up standard likelihood configuration."""
-    ang_bin_in_deg = [(2,3)]
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256), 
-                     exact_lmax=EXACT_LMAX, l_smooth=30)
+    ang_bin_in_deg = ANG_BINS
+    mask = xlh.SphereMask(
+        spins=MASK_CONFIG["spins"], 
+        circmaskattr=MASK_CONFIG["circmaskattr"], 
+        exact_lmax=EXACT_LMAX, 
+        l_smooth=MASK_CONFIG["l_smooth"]
+    )
 
-    redshift_bin = xlh.RedshiftBin(5, filepath='redshift_bins/KiDS/K1000_NS_V1.0.0A_ugriZYJHKs_photoz_SG_mask_LF_svn_309c_2Dbins_v2_DIRcols_Fid_blindC_TOMO5_Nz.txt')
+    redshift_bin = xlh.RedshiftBin(5, filepath=REDSHIFT_BINS_PATH / 'K1000_NS_V1.0.0A_ugriZYJHKs_photoz_SG_mask_LF_svn_309c_2Dbins_v2_DIRcols_Fid_blindC_TOMO5_Nz.txt')
 
     rs_bins = [redshift_bin]
 
@@ -42,8 +53,8 @@ def setup_likelihood_1d_example(create_data=False):
         mask=mask, redshift_bins=rs_bins,
         ang_bins_in_deg=ang_bin_in_deg, noise=None
     )
-    mock_data_path = DATA_DIR+"mock_data_10000sqd_nonoise_firstpaper.npz"
-    gaussian_covariance_path = DATA_DIR+"gaussian_covariance_10000sqd_nonoise_firstpaper.npz"
+    mock_data_path = DATA_DIR / DATA_FILES["1d_firstpaper"]["mock_data"]
+    gaussian_covariance_path = DATA_DIR / DATA_FILES["1d_firstpaper"]["covariance"]
     data_paths = mock_data_path, gaussian_covariance_path
     if create_data:
         create_mock_data(likelihood, mock_data_path, gaussian_covariance_path, random='frommap')
@@ -51,7 +62,12 @@ def setup_likelihood_1d_example(create_data=False):
     return likelihood, data_paths
 
 def setup_likelihood_nd_example(create_data=False):
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=EXACT_LMAX, l_smooth=30)
+    mask = xlh.SphereMask(
+        spins=MASK_CONFIG["spins"], 
+        circmaskattr=MASK_CONFIG["circmaskattr"], 
+        exact_lmax=EXACT_LMAX, 
+        l_smooth=MASK_CONFIG["l_smooth"]
+    )
 
 
     redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
@@ -59,8 +75,8 @@ def setup_likelihood_nd_example(create_data=False):
     likelihood = xlh.XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,noise=None)
 
-    mock_data_path = DATA_DIR+"mock_data_10000sqd_nonoise.npz"
-    gaussian_covariance_path = DATA_DIR+"gaussian_covariance_10000sqd_nonoise.npz"
+    mock_data_path = DATA_DIR / DATA_FILES["nd_analysis"]["mock_data"]
+    gaussian_covariance_path = DATA_DIR / DATA_FILES["nd_analysis"]["covariance"]
     data_paths = mock_data_path, gaussian_covariance_path
     if create_data:
         create_mock_data(likelihood, mock_data_path, gaussian_covariance_path, random='frommap')
@@ -74,11 +90,13 @@ def setup_likelihood_nd_example(create_data=False):
 def posterior_from_1d_autocorr(jobnumber,likelihood,data):
     # jobnumber gives redshift-bin, angular separation bin pair, so as many jobs as there are redshift bins times angular separation bins are recommended.
     if jobnumber < 5:
-        s8 = np.linspace(0.7, 0.9, 200)
+        s8_min, s8_max, s8_points = S8_GRIDS["narrow"]
     elif jobnumber < 10:
-        s8 = np.linspace(0.6, 1.0, 200)
+        s8_min, s8_max, s8_points = S8_GRIDS["medium"] 
     else:
-        s8 = np.linspace(0.4, 1.2, 200)
+        s8_min, s8_max, s8_points = S8_GRIDS["wide"]
+    
+    s8 = np.linspace(s8_min, s8_max, s8_points)
     
     redshift_bins = likelihood.redshift_bins
     ang_bins_in_deg = likelihood.ang_bins_in_deg
@@ -122,7 +140,7 @@ def posterior_from_1d_autocorr(jobnumber,likelihood,data):
 
 
     np.savez(
-        OUTPUT_DIR+'/s8posts/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_auto.npz'.format(jobnumber),
+        OUTPUT_DIR / 's8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_auto.npz'.format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,

@@ -3,21 +3,25 @@ import os
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from plotting import plot_2D
+from config import PARAM_GRIDS, N_JOBS_2D
 
-njobs = 500
-omega_m_prior = np.linspace(0.1, 0.5, 100)
-s8_prior = np.linspace(0.5, 1.1, 100)
+# Use configuration values
+omega_m_min, omega_m_max, omega_m_points = PARAM_GRIDS["omega_m"]
+s8_min, s8_max, s8_points = PARAM_GRIDS["s8"]
+
+omega_m_prior = np.linspace(omega_m_min, omega_m_max, omega_m_points)
+s8_prior = np.linspace(s8_min, s8_max, s8_points)
 prior_pairs = np.meshgrid(omega_m_prior, s8_prior)
 prior_pairs = np.vstack([prior_pairs[0].ravel(), prior_pairs[1].ravel()]).T
 
-split_prior_pairs = np.array_split(prior_pairs, njobs)
+split_prior_pairs = np.array_split(prior_pairs, N_JOBS_2D)
 
 # Initialize 2D grids for posteriors
 exact_posteriors_2d = np.full((len(s8_prior), len(omega_m_prior)), -np.inf)
 gauss_posteriors_2d = np.full((len(s8_prior), len(omega_m_prior)), -np.inf)
 
 # Load all posterior files
-for jobnumber in range(njobs):
+for jobnumber in range(N_JOBS_2D):
     filepath = f"/cluster/scratch/veoehl/posteriors/posterior_{jobnumber}.npy"
     if os.path.exists(filepath):  # Check if the file exists
         data = np.load(filepath, allow_pickle=True)
