@@ -40,6 +40,15 @@ PARAM_GRIDS = {
 # Job configuration
 N_JOBS_2D = 500  # For s8_om_posterior.py
 
+# Scale cuts for marginal analysis
+SCALE_CUTS = {
+    "large_scales": {"min_arcmin": 15, "max_arcmin": 300},    # Conservative linear scales
+    "medium_scales": {"min_arcmin": 5, "max_arcmin": 50},    # Intermediate scales  
+    "small_scales": {"min_arcmin": 0.5, "max_arcmin": 15},   # Non-linear scales
+    "all_scales": {"min_arcmin": 0.5, "max_arcmin": 300},    # Full range
+    "custom": {"min_arcmin": None, "max_arcmin": None}       # User-defined
+}
+
 # File naming patterns
 DATA_FILES = {
     "1d_firstpaper": {
