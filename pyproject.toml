@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xilikelihood"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Veronika Oehl", email = "veoehl@phys.ethz.ch"},
 ]
 description = "Two-point correlation function (xi) likelihood for cosmic shear surveys"
 readme = "README.md"
@@ -54,10 +54,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/xilikelihood"
-"Bug Tracker" = "https://github.com/yourusername/xilikelihood/issues"
+Homepage = "https://github.com/veoehl12/xilikelihood"
+"Bug Tracker" = "https://github.com/veoehl12/xilikelihood/issues"
 Documentation = "https://xilikelihood.readthedocs.io/"
-"Source Code" = "https://github.com/yourusername/xilikelihood"
+"Source Code" = "https://github.com/veoehl12/xilikelihood"
 
 [tool.setuptools]
 packages = ["xilikelihood"]
