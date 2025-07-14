@@ -50,6 +50,12 @@ from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
 from scipy.stats import multivariate_normal
 
+# Configure JAX for CPU-only execution to avoid CUDA issues
+if "JAX_PLATFORM_NAME" not in os.environ:
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+if "JAX_PLATFORMS" not in os.environ:
+    os.environ["JAX_PLATFORMS"] = "cpu"
+
 # Graceful JAX import
 try:
     import jax.numpy as jnp

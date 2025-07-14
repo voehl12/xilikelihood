@@ -11,6 +11,13 @@ For legacy functions from first paper, see deprecation warnings.
 New analyses should primarily use the likelihood module.
 """
 
+import os
+# Configure JAX for CPU-only execution to avoid CUDA issues
+if "JAX_PLATFORM_NAME" not in os.environ:
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+if "JAX_PLATFORMS" not in os.environ:
+    os.environ["JAX_PLATFORMS"] = "cpu"
+
 import numpy as np
 import jax
 import jax.numpy as jnp

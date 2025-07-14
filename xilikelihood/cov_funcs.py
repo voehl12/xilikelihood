@@ -18,6 +18,14 @@ mode coupling induced by the mask.
 """
 
 import numpy as np
+
+# Configure JAX for CPU-only execution to avoid CUDA issues
+import os
+if "JAX_PLATFORM_NAME" not in os.environ:
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+if "JAX_PLATFORMS" not in os.environ:
+    os.environ["JAX_PLATFORMS"] = "cpu"
+
 import jax.numpy as jnp
 import jax
 from jax import lax
