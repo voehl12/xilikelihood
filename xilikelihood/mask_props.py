@@ -18,7 +18,7 @@ import healpy as hp
 # Local imports
 from . import wpm_funcs
 from . import cov_funcs
-from .file_handling import save_arrays, load_arrays, generate_filename, check_for_file
+from .file_handling import save_arrays, load_arrays, generate_filename, check_for_file, ensure_directory_exists
 from .core_utils import computation_phase
 
 logger = logging.getLogger(__name__)
@@ -238,7 +238,11 @@ class SphereMask:
         self.area = area
         self.nside = nside
         self.name = f"circ{area:.0f}"
-        self.maskpath = Path(f"circular_{area:.0f}sqd_nside{nside}.fits")
+        
+        # Create masks directory and set path
+        masks_dir = Path("masks")
+        ensure_directory_exists(str(masks_dir))
+        self.maskpath = masks_dir / f"circular_{area:.0f}sqd_nside{nside}.fits"
         
         if self.maskpath.exists():
             self.mask = hp.read_map(str(self.maskpath))
@@ -270,7 +274,12 @@ class SphereMask:
         self.nside = nside
         npix = hp.nside2npix(nside)
         self.mask = np.ones(npix)
-        self.maskpath = Path(f"fullsky_nside{nside}.fits")
+        
+        # Create masks directory and set path
+        masks_dir = Path("masks")
+        ensure_directory_exists(str(masks_dir))
+        self.maskpath = masks_dir / f"fullsky_nside{nside}.fits"
+        
         self.name = "fullsky"
         self.area = hp.nside2pixarea(nside, degrees=True) * npix
         hp.write_map(str(self.maskpath), self.mask, overwrite=True)
