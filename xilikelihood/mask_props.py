@@ -179,7 +179,7 @@ class SphereMask:
             self.l_smooth = l_smooth
         
         self._apply_smoothing()
-        self.name += f"_smoothl{self.l_smooth}"
+        self.name += f"smoothl{self.l_smooth}"
         # Reset all cached arrays since mask has changed
         self._reset_arrays()
 
