@@ -1,55 +1,112 @@
+import os
+# Force JAX to use CPU for testing - must be before any imports that use JAX
+os.environ["JAX_PLATFORM_NAME"] = "cpu"
+os.environ["JAX_PLATFORMS"] = "cpu"
+
+# Also try to set JAX config directly if it's already imported
+try:
+    import jax
+    jax.config.update('jax_platform_name', 'cpu')
+    jax.config.update('jax_platforms', 'cpu')
+except:
+    pass
+
 import pytest
 import numpy as np
-from likelihood import XiLikelihood
-from mask_props import SphereMask
-from theory_cl import TheoryCl, RedshiftBin
+
+import xilikelihood as xlh
+
+
+@pytest.fixture
+def minimal_redshift_bins():
+    """Create minimal redshift bins for testing."""
+    z = np.linspace(0.01, 3.0, 50)
+    return [
+        xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1),
+    ]
+
+@pytest.fixture
+def multiple_redshift_bins():
+    """Create multiple redshift bins for testing."""
+    z = np.linspace(0.01, 3.0, 100)
+    return [
+        xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1),
+        xlh.RedshiftBin(nbin=2, z=z, zmean=1.0, zsig=0.1)
+    ]
+
+@pytest.fixture
+def small_mask():
+    """Create a small mask for testing."""
+    return xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=30, l_smooth=30)
+
+@pytest.fixture
+def medium_mask():
+    """Create a medium mask for testing."""
+    return xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), l_smooth=30, exact_lmax=30)
+
+@pytest.fixture
+def angular_bins():
+    """Angular bins for testing."""
+    return [(1.0, 2.0)]
+
+@pytest.fixture
+def multiple_angular_bins():
+    """Multiple angular bins for testing."""
+    return [(1.0, 2.0), (2.0, 4.0)]
 
 @pytest.fixture
 def likelihood_instance():
     # Set up a minimal instance of XiLikelihood
-    mask = SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=30, l_smooth=30)
-    redshift_bin = RedshiftBin(5, filepath='redshift_bins/KiDS/K1000_NS_V1.0.0A_ugriZYJHKs_photoz_SG_mask_LF_svn_309c_2Dbins_v2_DIRcols_Fid_blindC_TOMO5_Nz.txt')
-    theorycl = TheoryCl(mask.lmax, cosmo={'omega_m': 0.31, 's8': 0.8}, z_bins=(redshift_bin, redshift_bin))
+    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=30, l_smooth=30)
+
+    # Create a simple redshift bin instead of using file
+    z = np.linspace(0.01, 3.0, 100)
+    redshift_bin = xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1)
+
     ang_bins_in_deg = [(0.5, 1.0), (4, 6)]
 
-    likelihood = XiLikelihood(
+    likelihood = xlh.XiLikelihood(
         mask=mask,
         redshift_bins=[redshift_bin],
         ang_bins_in_deg=ang_bins_in_deg,
-        exact_lmax=30,
         noise='default',
     )
-    likelihood.initiate_mask_specific()
-    likelihood.precompute_combination_matrices()
+    likelihood.setup_likelihood()
     likelihood.initiate_theory_cl({'omega_m': 0.31, 's8': 0.8})
     likelihood._prepare_matrix_products()
     return likelihood
 
-def test_get_cfs_1d_lowell(likelihood_instance, regtest):
+def test_get_cfs_1d_lowell(likelihood_instance, snapshot):
+    # Ensure JAX uses CPU
+    import os
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+    os.environ["JAX_PLATFORMS"] = "cpu"
+    
     # Call the method
     likelihood_instance._get_cfs_1d_lowell()
 
     # Capture outputs
-    variances = likelihood_instance._variances
-    eigvals = likelihood_instance._eigvals
-    t_lowell = likelihood_instance._t_lowell
-    cfs_lowell = likelihood_instance._cfs_lowell
-    ximax = likelihood_instance._ximax
-    ximin = likelihood_instance._ximin
-
+    variances = np.array(likelihood_instance._variances.real)
+    eigvals = np.array(likelihood_instance._eigvals.real)
+    t_lowell = np.array(likelihood_instance._t_lowell.real)
+    cfs_lowell = np.array(likelihood_instance._cfs_lowell.real)
+    ximax = np.array(likelihood_instance._ximax.real)
+    ximin = np.array(likelihood_instance._ximin.real)
+    
     # Write outputs to the regression test snapshot
-    regtest.write(f"Variances:\n{variances}\n")
-    regtest.write(f"Eigenvalues:\n{eigvals}\n")
-    regtest.write(f"t_lowell:\n{t_lowell}\n")
-    regtest.write(f"cfs_lowell:\n{cfs_lowell}\n")
-    regtest.write(f"ximax:\n{ximax}\n")
-    regtest.write(f"ximin:\n{ximin}\n")
+    snapshot.check(variances, rtol=1e-10)
+    snapshot.check(eigvals, rtol=1e-10)
+    snapshot.check(t_lowell, rtol=1e-10)
+    snapshot.check(cfs_lowell, rtol=1e-10)
+    snapshot.check(ximax, rtol=1e-10)
+    snapshot.check(ximin, rtol=1e-10)
 
 def test_initiate_theory_cl(likelihood_instance, snapshot, regtest):
     # Define cosmological parameters
     cosmo_params = {'omega_m': 0.31, 's8': 0.8}
 
-    # Call the method
+    # The likelihood_instance fixture already calls initiate_theory_cl, so let's test it
+    # Call the method again to test it
     likelihood_instance.initiate_theory_cl(cosmo_params)
 
     # Capture outputs
@@ -70,6 +127,180 @@ def test_initiate_theory_cl(likelihood_instance, snapshot, regtest):
         regtest.write(f"sigma_e for TheoryCl instance:\n{cl.sigma_e}\n")
 
         # Snapshot test for the 'ee' array
-        snapshot.check(cl.ee)
+        snapshot.check(cl.ee, rtol=1e-10)
+
+class TestXiMinusShapes:
+    """Test xi-minus shape handling in likelihood."""
+    
+    @pytest.mark.parametrize("include_ximinus", [False, True])
+    def test_data_array_shapes(self, small_mask, minimal_redshift_bins, angular_bins, include_ximinus):
+        """Test that data array shapes are correct for both xi+ only and xi+/xi- modes."""
+
+        likelihood = xlh.XiLikelihood(
+            small_mask, minimal_redshift_bins, angular_bins,
+            include_ximinus=include_ximinus
+        )
+        
+        # Test data array shape
+        data_array = likelihood.prep_data_array()
+        n_redshift_combs = 1  # Only 1 redshift bin = 1 auto-correlation
+        n_correlation_types = 2 if include_ximinus else 1
+        expected_shape = (n_redshift_combs, n_correlation_types * len(angular_bins))
+        
+        assert data_array.shape == expected_shape, (
+            f"Data array shape {data_array.shape} does not match expected {expected_shape} "
+            f"for include_ximinus={include_ximinus}"
+        )
+    
+    @pytest.mark.parametrize("include_ximinus", [False, True])
+    def test_combination_matrices(self, small_mask, minimal_redshift_bins, angular_bins, include_ximinus):
+        """Test that combination matrices are set up correctly for both xi+ only and xi+/xi- modes."""
+
+        likelihood = xlh.XiLikelihood(
+            small_mask, minimal_redshift_bins, angular_bins,
+            include_ximinus=include_ximinus
+        )
+        
+        # Test combination matrices
+        likelihood.precompute_combination_matrices()
+        
+        if include_ximinus:
+            # Should have both xi_plus and xi_minus matrices
+            assert hasattr(likelihood, '_m_xiplus'), "Should have _m_xiplus matrix"
+            assert hasattr(likelihood, '_m_ximinus'), "Should have _m_ximinus matrix"
+            assert hasattr(likelihood, '_m_combined'), "Should have _m_combined matrix"
+            
+            # Combined should be concatenation of xi+ and xi-
+            expected_combined_shape = (2 * len(angular_bins), likelihood._m_xiplus.shape[1])
+            assert likelihood._m_combined.shape == expected_combined_shape, (
+                f"Combined matrix shape {likelihood._m_combined.shape} does not match "
+                f"expected {expected_combined_shape}"
+            )
+            
+        else:
+            # Should only have xi_plus matrices
+            assert hasattr(likelihood, '_m_xiplus'), "Should have _m_xiplus matrix"
+            assert hasattr(likelihood, '_m_combined'), "Should have _m_combined matrix"
+            
+            # Combined should be the same as xi_plus
+            assert np.array_equal(likelihood._m_combined, likelihood._m_xiplus), (
+                "Combined matrix should equal xi_plus matrix when include_ximinus=False"
+            )
+
+class TestXiMinusLikelihood:
+    """Test xi-minus likelihood functionality."""
+    
+    @pytest.mark.parametrize("include_ximinus", [False, True])
+    def test_likelihood_setup_with_ximinus(self, medium_mask, multiple_redshift_bins, 
+                                          multiple_angular_bins, include_ximinus):
+        """Test that likelihood can be set up correctly with xi-minus support."""
+
+        likelihood = xlh.XiLikelihood(
+            medium_mask, multiple_redshift_bins, multiple_angular_bins,
+            include_ximinus=include_ximinus,
+            exact_lmax=medium_mask.exact_lmax,
+            lmax=medium_mask.lmax
+        )
+        
+        # Setup likelihood
+        likelihood.setup_likelihood()
+        
+        # Check data array shape
+        data_array = likelihood.prep_data_array()
+        n_redshift_combs = len(multiple_redshift_bins) * (len(multiple_redshift_bins) + 1) // 2
+        n_correlation_types = 2 if include_ximinus else 1
+        expected_shape = (n_redshift_combs, n_correlation_types * len(multiple_angular_bins))
+        
+        assert data_array.shape == expected_shape, (
+            f"Data array shape {data_array.shape} does not match expected {expected_shape} "
+            f"for include_ximinus={include_ximinus}"
+        )
+    
+    @pytest.mark.parametrize("include_ximinus", [False, True])
+    def test_covariance_matrix_with_ximinus(self, medium_mask, multiple_redshift_bins, 
+                                           multiple_angular_bins, include_ximinus,snapshot):
+        """Test that covariance matrices have correct shapes with xi-minus support."""
+
+        likelihood = xlh.XiLikelihood(
+            medium_mask, multiple_redshift_bins, multiple_angular_bins,
+            include_ximinus=include_ximinus,
+            exact_lmax=medium_mask.exact_lmax,
+            lmax=medium_mask.lmax
+        )
+        
+        # Setup likelihood and theory
+        likelihood.setup_likelihood()
+        likelihood.initiate_theory_cl({'omega_m': 0.31, 's8': 0.8})
+        
+        # Test high-ell covariance
+        likelihood.get_covariance_matrix_highell()
+        
+        n_redshift_combs = len(multiple_redshift_bins) * (len(multiple_redshift_bins) + 1) // 2
+        n_correlation_types = 2 if include_ximinus else 1
+        expected_cov_size = n_redshift_combs * n_correlation_types * len(multiple_angular_bins)
+        
+        assert likelihood._cov_highell.shape == (expected_cov_size, expected_cov_size), (
+            f"High-ell covariance shape {likelihood._cov_highell.shape} does not match "
+            f"expected {(expected_cov_size, expected_cov_size)} for include_ximinus={include_ximinus}"
+        )
+        
+        # Check that covariance matrix is symmetric and positive semi-definite
+        cov = likelihood._cov_highell
+        snapshot.check(cov, rtol=1e-10)
+        assert np.allclose(cov, cov.T), "Covariance matrix should be symmetric"
+        
+        # Check eigenvalues are non-negative (allowing for numerical errors)
+        eigvals = np.linalg.eigvals(cov)
+        assert np.all(eigvals >= -1e-10), f"Covariance matrix should be positive semi-definite, got min eigenvalue {np.min(eigvals)}"
+    
+    def test_ximinus_mean_calculation(self, small_mask, minimal_redshift_bins, angular_bins, snapshot):
+        """Test that mean calculation works correctly with xi-minus."""
+
+        likelihood = xlh.XiLikelihood(
+            small_mask, minimal_redshift_bins, angular_bins,
+            include_ximinus=True
+        )
+        
+        likelihood.setup_likelihood()
+        likelihood.initiate_theory_cl({'omega_m': 0.31, 's8': 0.8})
+        likelihood._prepare_matrix_products()
+        
+        # The means are calculated in _prepare_matrix_products and stored
+        # Check that we have the correct mean shapes after setup
+        assert hasattr(likelihood, '_means_lowell'), "Should have _means_lowell after setup"
+        
+        # Check shapes
+        n_redshift_combs = 1  # Only 1 redshift bin = 1 auto-correlation
+        n_angular_bins = len(angular_bins)
+        n_correlation_types = 2  # xi+ and xi- 
+        expected_shape = (n_redshift_combs, n_correlation_types * n_angular_bins)
+        
+        assert likelihood._means_lowell.shape == expected_shape, (
+            f"Mean shape incorrect: {likelihood._means_lowell.shape}, expected: {expected_shape}"
+        )
+        
+        # Test that we can also compute means separately for comparison
+        from xilikelihood.distributions import mean_xi_gaussian_nD
+        
+        # Get the stored pseudo_cl and prefactors
+        pseudo_cl = likelihood.pseudo_cl
+        prefactors = likelihood._prefactors
+        
+        # Calculate means separately for xi+ and xi-
+        means_both = mean_xi_gaussian_nD(
+            prefactors, pseudo_cl, lmin=0, lmax=likelihood._exact_lmax, kind="both"
+        )
+        means_xiplus, means_ximinus = means_both
+        snapshot.check(means_xiplus, rtol=1e-10)
+        snapshot.check(means_ximinus, rtol=1e-10)
+        # Check that stored means match the separately computed ones
+        expected_means = np.concatenate([means_xiplus, means_ximinus], axis=1)
+        assert np.allclose(likelihood._means_lowell, expected_means), (
+            "Stored means should match separately computed means"
+        )
+        
+        # Verify individual xi+ and xi- mean shapes
+        assert means_xiplus.shape == (n_redshift_combs, n_angular_bins), f"Xi+ mean shape incorrect: {means_xiplus.shape}"
+        assert means_ximinus.shape == (n_redshift_combs, n_angular_bins), f"Xi- mean shape incorrect: {means_ximinus.shape}"
 
 

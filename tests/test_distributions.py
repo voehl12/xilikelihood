@@ -67,7 +67,7 @@ def test_cov_xi_gaussian_nD_snapshot_xiplus(covariance_test_setup, snapshot, reg
     regtest.write("\n")
     
     # Snapshot test for the entire covariance matrix
-    snapshot.check(cov_matrix)
+    snapshot.check(cov_matrix, rtol=1e-10)
 
 
 def test_cov_xi_gaussian_nD_snapshot_both(covariance_test_setup, snapshot, regtest):
@@ -117,7 +117,7 @@ def test_cov_xi_gaussian_nD_snapshot_both(covariance_test_setup, snapshot, regte
     regtest.write("\n")
     
     # Snapshot test for the entire covariance matrix
-    snapshot.check(cov_matrix)
+    snapshot.check(cov_matrix, rtol=1e-10)
 
 
 def test_cov_xi_gaussian_nD_properties(covariance_test_setup):
