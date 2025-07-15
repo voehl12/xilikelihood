@@ -564,16 +564,18 @@ def data_subset(data, subset):
     -------
     ndarray
         Subset of the data. If the input is 3D, the third axis is preserved.
+        For 2D data, always returns shape (n_rs_combs_subset, n_ang_bins_subset),
+        where the axes correspond to all unique redshift and angular bin indices in the subset.
     """
     rs_combs_indices, ang_indices = zip(*subset)
+    rs_combs_indices = np.unique(rs_combs_indices)
+    ang_indices = np.unique(ang_indices)
 
-    # Handle 2D or 3D data
     if data.ndim == 2:
-        # For 2D data, directly index the first two axes
-        return data[rs_combs_indices, ang_indices]
+        # Return all combinations of unique redshift and angular bin indices
+        return data[np.ix_(rs_combs_indices, ang_indices)]
     elif data.ndim == 3:
-        # For 3D data, preserve the third axis
-        return data[rs_combs_indices, ang_indices, :]
+        return data[np.ix_(rs_combs_indices, ang_indices, np.arange(data.shape[2]))]
     else:
         raise ValueError("data must be a 2D or 3D array.")
 
