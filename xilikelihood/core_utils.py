@@ -49,6 +49,52 @@ class LikelihoodConfig:
             raise ValueError("ximax_sigma_factor must be positive")
         if self.ximin_sigma_factor <= 0:
             raise ValueError("ximin_sigma_factor must be positive")
+        
+
+
+# ============================================================================
+# JAX availability
+# ============================================================================
+
+import os
+import sys
+
+def ensure_jax_device():
+    """
+    Ensure JAX uses a working backend (GPU if available, otherwise CPU).
+    If GPU is unavailable or initialization fails, force CPU and restart the script.
+    Call this BEFORE importing jax anywhere else.
+    """
+    if os.environ.get("JAX_PLATFORM_NAME", "").lower() == "cpu":
+        print("JAX_PLATFORM_NAME is already set to CPU. Skipping device check.")
+        return
+
+    try:
+        import jax
+        import jax.numpy as jnp
+        devices = jax.devices()
+        gpu_devices = [d for d in devices if d.platform in ['gpu', 'cuda', 'rocm']]
+        if gpu_devices:
+            try:
+                with jax.default_device(gpu_devices[0]):
+                    x = jnp.array([1.0, 2.0, 3.0])
+                    y = jnp.sum(x)
+                    _ = y.devices()
+                print(f"JAX GPU backend is available: {gpu_devices}")
+                return
+            except Exception as gpu_error:
+                print(f"JAX GPU test failed: {gpu_error}")
+        else:
+            print("No JAX GPU devices found.")
+    except Exception as e:
+        print(f"JAX import/device check failed: {e}")
+
+    print("Forcing JAX to CPU backend and restarting script...")
+    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+    sys.modules.pop("jax", None)
+    sys.modules.pop("jax.numpy", None)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 
 # ============================================================================
 # Context Managers for Memory Management
