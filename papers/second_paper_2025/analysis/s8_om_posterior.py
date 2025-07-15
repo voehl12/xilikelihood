@@ -24,18 +24,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Set JAX to use CPU before importing xilikelihood
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["JAX_PLATFORM_NAME"] = "cpu" 
-logger.info("Set JAX to use CPU")
-
-try:
-    import xilikelihood as xlh
-    logger.info("Successfully imported xilikelihood")
-except ImportError as e:
-    logger.error(f"Failed to import xilikelihood: {e}")
-    sys.exit(1)
-
 # Validate command line arguments
 if len(sys.argv) != 2:
     logger.error("Usage: python s8_om_posterior.py <job_number>")
@@ -49,7 +37,7 @@ try:
 except ValueError as e:
     logger.error(f"Invalid job number: {e}")
     sys.exit(1)
-
+import xilikelihood as xlh
 # Setup analysis parameters
 logger.info(f"Setting up analysis with exact_lmax={EXACT_LMAX}")
 
