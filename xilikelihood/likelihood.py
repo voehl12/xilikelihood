@@ -15,8 +15,8 @@ Key features:
         variances = np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
 
         # Auto terms
-        variances[~self._is_cov_cross] = 2 * np.sum(
-            auto_prods * auto_transposes, axis=(-2, -1)
+        variances = variances.at[~self._is_cov_cross].set(
+            2 * np.sum(auto_prods * auto_transposes, axis=(-2, -1))
         )
 
         # Cross terms
@@ -46,19 +46,16 @@ import os
 import re
 import logging
 import gc
+import time
 from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
-from scipy.stats import multivariate_normal
 
-# Configure JAX for CPU-only execution to avoid CUDA issues
-if "JAX_PLATFORM_NAME" not in os.environ:
-    os.environ["JAX_PLATFORM_NAME"] = "cpu"
-if "JAX_PLATFORMS" not in os.environ:
-    os.environ["JAX_PLATFORMS"] = "cpu"
+from scipy.stats import multivariate_normal
 
 # Graceful JAX import
 try:
     import jax.numpy as jnp
+    import jax
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
@@ -348,34 +345,35 @@ class XiLikelihood:
             
         
     def _compute_variances(self, auto_prods, cross_prods, cross_combs):
+        # eventually remove and use get_covariance_lowell
         logger.info("Computing variances...")
-        auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
+        auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
         
         # Handle doubled data vector when xi_minus is included
         n_correlation_types = 2 if self.include_ximinus else 1
-        variances = np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
+        variances = jnp.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
 
         # Auto terms
-        variances[~self._is_cov_cross] = 2 * np.sum(
-            auto_prods * auto_transposes, axis=(-2, -1)
+        variances = variances.at[~self._is_cov_cross].set(
+            2 * jnp.sum(auto_prods * auto_transposes, axis=(-2, -1))
         )
 
         # Cross terms
-        cross_transposes = np.transpose(cross_prods, (0, 1, 3, 2))
+        cross_transposes = jnp.transpose(cross_prods, (0, 1, 3, 2))
         auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
-        variances[self._is_cov_cross] = np.sum(
+        variances = variances.at[self._is_cov_cross].set(jnp.sum(
             cross_prods * cross_transposes, axis=(-2, -1)
-        ) + np.sum(
-            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
+        ) + jnp.sum(
+            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
         )
-
-        return variances
+        logger.info("Variances computed.")
+        return np.asarray(variances)
     
     def _compute_auto_eigenvalues(self, auto_prods):
         logger.info("Computing auto eigenvalues...")
         # shape (n_redshift_bins, len(angular_bins),len(cov))
-        auto_prods = jnp.array(auto_prods)
-        eigvals_auto, _ = jnp.linalg.eig(auto_prods)
+        auto_prods_cpu = jax.device_put(jnp.array(auto_prods), device=jax.devices("cpu")[0])
+        eigvals_auto, _ = jnp.linalg.eig(auto_prods_cpu)
         eigvals_auto_padded = jnp.pad(
             eigvals_auto, ((0, 0), (0, 0), (0, eigvals_auto.shape[-1])), "constant"
         )
@@ -385,16 +383,35 @@ class XiLikelihood:
         logger.info("Computing cross eigenvalues...")
         # shape (n_redshift_bin_cross_combs, len(angular_bins), 2*len(cov), 2*len(cov))
         cross_eigvals = []
-        for c, comb in enumerate(cross_combs):
+        # Preallocate output array for eigenvalues
+        n_cross = len(cross_combs)
+        # Assume eigvals shape is (len(angular_bins)*2, ) for each mat (adjust if needed)
+        # We'll get the shape from the first computation
+        if n_cross == 0:
+            return jnp.array([])
+        # Compute shape from first matrix
+        diag_elem = cross_prods[0]
+        off_diag_elem_1 = auto_prods[cross_combs[0][0]]
+        off_diag_elem_2 = auto_prods[cross_combs[0][1]]
+        mat = 0.5 * jnp.block(
+            [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
+        )
+        mat_cpu = jax.device_put(mat, device=jax.devices("cpu")[0])
+        eigvals0 = jnp.linalg.eigvals(mat_cpu)
+        eigval_shape = eigvals0.shape
+        cross_eigvals = jnp.zeros((n_cross,) + eigval_shape, dtype=eigvals0.dtype)
+        cross_eigvals = cross_eigvals.at[0].set(eigvals0)
+        for c, comb in enumerate(cross_combs[1:], start=1):
             diag_elem = cross_prods[c]
             off_diag_elem_1 = auto_prods[comb[0]]
             off_diag_elem_2 = auto_prods[comb[1]]
-            mat = 0.5 * np.block(
+            mat = 0.5 * jnp.block(
                 [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
             )
-            eigvals = np.linalg.eigvals(mat)
-            cross_eigvals.append(eigvals)
-        return jnp.array(cross_eigvals)
+            mat_cpu = jax.device_put(mat, device=jax.devices("cpu")[0])
+            eigvals = jnp.linalg.eigvals(mat_cpu)
+            cross_eigvals = cross_eigvals.at[c].set(eigvals)
+        return cross_eigvals
     
     def _compute_cfs(self):
         """Compute characteristic functions using configured parameters."""
@@ -403,7 +420,7 @@ class XiLikelihood:
         t_lowell, cfs_lowell = batched_cf_1d_jitted(
             self._eigvals, self._ximax, steps=self.config.cf_steps
         )
-        return np.array(t_lowell), np.array(cfs_lowell)
+        return np.asarray(t_lowell), np.asarray(cfs_lowell)
 
     def _get_cfs_1d_lowell(self):
         """Compute characteristic functions for low-ell part."""
@@ -423,8 +440,8 @@ class XiLikelihood:
             products = self._products.view() # extract large scale products at this point, possibly use data_subset
             # Make products read-only to prevent accidental modifications
             products.flags.writeable = False
-            cross_prods = products[self._is_cov_cross]
-            auto_prods = products[~self._is_cov_cross]
+            cross_prods = jnp.array(products[self._is_cov_cross])
+            auto_prods = jnp.array(products[~self._is_cov_cross])
             if self.config.enable_memory_cleanup:
                 del products
 
@@ -458,10 +475,10 @@ class XiLikelihood:
         n_correlation_types = 2 if self.include_ximinus else 1
         n_data_points_per_redshift = n_correlation_types * len(self.ang_bins_in_deg)
         cov_length = self._n_redshift_bin_combs * n_data_points_per_redshift
-        self._cov_lowell = np.full((cov_length, cov_length), np.nan)
+        self._cov_lowell = jnp.full((cov_length, cov_length), jnp.nan)
 
         i = 0
-        products = self._products.copy()
+        products = jnp.array(self._products.copy())
         for rcomb1 in self._numerical_redshift_bin_combinations:
             # Iterate over all data points (xi+ and optionally xi- for each angular bin)
             for k in range(n_data_points_per_redshift):
@@ -479,22 +496,25 @@ class XiLikelihood:
                             
                             cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
                             # make this into a jax function? is quite slow...
-                            self._cov_lowell[i, j] = np.sum(
-                                [
-                                    np.sum(
-                                        products[cov_pos[idx], k] * products[cov_pos[idx + 1], l].T
+                            self._cov_lowell = self._cov_lowell.at[i, j].set(jnp.sum(
+                                
+                                    jnp.sum(
+                                        products[cov_pos[0], k] * products[cov_pos[1], l].T
+                                    ) +
+                                    jnp.sum(
+                                        products[cov_pos[2], k] * products[cov_pos[3], l].T
                                     )
-                                    for idx in [0, 2]
-                                ]
-                            )
+                                    
+                                
+                            ))
                         j += 1
                 i += 1
         
         # Fill lower triangle by symmetry
-        self._cov_lowell = np.where(
-            np.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
+        self._cov_lowell = jnp.where(
+            jnp.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
         )
-        return self._cov_lowell
+        return np.asarray(self._cov_lowell)
 
     def get_covariance_matrix_highell(self):
         # get the covariance matrix for the full data vector Gaussian part
@@ -538,11 +558,11 @@ class XiLikelihood:
         self._get_cfs_1d_lowell()
 
         if self._highell:
-            print("Adding high-ell contribution to CFs...")
+            logger.info("Adding high-ell contribution to CFs...")
             self._cfs = self._cfs_lowell * self._get_cfs_1d_highell()
         else:
             self._cfs = self._cfs_lowell
-        # need to build in a test here checking that the boundaries of the pdfs are converged to zero
+
         self._marginals = cf_to_pdf_1d(self._t_lowell, self._cfs)
         # these marginals now need to be extended with the gaussian small scale end. make sure this extension is in 1st axis (angles axis)
         # after that, marginals should be usable as before and no other changes should be necessary
@@ -619,13 +639,19 @@ class XiLikelihood:
         float or tuple
             Log-likelihood value, optionally with Gaussian comparison.
         """
+        
+        start_time = time.time()
         self._prepare_likelihood_components(cosmology, highell)
 
         # Quick check to ensure data and self._xs have matching first two dimensions
         if data.shape[:2] != self._xs.shape[:2]:
             raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
 
-        likelihood = cop.evaluate(data, self._xs, self._pdfs, self._cdfs, self._cov, subset=data_subset)
+        # Ensure all arrays passed to copula-based likelihood evaluation are NumPy arrays
+        likelihood = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
+
+        elapsed = time.time() - start_time
+        logger.info(f"Likelihood evaluation took {elapsed:.3f} seconds.")
 
         if gausscompare:
             return likelihood, self.gauss_compare(data, data_subset=data_subset)
@@ -776,7 +802,7 @@ class XiLikelihood:
             logger.info("Likelihood setup complete! Ready for cosmology-dependent computations.")
 
 def fiducial_dataspace(
-    redshift_directory: str = "redshift_bins/KiDS/",
+    redshift_directory: Optional[str] = None,
     ang_min: float = 0.5, 
     ang_max: float = 300,
     n_bins: int = 9, 
@@ -787,8 +813,8 @@ def fiducial_dataspace(
     
     Parameters:
     -----------
-    redshift_directory : str
-        Directory containing redshift bin files
+    redshift_directory : str, optional
+        Directory containing redshift bin files. If None, uses package default.
     ang_min : float  
         Minimum angular scale in arcminutes
     ang_max : float
@@ -803,6 +829,12 @@ def fiducial_dataspace(
     tuple
         (redshift_bins, angular_bins) for likelihood initialization
     """
+    
+    # Default to package-relative path
+    if redshift_directory is None:
+        # Get the directory where this module is located
+        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        redshift_directory = os.path.join(package_dir, "redshift_bins", "KiDS")
 
     if not os.path.exists(redshift_directory):
         raise FileNotFoundError(f"Redshift directory not found: {redshift_directory}")
@@ -847,4 +879,4 @@ def fiducial_dataspace(
     ]
     logger.info(f"Created {len(redshift_bins_sorted)} redshift bins and {len(ang_bins_in_deg)} angular bins")
     return redshift_bins_sorted, ang_bins_in_deg
-    
+
