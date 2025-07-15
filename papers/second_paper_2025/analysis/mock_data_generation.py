@@ -1,7 +1,8 @@
 import numpy as np
 import xilikelihood as xlh
-
-FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
+from config import (
+    FIDUCIAL_COSMO
+)
 
 
 def create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=None):

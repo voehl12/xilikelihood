@@ -4,7 +4,7 @@
 from pathlib import Path
 
 # Paths
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = DATA_DIR / "s8posts"
 REDSHIFT_BINS_PATH = BASE_DIR.parent.parent.parent / "redshift_bins/KiDS"
@@ -62,5 +62,10 @@ DATA_FILES = {
     "1000sqd": {
         "mock_data": "fiducial_data_1000sqd.npz",
         "covariance": "gaussian_covariance_1000sqd.npz"
+    },
+    "10000sqd": {
+        "mock_data": "mock_data_10000sqd.npz",
+        "covariance": "gaussian_covariance_10000sqd.npz"
     }
+
 }
