@@ -13,7 +13,7 @@ from .file_handling import read_sims_nd
 import pickle  # Add import for loading cache files
 from itertools import product
 import random
-# from .postprocess_nd_likelihood import bootstrap, compare_to_sims_2d, bootstrap_statistic_2d
+from .data_statistics import bootstrap, bootstrap_statistic_2d
 from scipy.interpolate import RegularGridInterpolator, griddata
 from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
