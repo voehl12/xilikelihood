@@ -24,7 +24,7 @@ class LikelihoodConfig:
     
     # CF computation settings
     cf_steps: int = 4096
-    ximax_sigma_factor: float = 40.0
+    ximax_sigma_factor: float = 200.0
     ximin_sigma_factor: float = 5.0
     
     # Covariance settings
@@ -55,6 +55,7 @@ class LikelihoodConfig:
 # ============================================================================
 # JAX availability
 # ============================================================================
+# export XLA_FLAGS=--xla_gpu_cuda_data_dir=/cluster/software/stacks/2024-06/spack/opt/spack/linux-ubuntu22.04-x86_64_v3/gcc-12.2.0/cuda-12.1.1-5znnrjb5x5xr26nojxp3yhh6v77il7ie
 
 import os
 import sys
@@ -80,6 +81,14 @@ def ensure_jax_device():
                     x = jnp.array([1.0, 2.0, 3.0])
                     y = jnp.sum(x)
                     _ = y.devices()
+                    # Additional test: try a more complex JAX op (sqrt)
+                    try:
+                        z = jnp.sqrt(x)
+                        _ = z.devices()
+                    except Exception as sqrt_error:
+                        print("JAX GPU test failed for jnp.sqrt(x):", sqrt_error)
+                        print("You may need to set 'export XLA_FLAGS=--xla_gpu_cuda_data_dir=...' for complex ops.")
+                        raise
                 print(f"JAX GPU backend is available: {gpu_devices}")
                 return
             except Exception as gpu_error:
