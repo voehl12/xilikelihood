@@ -7,6 +7,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = DATA_DIR / "s8posts"
+PACKAGE_DIR = '/cluster/home/veoehl/xilikelihood/'  # Go up from analysis to package root
+
 REDSHIFT_BINS_PATH = BASE_DIR.parent.parent.parent / "redshift_bins/KiDS"
 
 # Analysis parameters
@@ -66,6 +68,13 @@ DATA_FILES = {
     "10000sqd": {
         "mock_data": "mock_data_10000sqd.npz",
         "covariance": "gaussian_covariance_10000sqd.npz"
+    },
+    "10000sqd_random": {
+        "mock_data": "mock_data_10000sqd_random.npz",
+        "covariance": "gaussian_covariance_10000sqd_random.npz"
+    },
+    "10000sqd_kidslike": {
+        "mock_data": "mock_data_10000sqd_kidslike.npz",
+        "covariance": "gaussian_covariance_10000sqd_kidslike.npz"
     }
-
 }

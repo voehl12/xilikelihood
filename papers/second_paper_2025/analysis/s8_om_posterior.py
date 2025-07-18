@@ -1,5 +1,5 @@
 import numpy as np
-import time
+import time, random
 import sys, os
 import logging
 from pathlib import Path
@@ -12,6 +12,9 @@ from config import (
     N_JOBS_2D,
     DATA_FILES
 )
+from mock_data_generation import create_mock_data
+
+time.sleep(random.choice([random.uniform(0.1, 0.9), random.randint(1, 5)]))
 
 # Configure logging
 logging.basicConfig(
@@ -58,8 +61,12 @@ except Exception as e:
     logger.error(f"Failed to set up mask or dataspace: {e}")
     sys.exit(1)
 
+mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidslike']['mock_data']
+gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidslike']['covariance']
+
+
 # Load data files with error checking
-try:
+""" try:
     if not Path(DATA_FILES["1000sqd"]["mock_data"]).exists():
         raise FileNotFoundError("fiducial_data_1000sqd.npz not found")
     if not Path(DATA_FILES["1000sqd"]["covariance"]).exists():
@@ -71,13 +78,21 @@ try:
     
 except Exception as e:
     logger.error(f"Failed to load data files: {e}")
-    sys.exit(1)
+    sys.exit(1) """
+
 
 # Set up likelihood
 try:
     likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg)
+        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False)
     likelihood.setup_likelihood()
+    try:
+        mock_data = np.load(mock_data_path)["data"]
+        gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
+    except:
+        create_mock_data(likelihood, mock_data_path, gaussian_covariance_path,random=None)
+        mock_data = np.load(mock_data_path)["data"]
+        gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
     likelihood.gaussian_covariance = gaussian_covariance
     logger.info("Likelihood setup completed")
     

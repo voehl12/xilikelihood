@@ -2,7 +2,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
-from plotting import plot_2D
+from xilikelihood.plotting import plot_2D
 from config import PARAM_GRIDS, N_JOBS_2D
 
 # Use configuration values

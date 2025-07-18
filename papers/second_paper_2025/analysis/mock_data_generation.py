@@ -1,7 +1,8 @@
 import numpy as np
 import xilikelihood as xlh
 from config import (
-    FIDUCIAL_COSMO
+    FIDUCIAL_COSMO,
+    EXACT_LMAX
 )
 
 
@@ -32,18 +33,19 @@ def create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=N
         theory_cls,
         [likelihood.mask],
         likelihood.ang_bins_in_deg,
-        job_id=42,
-        lmin=0,
-        lmax=likelihood.mask.lmax,
-        save_pcl=True,
+        n_batch=1,
     )
-        mock_data = sim[0, :, 0, :]
+        xi_plus, xi_minus = sim['xi_plus'][0], sim['xi_minus'][0]
+        if likelihood.include_ximinus:
+            mock_data = np.concatenate([xi_plus, xi_minus], axis=1)
+        else:
+            mock_data = xi_plus
 
     else:
         raise ValueError("Invalid random option. Choose 'gaussian' or 'frommap'.")
     # Save the covariance matrix and mock data to files
-    np.savez(gaussian_covariance_path,cov=gaussian_covariance,s8=FIDUCIAL_COSMO['s8'])
-    np.savez(mock_data_path,data=mock_data,s8=FIDUCIAL_COSMO['s8'])        
+    np.savez(gaussian_covariance_path,cov=gaussian_covariance,s8=FIDUCIAL_COSMO['s8'],angs=likelihood.ang_bins_in_deg,rs_bins=[likelihood.redshift_bins[i].nbin for i in range(len(likelihood.redshift_bins))],random=random)
+    np.savez(mock_data_path,data=mock_data,s8=FIDUCIAL_COSMO['s8'],angs=likelihood.ang_bins_in_deg,rs_bins=[likelihood.redshift_bins[i].nbin for i in range(len(likelihood.redshift_bins))],random=random)
     print("Mock data and covariance matrix saved to {} and {}.".format(mock_data_path,gaussian_covariance_path))
 
 
