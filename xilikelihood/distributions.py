@@ -134,8 +134,7 @@ def high_ell_gaussian_cf_1d(t_lowell, means, vars):
     3d complex array
         characteristic function of the Gaussian extensions on the same t grid as the low ell part
         shape: (number of redshift bin combinations, number of angular bins, number of t steps)
-    """
-
+    """ 
     xip_max = np.fabs(means) + 500 * np.sqrt(vars)
     dt_xip = 0.45 * 2 * np.pi / xip_max
     steps = 4096
@@ -354,7 +353,7 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
             
             # Compute covariance element
             xi_cov[flat_idx1, flat_idx2] = np.sum(wigners1 * wigners2 * c_tot[i, j] * ell)
-    
+            # note!! this only works because the B-modes are zero - for xi-, one would need to add minus signs to the B-modes and the covariance would need to be adjusted.
     # Fill lower triangle by symmetry
     xi_cov = xi_cov + xi_cov.T - np.diag(np.diag(xi_cov))
     
