@@ -102,7 +102,7 @@ def multivariate_student_t_logpdf(z, df, scale):
 # ============================================================================
 
 
-def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE):
+def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE, plot=False, max_plots=16, savepath=None):
     """
     Perform checks on the PDFs to ensure they are valid.
 
@@ -114,6 +114,14 @@ def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE):
         Array of x-values corresponding to the PDFs.
     cdfs : ndarray, optional
         Array of CDFs corresponding to the PDFs. If provided, checks monotonicity.
+    plot : bool, optional
+        If True, plot the PDFs and CDFs for visual inspection.
+    max_plots : int, optional
+        Maximum number of subplots to show (default: 16).
+    show : bool, optional
+        Whether to show the plot (default: True).
+    savepath : str or None, optional
+        If provided, save the figure to this path.
 
     Logs warnings if any issues are found.
     """
@@ -121,7 +129,7 @@ def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE):
         for j in range(pdfs.shape[1]):  # Loop over angular bins
             pdf = pdfs[i, j, :]
             x = xs[i, j, :]
-
+ 
             # Check normalization
             integral = np.trapz(pdf, x)
             if not np.isclose(integral, 1.0, atol=atol):
@@ -147,6 +155,8 @@ def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE):
                 logger.warning(f"PDF {i}-{j} does not drop to zero at domain boundaries (relative to max value).")
 
     logger.info("All PDFs have been checked.")
+    if plot or logger.isEnabledFor(logging.DEBUG):
+        plot_pdfs_and_cdfs(pdfs, xs, cdfs=cdfs, max_plots=max_plots, savepath=savepath)
 
 
 # ============================================================================
@@ -498,9 +508,7 @@ def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     else:
         raise ValueError(f"Unsupported copula type: {copula_type}")
     
-    pdf_meshgrid = np.meshgrid(*pdfs_flat)  # Create a meshgrid for all PDFs
-    stacked_meshgrid = np.stack(pdf_meshgrid, axis=-1)  # Stack along a new axis
-    pdf_points = stacked_meshgrid.reshape(-1, stacked_meshgrid.shape[-1])  # Reshape to 2D array
+    pdf_points = meshgrid_and_recast(pdfs_flat)
     log_pdf_points = np.log(pdf_points)  # Shape: (n_total_points, n_dims)
   
 
@@ -540,15 +548,18 @@ def cov_subset(cov, subset, num_angs):
     Parameters:
     - cov: The covariance matrix (shape: (rs_combs * ang, rs_combs * ang)).
     - subset: A list of (rs_combs, ang) tuples specifying the dimensions to extract.
+    - num_angs: Total number of angular bins (including xi+ and xi-), i.e twice the actual number if xi- is included.
 
     Returns:
     - A reduced covariance matrix corresponding to the specified subset.
     """
     # Convert the subset of indices to flat indices
     flat_indices = [rs_comb * num_angs + ang for rs_comb, ang in subset]
+    logger.info(f"Extracting covariance subset with indices: {flat_indices}")
+    logger.info(f"New covariance has shape: {len(flat_indices)} x {len(flat_indices)}")
     return cov[np.ix_(flat_indices, flat_indices)]
 
-def data_subset(data, subset):
+def data_subset(data, subset,full_grid=False):
     """
     Extracts a subset of the data based on the provided indices.
 
@@ -568,17 +579,54 @@ def data_subset(data, subset):
         where the axes correspond to all unique redshift and angular bin indices in the subset.
     """
     rs_combs_indices, ang_indices = zip(*subset)
-    rs_combs_indices = np.unique(rs_combs_indices)
-    ang_indices = np.unique(ang_indices)
+    rs_combs_indices = np.array(rs_combs_indices)
+    ang_indices = np.array(ang_indices)
+    if full_grid:
+        # Check if subset forms a full grid
+        unique_rs = np.unique(rs_combs_indices)
+        unique_ang = np.unique(ang_indices)
+        expected_pairs = set((i, j) for i in unique_rs for j in unique_ang)
+        actual_pairs = set(zip(rs_combs_indices, ang_indices))
+        if expected_pairs == actual_pairs:
+            # Return full 2D array
+            if data.ndim == 2:
+                logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang)].shape}.")
+                return data[np.ix_(unique_rs, unique_ang)]
+            elif data.ndim == 3:
+                logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))].shape}.")
+                # Preserve the third axis
+                return data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))]
+        # If not a full grid, fall through to default behavior
 
     if data.ndim == 2:
-        # Return all combinations of unique redshift and angular bin indices
-        return data[np.ix_(rs_combs_indices, ang_indices)]
+        logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
+        return data[rs_combs_indices, ang_indices] # returns 1d array of the datapoints desired
     elif data.ndim == 3:
-        return data[np.ix_(rs_combs_indices, ang_indices, np.arange(data.shape[2]))]
+        logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
+        return data[rs_combs_indices, ang_indices]  # Preserve the third axis, i.e. 2d array is returned
     else:
         raise ValueError("data must be a 2D or 3D array.")
 
+def expand_subset_for_ximinus(subset, n_angbins):
+    """
+    Expand a subset of (rs, ang) pairs to include both xi+ and xi- bins, and sort so that all xi+ bins come first, then all xi- bins.
+    Returns a list of (rs, ang) pairs with the desired ordering.
+    """
+    # Collect unique rs and ang indices from the input subset
+    rs_set = sorted(set(rs for rs, _ in subset))
+    ang_set = sorted(set(ang for _, ang in subset if ang < n_angbins))
+    expanded = []
+    # First all xi+ (ang in [0, n_angbins-1])
+    for rs in rs_set:
+        for ang in ang_set:
+            if (rs, ang) in subset:
+                expanded.append((rs, ang))
+    # Then all xi- (ang+n_angbins)
+    for rs in rs_set:
+        for ang in ang_set:
+            if (rs, ang) in subset:
+                expanded.append((rs, ang + n_angbins))
+    return expanded
 
 def evaluate(x_data, xs, pdfs, cdfs, cov,subset=None):
     """
@@ -703,3 +751,46 @@ def _testing_function():
     # fig.colorbar(exact_res, ax=ax02)
     fig.savefig("comparison_copula_sims_10000deg2_fullell_newwpm.png")
     pass
+
+def plot_pdfs_and_cdfs(pdfs, xs, cdfs=None, max_plots=16, savepath=None):
+    """
+    Plot PDFs and (optionally) CDFs for each (redshift, angular bin) combination.
+
+    Parameters
+    ----------
+    pdfs : ndarray
+        Array of PDFs, shape (n_rs, n_ang, n_points).
+    xs : ndarray
+        Array of x-values, shape (n_rs, n_ang, n_points).
+    cdfs : ndarray, optional
+        Array of CDFs, shape (n_rs, n_ang, n_points).
+    max_plots : int
+        Maximum number of subplots (default: 16).
+    show : bool
+        Whether to show the plot (default: True).
+    savepath : str or None
+        If provided, save the figure to this path.
+    """
+    import matplotlib.pyplot as plt
+    n_rs, n_ang, n_points = pdfs.shape
+    n_total = n_rs * n_ang
+    n_plots = min(n_total, max_plots)
+    ncols = min(4, n_plots)
+    nrows = int(np.ceil(n_plots / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows))
+    axes = np.array(axes).reshape(-1)
+    for idx in range(n_plots):
+        i = idx // n_ang
+        j = idx % n_ang
+        ax = axes[idx]
+        ax.plot(xs[i, j], pdfs[i, j], label='PDF')
+        if cdfs is not None:
+            ax.plot(xs[i, j], cdfs[i, j], label='CDF')
+        ax.set_title(f'rs={i}, ang={j}')
+        ax.legend()
+    for ax in axes[n_plots:]:
+        ax.axis('off')
+    #fig.tight_layout()
+    if savepath:
+        plt.savefig(savepath)
+    plt.close(fig)
