@@ -451,7 +451,7 @@ def _simulate_pcl_estimator(
         # Compute pseudo-C_l and correlation functions
         pcl_array = compute_pseudo_cl(maps, masks_array, fullsky=False)
         xi_array = compute_correlation_functions(pcl_array, prefactors, lmax, lmin)
-        
+        # (n_cross,2,n_ang_bins)
         xi_batch.append(xi_array)
         pcl_batch.append(pcl_array)
         
