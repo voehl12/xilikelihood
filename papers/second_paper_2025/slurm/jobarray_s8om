@@ -4,12 +4,12 @@
 #SBATCH --time=5:00:00    
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=4096
-#SBATCH --job-name=2d_post
+#SBATCH --job-name=2d_post_10000
 #SBATCH --array=1-500
 #SBATCH --output=2dpost.out
 #SBATCH --error=2dpost.err
 
 module load stack/2024-06 swig/4.1.1-ipvpwcc python/3.11.6 gcc/12.2.0 cmake/3.27.7
 export JAX_PLATFORMS=cpu
-source /cluster/home/veoehl/xilikelihood/venv/bin/activate
-python /cluster/home/veoehl/xilikelihood/s8_om_posterior.py $SLURM_ARRAY_TASK_ID
+source /cluster/home/veoehl/xilikelihood/2ptlikelihood/bin/activate
+python /cluster/home/veoehl/xilikelihood/papers/second_paper_2025/analysis/s8_om_posterior.py $SLURM_ARRAY_TASK_ID
