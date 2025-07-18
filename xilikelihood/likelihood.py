@@ -232,7 +232,7 @@ class XiLikelihood:
         """
         Wrapper for PDF validation. Delegates the actual checks to a utility function.
         """
-        cop.validate_pdfs(self._pdfs, self._xs, self._cdfs)
+        cop.validate_pdfs(self._pdfs, self._xs, self._cdfs,plot=False,savepath="pdfs_validation.png")
 
     def precompute_combination_matrices(self):
         # prefactors is a 3D array with shape (len(angles), 2, out_lmax)
@@ -255,9 +255,15 @@ class XiLikelihood:
             self._m_xiplus = np.tile(m_xiplus, (1, 4))
             
             # Create xi_minus matrices  
+            # these are wrong!! need to be adjusted to the way xi- is set up (including minus and EB modes!)
+           
             m_ximinus = 2 * np.repeat(ximinus_prefactors, len_sub_m, axis=1)
             m_ximinus[:, ::len_sub_m] *= 0.5
-            self._m_ximinus = np.tile(m_ximinus, (1, 4))
+            tiled = np.tile(m_ximinus, (1, 4))
+            tiled[:, 2 * m_ximinus.shape[1]:] *= -1 # this already makes the real means match, but the -2j * C_EB part should be implemented for the covariance.
+            self._m_ximinus = tiled
+            # ximinus m won't be diagonal anymore, so multiplying will need some more effort
+            #self._m_ximinus = np.tile(m_ximinus, (1, 4))
             
             # Concatenate xi_plus and xi_minus matrices
             # This preserves the is_cov_cross indexing for both correlation functions
@@ -314,7 +320,13 @@ class XiLikelihood:
                 )
                 means_xiplus, means_ximinus = means_both
                 # Concatenate along the angular bin axis (axis=1), not redshift bin axis (axis=0)
-                self._means_lowell = np.concatenate([means_xiplus, means_ximinus], axis=1)
+                means = np.concatenate([means_xiplus, means_ximinus], axis=1)
+                self._means_lowell = means.real if np.iscomplexobj(means) and np.allclose(means.imag, 0) else means
+                if np.iscomplexobj(self._means_lowell):
+                    logger.warning("Means for low-ell contain complex values, using real part only.")
+                    logger.info("Imaginary parts are fraction of real parts: %s", self._means_lowell.imag / self._means_lowell.real)
+                    self._means_lowell = means.real
+                
                 # should contain means for all scales
             else:
                 # Only xi_plus
@@ -323,7 +335,7 @@ class XiLikelihood:
                 )
             
             # Optional validation check (can be expensive for large matrices)
-            if self.config.validate_means:
+            if self.config.validate_means or logger.isEnabledFor(logging.DEBUG):
                 # careful, this can only be run if all scales are included in the _products....
                 logger.info("Validating means with einsum computation...")
                 einsum_means = np.einsum("cbll->cb", self._products.copy())
@@ -372,12 +384,13 @@ class XiLikelihood:
     def _compute_auto_eigenvalues(self, auto_prods):
         logger.info("Computing auto eigenvalues...")
         # shape (n_redshift_bins, len(angular_bins),len(cov))
-        auto_prods_cpu = jax.device_put(jnp.array(auto_prods), device=jax.devices("cpu")[0])
-        eigvals_auto, _ = jnp.linalg.eig(auto_prods_cpu)
-        eigvals_auto_padded = jnp.pad(
+        #auto_prods_cpu = jax.device_put(jnp.array(auto_prods), device=jax.devices("cpu")[0])
+        auto_prods_numpy = np.asarray(auto_prods)
+        eigvals_auto = np.linalg.eigvals(auto_prods_numpy)
+        eigvals_auto_padded = np.pad(
             eigvals_auto, ((0, 0), (0, 0), (0, eigvals_auto.shape[-1])), "constant"
         )
-        return eigvals_auto_padded
+        return jnp.array(eigvals_auto_padded)
 
     def _compute_cross_eigenvalues(self, cross_prods, auto_prods, cross_combs):
         logger.info("Computing cross eigenvalues...")
@@ -388,30 +401,32 @@ class XiLikelihood:
         # Assume eigvals shape is (len(angular_bins)*2, ) for each mat (adjust if needed)
         # We'll get the shape from the first computation
         if n_cross == 0:
-            return jnp.array([])
+            return np.array([])
+        cross_prods, auto_prods = np.asarray(cross_prods), np.asarray(auto_prods)
         # Compute shape from first matrix
         diag_elem = cross_prods[0]
         off_diag_elem_1 = auto_prods[cross_combs[0][0]]
         off_diag_elem_2 = auto_prods[cross_combs[0][1]]
-        mat = 0.5 * jnp.block(
+        mat = 0.5 * np.block(
             [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
         )
-        mat_cpu = jax.device_put(mat, device=jax.devices("cpu")[0])
-        eigvals0 = jnp.linalg.eigvals(mat_cpu)
+        #mat_cpu = jax.device_put(mat, device=jax.devices("cpu")[0])
+        mat = np.array(mat)
+        eigvals0 = np.linalg.eigvals(mat)
         eigval_shape = eigvals0.shape
-        cross_eigvals = jnp.zeros((n_cross,) + eigval_shape, dtype=eigvals0.dtype)
-        cross_eigvals = cross_eigvals.at[0].set(eigvals0)
+        cross_eigvals = np.zeros((n_cross,) + eigval_shape, dtype=eigvals0.dtype)
+        cross_eigvals[0] = eigvals0
         for c, comb in enumerate(cross_combs[1:], start=1):
             diag_elem = cross_prods[c]
             off_diag_elem_1 = auto_prods[comb[0]]
             off_diag_elem_2 = auto_prods[comb[1]]
-            mat = 0.5 * jnp.block(
+            mat = 0.5 * np.block(
                 [[diag_elem, off_diag_elem_2], [off_diag_elem_1, diag_elem]]
             )
-            mat_cpu = jax.device_put(mat, device=jax.devices("cpu")[0])
-            eigvals = jnp.linalg.eigvals(mat_cpu)
-            cross_eigvals = cross_eigvals.at[c].set(eigvals)
-        return cross_eigvals
+            mat = np.array(mat)
+            eigvals = np.linalg.eigvals(mat)
+            cross_eigvals[c] = eigvals
+        return jnp.array(cross_eigvals)
     
     def _compute_cfs(self):
         """Compute characteristic functions using configured parameters."""
@@ -463,11 +478,11 @@ class XiLikelihood:
             self._t_lowell, self._cfs_lowell = self._compute_cfs() # now should only have the large scales
 
             # Cleanup
+            # Free memory after CF computation
             if self.config.enable_memory_cleanup:
-                del auto_prods, cross_prods, cross_combs
-                gc.collect()
-    
-    
+                del auto_prods, cross_prods, cross_combs, self._eigvals
+
+
     def get_covariance_matrix_lowell(self):
         # get the covariance matrix for the full data vector exact part
         # use products of combination matrix and pseudo alm covariance
@@ -538,7 +553,12 @@ class XiLikelihood:
             )
             means_xiplus, means_ximinus = means_both
             # Concatenate along the angular bin axis (axis=1)
-            self._means_highell = np.concatenate([means_xiplus, means_ximinus], axis=1)
+            means = np.concatenate([means_xiplus, means_ximinus], axis=1)
+            self._means_highell = means.real if np.iscomplexobj(means) and np.allclose(means.imag, 0) else means
+            if np.iscomplexobj(self._means_highell):
+                logger.warning("Means for high-ell contain complex values, using real part only.")
+                self._means_highell = means.real  
+            
         else:
             # Only xi_plus (legacy behavior)
             self._means_highell = mean_xi_gaussian_nD(
@@ -611,10 +631,12 @@ class XiLikelihood:
             self._get_means_highell()
             self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-
+        logger.info("Covariance matrix and means prepared.")
+        logger.info("Mean samples: %s", self._mean[:5, :5])
         xs, pdfs = self.marginals()
         self._cdfs, self._pdfs, self._xs = cop.pdf_to_cdf(xs, pdfs)  # Interpolated xs and pdfs
         self.check_pdfs()
+        del self._products
 
 
     def loglikelihood(self, data, cosmology, highell=True, gausscompare=False, data_subset=None):
@@ -748,12 +770,12 @@ class XiLikelihood:
         xs_subset = cop.data_subset(self._xs, data_subset)
         pdfs_subset = cop.data_subset(self._pdfs, data_subset)
         cdfs_subset = cop.data_subset(self._cdfs, data_subset)
-        log_pdf_2d = cop.joint_pdf(cdfs_subset, pdfs_subset, cov_2d,copula_type='student-t',df=100)
+        log_pdf_2d = cop.joint_pdf(cdfs_subset, np.asarray(pdfs_subset), np.asarray(cov_2d))
         
         
         if gausscompare:
             means_subset = cop.data_subset(self._mean, data_subset)
-            gaussian_log_pdf = gaussian_2d(xs_subset,means_subset,cov_2d)
+            gaussian_log_pdf = gaussian_2d(xs_subset,np.asarray(means_subset),np.asarray(cov_2d))
             return xs_subset, log_pdf_2d, gaussian_log_pdf
         else:
             return xs_subset, log_pdf_2d
@@ -880,3 +902,34 @@ def fiducial_dataspace(
     logger.info(f"Created {len(redshift_bins_sorted)} redshift bins and {len(ang_bins_in_deg)} angular bins")
     return redshift_bins_sorted, ang_bins_in_deg
 
+
+
+
+""" [[4.26316685e-07 1.12676419e-06]
+ [4.06130857e-07 1.73571351e-06]
+ [3.35446133e-07 1.41249739e-06]]
+
+
+[[5.68059428e-07 1.19825625e-06]
+ [5.62009356e-07 1.72977291e-06]
+ [5.58122970e-07 1.43061433e-06]] 
+ 
+ [[4.53476258e-07 1.07737428e-06]
+ [4.54624196e-07 1.73445360e-06]
+ [4.83807631e-07 1.32179069e-06]]
+ 
+ 
+ low ell [[1.53723621e-06 2.19769249e-08]
+ [1.83496196e-06 3.17630054e-08]
+ [1.21273912e-06 2.58645384e-08]]
+ 
+ 
+ [[8.5676675e-07 1.9434999e-06]
+ [1.0004612e-06 2.8053128e-06]
+ [9.1155823e-07 2.2863794e-06]]
+
+ [[4.7412379e-07 1.1633111e-06]
+ [5.3981921e-07 1.6721029e-06]
+ [4.9302201e-07 1.3668407e-06]]
+
+ """
