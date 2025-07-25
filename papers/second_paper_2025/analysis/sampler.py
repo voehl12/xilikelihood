@@ -64,7 +64,7 @@ include_ximinus = False
 logger.info(f"Include xi-: {include_ximinus}")
 
 mapper = BinCombinationMapper(len(redshift_bins))
-combs = [(2,2),(4,4),(4,2)]
+combs = [(2,2),(4,4),(4,2)] # careful, does not match with line 77, but currently, this is not used anyway.
 rs_indices = [mapper.get_index(comb) for comb in combs]
 ang_indices = [2]
 subset = [(rs_index,ang_indices[0]) for rs_index in rs_indices]
@@ -132,7 +132,7 @@ def likelihood(cosmology):
 
 results_path = f'sampler_results_{jobnumber}.h5'
 logger.info("Setting up Nautilus sampler...")
-sampler = Sampler(prior, likelihood, n_live=16,pool=64,filepath=results_path)
+sampler = Sampler(prior, likelihood, n_live=16,filepath=results_path)
 logger.info("Starting sampling...")
 sampler.run(verbose=True)
 logger.info("Sampling completed!")
