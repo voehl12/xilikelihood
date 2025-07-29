@@ -54,15 +54,15 @@ try:
     logger.info("Created spherical mask")
     
     redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
-    ang_bins_in_deg = ang_bins_in_deg[:-1]  # Remove last bin
+    #ang_bins_in_deg = ang_bins_in_deg[:-1]  # Remove last bin
     logger.info(f"Set up {len(redshift_bins)} redshift bins and {len(ang_bins_in_deg)} angular bins")
     
 except Exception as e:
     logger.error(f"Failed to set up mask or dataspace: {e}")
     sys.exit(1)
 
-mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidslike']['mock_data']
-gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidslike']['covariance']
+mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['mock_data']
+gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['covariance']
 
 
 # Load data files with error checking
