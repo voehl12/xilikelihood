@@ -1,4 +1,3 @@
-
 import xilikelihood as xili
 
 # 1) stack/2024-06   2) gcc/12.2.0   3) swig/4.1.1-ipvpwcc   4) python/3.11.6   5) cuda/12.1.1   6) nccl/2.18.3-1   7) openblas/0.3.24   8) python_cuda/3.11.6   9) cmake/3.27.7  10) cudnn/9.2.0
@@ -27,7 +26,8 @@ logging.basicConfig(
     level=logging.INFO,  # Uncomment for less verbose output
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'sampler_{jobnumber}.log')  # File output
+        logging.FileHandler(f'sampler_{jobnumber}.log'),  # File output
+        #logging.StreamHandler()  # Console output
     ]
 )
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ xili_logger = logging.getLogger('xilikelihood')
 xili_logger.setLevel(logging.DEBUG)
 
 
-
+# definitely run with exact_lmax=20!
 # Set root logger to capture everything
 logging.getLogger().setLevel(logging.INFO)
 
@@ -130,7 +130,7 @@ def likelihood(cosmology):
         logger.error(f"Likelihood evaluation failed for {cosmology}: {e}")
         exit() 
 
-results_path = f'sampler_results_{jobnumber}.h5'
+results_path = f'sampler_results_{jobnumber}_l20.h5'
 logger.info("Setting up Nautilus sampler...")
 sampler = Sampler(prior, likelihood, n_live=16,filepath=results_path)
 logger.info("Starting sampling...")
