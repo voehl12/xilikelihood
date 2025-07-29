@@ -4,6 +4,27 @@ import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from xilikelihood.plotting import plot_2D
 from config import PARAM_GRIDS, N_JOBS_2D
+REGULARIZER = 500
+LARGE_THRESHOLD = 1000
+
+def clean_large_entries(posterior, name="posterior"):
+    large_mask = posterior > LARGE_THRESHOLD
+    n_large = np.sum(large_mask)
+    if n_large > 0:
+        print(f"Warning: {n_large} large values found in {name} (>{LARGE_THRESHOLD})")
+        # Print their indices and values
+        indices = np.argwhere(large_mask)
+        for idx in indices:
+            print(f"  {name}[{tuple(idx)}] = {posterior[tuple(idx)]}")
+        # Optionally replace if there are only a few
+        if n_large < 10:
+            # Replace with the minimum of the non-large entries
+            min_val = np.min(posterior[~large_mask])
+            posterior[large_mask] = min_val
+            print(f"Replaced {n_large} large values in {name} with {min_val}")
+        else:
+            print(f"Too many large values in {name}, not replacing automatically.")
+    return posterior
 
 # Use configuration values
 omega_m_min, omega_m_max, omega_m_points = PARAM_GRIDS["omega_m"]
@@ -47,9 +68,10 @@ for jobnumber in range(N_JOBS_2D):
 dx = omega_m_prior[1] - omega_m_prior[0]
 dy = s8_prior[1] - s8_prior[0]
 
+exact_posteriors_2d = clean_large_entries(exact_posteriors_2d, "exact_posteriors_2d")
 # Exponentiate the posteriors
-exact_posteriors_2d = np.exp(exact_posteriors_2d - 700)
-gauss_posteriors_2d = np.exp(gauss_posteriors_2d - 700)
+exact_posteriors_2d = np.exp(exact_posteriors_2d - 500)
+gauss_posteriors_2d = np.exp(gauss_posteriors_2d - 500)
 
 # Normalize the posteriors using 2D integral
 exact_posteriors_2d /= (np.sum(exact_posteriors_2d[~np.isnan(exact_posteriors_2d)]) * dx * dy)
@@ -97,7 +119,7 @@ ax[1].set_xlabel("Omega_m")
 ax[1].set_ylabel("S8")
 
 plt.tight_layout()
-plt.savefig("2d_corner_plot.png")
+plt.savefig("2d_corner_plot_10000sqd_angbinplus.png")
 
 from matplotlib.ticker import MaxNLocator
 
@@ -228,4 +250,4 @@ right_ax.tick_params(axis="y", labelleft=False)
 ax[0, 1].axis("off")
 
 plt.tight_layout()
-plt.savefig("combined_2d_contours_with_marginals.png")
+plt.savefig("combined_2d_contours_with_marginals_10000sqd_angbinplus.png")
