@@ -83,6 +83,7 @@ class Cov:
         lmax=None,
         cov_ell_buffer=DEFAULT_COV_ELL_BUFFER,
         working_dir=None,
+        ischain=True,
     ):
 
         # Validate inputs
@@ -95,6 +96,7 @@ class Cov:
         self.mask = mask
         self.theorycl = theorycl
         self._exact_lmax = exact_lmax
+        self.ischain = ischain
         
         # Validate consistency between mask and covariance lmax
         if not check_property_equal([self, self.mask], "_exact_lmax"):
@@ -106,14 +108,15 @@ class Cov:
         self._lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self._cov_ell_buffer = cov_ell_buffer
         # Set up file paths
-        self.covalm_path = generate_filename("cov_xi", {
-            "lmax":self._exact_lmax,
-            "nside":self.mask.nside,
-            "mask":self.mask.name,
-            "theory":self.theorycl.name,
-            "sigma":self.theorycl.sigmaname,},
-            base_dir=self.working_dir
-        )
+        if not self.ischain:
+            self.covalm_path = generate_filename("cov_xi", {
+                "lmax":self._exact_lmax,
+                "nside":self.mask.nside,
+                "mask":self.mask.name,
+                "theory":self.theorycl.name,
+                "sigma":self.theorycl.sigmaname,},
+                base_dir=self.working_dir
+            )
 
     @property
     def exact_lmax(self):
@@ -128,7 +131,7 @@ class Cov:
         c_all[2, 2] = self.theorycl.nn.copy()[: lmax + 1]
         return c_all
 
-    def cov_alm_xi(self, ischain=False):
+    def cov_alm_xi(self, ischain=True):
         """
         Calculates covariance of pseudo-alm needed for the spin-2 correlation function xi+/-.
 
@@ -154,7 +157,7 @@ class Cov:
         self.cov_alm = self.cov_alm_general(alm_kinds, pos_m=True, ischain=ischain)
         return self.cov_alm
 
-    def cov_alm_general(self, alm_kinds, pos_m=True, lmin=0, ischain=False):
+    def cov_alm_general(self, alm_kinds, pos_m=True, lmin=0, ischain=True):
         """
         Calculate covariance matrix for specified pseudo-alm modes.
 
@@ -276,6 +279,7 @@ class Cov:
             
             if min_eigenval <= 0:
                 if abs(min_eigenval) < 1e-15:
+                    # should replace these by zero?
                     logger.debug(f"Small negative eigenvalue (numerical precision): min eigenvalue = {min_eigenval:.2e}")
                 else:
                     logger.warning(f"Non-positive definite matrix: min eigenvalue = {min_eigenval:.2e}")
@@ -514,7 +518,6 @@ class Cov:
     def load_cov(self):
         """Load covariance matrix using centralized file handling."""
         cov_dict = load_arrays(self.covalm_path, "cov")
-        print(cov_dict.keys())
         self.cov_alm = cov_dict['cov']
 
     def _get_pseudo_cl_path(self):
