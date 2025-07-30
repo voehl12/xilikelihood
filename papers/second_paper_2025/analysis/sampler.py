@@ -10,7 +10,8 @@ from nautilus import Prior, Sampler
 from xilikelihood.copula_funcs import data_subset, cov_subset, expand_subset_for_ximinus
 from xilikelihood.theory_cl import BinCombinationMapper
 from mock_data_generation import create_mock_data
-
+import corner
+import matplotlib.pyplot as plt
 
 from config import (
     EXACT_LMAX,
@@ -75,6 +76,7 @@ if include_ximinus:
     n_angbins *= 2
 ang_bins_in_deg = ang_bins_in_deg[2:-1]
 redshift_bins = redshift_bins[3:]
+# now need to run with full-ish datavector. with this and ell max 20, it converged in 1 day, 19 hours
 logger.info(f"Reduced: {len(redshift_bins)} redshift bins, {len(ang_bins_in_deg)} angular bins")
 
 
@@ -136,3 +138,10 @@ sampler = Sampler(prior, likelihood, n_live=16,filepath=results_path)
 logger.info("Starting sampling...")
 sampler.run(verbose=True)
 logger.info("Sampling completed!")
+
+points, log_w, log_l = sampler.posterior()
+corner.corner(
+    points, weights=np.exp(log_w), bins=20, labels=prior.keys, color='purple',
+    plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
+
+plt.savefig('new_corner_plot.png')
