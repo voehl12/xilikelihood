@@ -184,7 +184,8 @@ class XiLikelihood:
         # Angular bins
         self.ang_bins_in_deg = ang_bins_in_deg
         self._n_ang_bins = len(ang_bins_in_deg)
-        
+        #self._is_large_angle = [ang[0] >= self.config.large_angle_threshold for ang in ang_bins_in_deg]
+
         # Redshift bins
         self.redshift_bins = redshift_bins
         self.n_redshift_bins = len(self.redshift_bins)
@@ -293,7 +294,7 @@ class XiLikelihood:
         with computation_phase("pseudo alm covariances", 
                           log_memory=self.config.log_memory_usage):
             pseudo_alm_covs = [
-                Cov(self.mask, theory_cl, self._exact_lmax).cov_alm_xi(ischain=True)
+                Cov(self.mask, theory_cl, self._exact_lmax, ischain=True).cov_alm_xi(ischain=True)
                 for theory_cl in self._theory_cl
             ]
             return pseudo_alm_covs
@@ -362,8 +363,9 @@ class XiLikelihood:
         auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
         
         # Handle doubled data vector when xi_minus is included
+        # should include large angle distinction in initialization, but actually, variances are only used in cf compuation, so only large angles here is fine.
         n_correlation_types = 2 if self.include_ximinus else 1
-        variances = jnp.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
+        variances = jnp.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.large_ang_bins)))
 
         # Auto terms
         variances = variances.at[~self._is_cov_cross].set(
@@ -435,38 +437,50 @@ class XiLikelihood:
         t_lowell, cfs_lowell = batched_cf_1d_jitted(
             self._eigvals, self._ximax, steps=self.config.cf_steps
         )
+        # t_lowell_small_angles, cfs_lowell_small_angles = b
         return np.asarray(t_lowell), np.asarray(cfs_lowell)
 
     def _get_cfs_1d_lowell(self):
         """Compute characteristic functions for low-ell part."""
         with computation_phase("Characteristic function computation (low-ell)", log_memory=self.config.log_memory_usage):
+            # select small angular bins for Gaussian likelihood
+            
             
             logger.info("Starting CF computation...")
         
             # Handle doubled data vector when xi_minus is included
-            n_correlation_types = 2 if self.include_ximinus else 1
-            n_data_points = n_correlation_types * len(self.ang_bins_in_deg) # need to adjust to only large angles here
-            
-            self._variances = np.zeros((self._n_redshift_bin_combs, n_data_points))
+            """ n_correlation_types = 2 if self.include_ximinus else 1
+            n_data_points = n_correlation_types * len(self.large_ang_bins) # need to adjust to only large angles here
+            """
+            """ self._variances = np.zeros((self._n_redshift_bin_combs, n_data_points))
             self._eigvals = jnp.zeros(
                 (self._n_redshift_bin_combs, n_data_points, 2 * len(self._products[0, 0])),
                 dtype=complex,
-            )
+            ) """
             products = self._products.view() # extract large scale products at this point, possibly use data_subset
             # Make products read-only to prevent accidental modifications
-            products.flags.writeable = False
-            cross_prods = jnp.array(products[self._is_cov_cross])
-            auto_prods = jnp.array(products[~self._is_cov_cross])
+            large_angle_products = cop.select_large_angbins(products, self._is_large_angle,self._include_ximinus)
+            large_angle_products.flags.writeable = False
+            self._variances = np.zeros(large_angle_products.shape[:2])
+            eigvals_shape = large_angle_products.shape[:2] + (2 * large_angle_products.shape[-1],)
+            self._eigvals = jnp.zeros(eigvals_shape, dtype=complex)
+            
+            cross_prods = jnp.array(large_angle_products[self._is_cov_cross]) # should be fine as all correlations are kept, just angles eliminated
+            auto_prods = jnp.array(large_angle_products[~self._is_cov_cross])
             if self.config.enable_memory_cleanup:
-                del products
+                del large_angle_products
 
             # Compute variances
             cross_combs = self._numerical_redshift_bin_combinations[self._is_cov_cross]
             self._variances = self._compute_variances(auto_prods, cross_prods, cross_combs)
 
             # Compute eigenvalues
-            self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances))
-            self._ximin = self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances)
+            # select means of the large angles here - maybe actually similar to is_cov_cross?
+            # maybe keep all xi-ranges here because I need them for the Gaussian pdfs as well. Then
+            # implement the small angle part at the characteristic function level? i.e. here? then don't need distinction in
+            # adding high ell part. But numerical issues?
+            self._ximax_large_angles = jnp.array(self._means_lowell[:,self._is_large_angle] + self.config.ximax_sigma_factor * jnp.sqrt(self._variances))
+            self._ximin_large_angles = jnp.array(self._means_lowell[:,self._is_large_angle] - self.config.ximin_sigma_factor * jnp.sqrt(self._variances))
             eigvals_auto_padded = self._compute_auto_eigenvalues(auto_prods)
             self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
 
@@ -570,8 +584,12 @@ class XiLikelihood:
         vars = np.diag(self._cov_highell)
         n_correlation_types = 2 if self.include_ximinus else 1
         vars = vars.reshape((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
-
+        #vars = cop.select_large_angbins(vars,self._is_large_angle,self.include_ximinus)
+        #means_large_angles = cop.select_large_angbins(self._means_highell,self._is_large_angle,self.include_ximinus)
         return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
+
+    def _get_gaussian_marginals(self):
+        pass
 
     def marginals(self):
         # get the marginal pdfs and potentially cdfs
@@ -583,7 +601,8 @@ class XiLikelihood:
         else:
             self._cfs = self._cfs_lowell
 
-        self._marginals = cf_to_pdf_1d(self._t_lowell, self._cfs)
+        self._marginals = cf_to_pdf_1d(self._t_lowell, self._cfs) # is tuple (x,pdf) with shape (croco,large_angs,n_points) each
+        #self._small_angle_marginals = get_gaussian_marginals(x_ranges,means,covariances)
         # these marginals now need to be extended with the gaussian small scale end. make sure this extension is in 1st axis (angles axis)
         # after that, marginals should be usable as before and no other changes should be necessary
         return self._marginals

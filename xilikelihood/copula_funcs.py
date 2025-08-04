@@ -566,46 +566,50 @@ def data_subset(data, subset,full_grid=False):
     Parameters
     ----------
     data : ndarray
-        Input data array. Can be 2D (e.g., shape: (n_correlations, n_angular_bins)) or 3D
-        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim)).
+        Input data array. Can be 2D (e.g., shape: (n_correlations, n_angular_bins)), 3D
+        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim)), or 4D
+        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim, n_extra)).
     subset : list of tuples
         List of (rs_combs, ang) tuples specifying the indices to extract.
 
     Returns
     -------
     ndarray
-        Subset of the data. If the input is 3D, the third axis is preserved.
-        For 2D data, always returns shape (n_rs_combs_subset, n_ang_bins_subset),
-        where the axes correspond to all unique redshift and angular bin indices in the subset.
+        Subset of the data. For 2D, shape (n_rs_combs_subset, n_ang_bins_subset).
+        For 3D, shape (n_rs_combs_subset, n_ang_bins_subset, n_points_per_dim).
+        For 4D, shape (n_rs_combs_subset, n_ang_bins_subset, n_points_per_dim, n_extra).
     """
     rs_combs_indices, ang_indices = zip(*subset)
     rs_combs_indices = np.array(rs_combs_indices)
     ang_indices = np.array(ang_indices)
     if full_grid:
-        # Check if subset forms a full grid
         unique_rs = np.unique(rs_combs_indices)
         unique_ang = np.unique(ang_indices)
         expected_pairs = set((i, j) for i in unique_rs for j in unique_ang)
         actual_pairs = set(zip(rs_combs_indices, ang_indices))
         if expected_pairs == actual_pairs:
-            # Return full 2D array
             if data.ndim == 2:
                 logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang)].shape}.")
                 return data[np.ix_(unique_rs, unique_ang)]
             elif data.ndim == 3:
                 logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))].shape}.")
-                # Preserve the third axis
                 return data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))]
+            elif data.ndim == 4:
+                logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]), np.arange(data.shape[3]))].shape}.")
+                return data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]), np.arange(data.shape[3]))]
         # If not a full grid, fall through to default behavior
 
     if data.ndim == 2:
         logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
-        return data[rs_combs_indices, ang_indices] # returns 1d array of the datapoints desired
+        return data[rs_combs_indices, ang_indices]
     elif data.ndim == 3:
         logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
-        return data[rs_combs_indices, ang_indices]  # Preserve the third axis, i.e. 2d array is returned
+        return data[rs_combs_indices, ang_indices]
+    elif data.ndim == 4:
+        logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
+        return data[rs_combs_indices, ang_indices]
     else:
-        raise ValueError("data must be a 2D or 3D array.")
+        raise ValueError("data must be a 2D, 3D, or 4D array.")
 
 def expand_subset_for_ximinus(subset, n_angbins):
     """
@@ -794,3 +798,66 @@ def plot_pdfs_and_cdfs(pdfs, xs, cdfs=None, max_plots=16, savepath=None):
     if savepath:
         plt.savefig(savepath)
     plt.close(fig)
+
+
+
+def select_angbins_above_threshold(data, angbin_tuples, threshold, compare='start'):
+    """
+    Select all angular bins (by tuple) above a given threshold for all cross-correlations.
+
+    Parameters
+    ----------
+    data : ndarray
+        Input data array of shape (n_cross_correlations, n_angbins, n_matrix, n_matrix).
+    angbin_tuples : list of tuple
+        List of (start, end) tuples for each angular bin.
+    threshold : float
+        Threshold value for selecting angular bins.
+    compare : str
+        Which part of the tuple to compare: 'start', 'end', or 'both'.
+        - 'start': select bins where start > threshold
+        - 'end': select bins where end > threshold
+        - 'both': select bins where start > threshold or end > threshold
+
+    Returns
+    -------
+    ndarray
+        Subset of data with selected angular bins, shape (n_cross_correlations, n_selected_angbins, n_matrix, n_matrix).
+    """
+    if compare == 'start':
+        selected_indices = [i for i, (start, end) in enumerate(angbin_tuples) if start > threshold]
+    elif compare == 'end':
+        selected_indices = [i for i, (start, end) in enumerate(angbin_tuples) if end > threshold]
+    elif compare == 'both':
+        selected_indices = [i for i, (start, end) in enumerate(angbin_tuples) if start > threshold or end > threshold]
+    else:
+        raise ValueError("compare must be 'start', 'end', or 'both'")
+    logger.info(f"Selecting angular bins with {compare} above threshold {threshold}: indices {selected_indices}")
+    return data[:, selected_indices, ...]
+
+def select_large_angbins(data, is_large_angle, include_ximinus):
+    """
+    Select large angular bins for all cross-correlations, including xi+ and xi- if needed.
+
+    Parameters
+    ----------
+    data : ndarray
+        Input data array of shape (n_cross_correlations, n_angbins_total, ...).
+    is_large_angle : array-like (bool)
+        Boolean array of length n_angbins (for xi+), True for large angles.
+    include_ximinus : bool
+        If True, also select xi- bins (offset by n_angbins).
+
+    Returns
+    -------
+    ndarray
+        Subset of data with selected angular bins, shape (n_cross_correlations, n_selected_bins, ...).
+    """
+    is_large_angle = np.asarray(is_large_angle)
+    n_angbins = len(is_large_angle)
+    selected_indices = np.where(is_large_angle)[0].tolist()
+    if include_ximinus:
+        selected_indices += [i + n_angbins for i in selected_indices]
+    selected_indices = np.array(selected_indices)
+    logger.info(f"Selecting large angular bins (xi+ and xi- if included): indices {selected_indices}")
+    return data[:, selected_indices, ...]

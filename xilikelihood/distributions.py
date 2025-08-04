@@ -113,6 +113,31 @@ def batched_cf_1d(eigvals, max_vals, steps=1024):
 
 batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(2,))
 
+def low_ell_gaussian_cf_1d(t_lowell, means, vars):
+    """
+    Calculates the characteristic function for a set of 1D Gaussians used as low multipole moment extension.
+
+    Parameters
+    ----------
+    t_lowell : 3D array
+        Fourier space t grid used for the low multipole moment part.
+        Shape: (number of redshift bin combinations, number of angular bins, number of t steps)
+    means : 2D array
+        Mean values of the Gaussian extensions.
+        Shape: (number of redshift bin combinations, number of angular bins)
+    vars : 2D array
+        Variance values of the Gaussian extensions.
+        Shape: (number of redshift bin combinations, number of angular bins)
+
+    Returns
+    -------
+    3D complex array
+        Characteristic function of the Gaussian extensions on the same t grid as the low ell part.
+        Shape: (number of redshift bin combinations, number of angular bins, number of t steps)
+    """
+    return np.exp(1j * means[:, :, None] * t_lowell - 0.5 * vars[:, :, None] * t_lowell**2)
+
+
 def high_ell_gaussian_cf_1d(t_lowell, means, vars):
     """
     calculates the characteristic function for a set of 1d Gaussians used as high mulitpole moment extension.
@@ -184,7 +209,7 @@ def cf_to_pdf_1d(t, cf):
             x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
-        # TODO: build in a check that the pdfs are close to zero at the boundaries
+        
         pdfs = np.array(pdfs)
         xs = np.array(xs)
         pdfs = pdfs.reshape(cf.shape)
