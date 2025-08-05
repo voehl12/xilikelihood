@@ -100,6 +100,12 @@ def gaussian_cf_nD(t_sets, mu, cov):
 # Core CF/PDF conversion functions
 # ============================================================================
 
+def setup_t_1d(max_vals,steps):
+    all_dt = 0.45 * 2 * np.pi / max_vals
+    all_t0 = -0.5 * all_dt * (steps - 1)
+    all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
+    return all_t
+
 def batched_cf_1d(eigvals, max_vals, steps=1024):
 
     all_dt = 0.45 * 2 * jnp.pi / max_vals
@@ -113,7 +119,7 @@ def batched_cf_1d(eigvals, max_vals, steps=1024):
 
 batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(2,))
 
-def low_ell_gaussian_cf_1d(t_lowell, means, vars):
+def low_ell_gaussian_cf_1d(max_vals, means, vars,steps=1024):
     """
     Calculates the characteristic function for a set of 1D Gaussians used as low multipole moment extension.
 
@@ -135,7 +141,8 @@ def low_ell_gaussian_cf_1d(t_lowell, means, vars):
         Characteristic function of the Gaussian extensions on the same t grid as the low ell part.
         Shape: (number of redshift bin combinations, number of angular bins, number of t steps)
     """
-    return np.exp(1j * means[:, :, None] * t_lowell - 0.5 * vars[:, :, None] * t_lowell**2)
+    t = setup_t_1d(max_vals,steps)
+    return t, np.exp(1j * means[:, :, None] * t - 0.5 * vars[:, :, None] * t**2)
 
 
 def high_ell_gaussian_cf_1d(t_lowell, means, vars):
