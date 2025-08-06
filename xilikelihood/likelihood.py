@@ -455,7 +455,7 @@ class XiLikelihood:
         ts[:,self._is_large_angle] = t_lowell
         gauss_means = self._means_lowell[:,~self._is_large_angle]
         gauss_vars = self._means_lowell[:,~self._is_large_angle]
-        t_lowell_small_angles, cfs_lowell_small_angles = low_ell_gaussian_cf_1d(self._ximax[:,~self._is_large_angle], gauss_means, gauss_vars,steps=self.config.cf_steps)
+        t_lowell_small_angles, cfs_lowell_small_angles = low_ell_gaussian_cf_1d(self._ximin[:,~self._is_large_angle],self._ximax[:,~self._is_large_angle], gauss_means, gauss_vars,steps=self.config.cf_steps)
         cfs[:,~self._is_large_angle] = cfs_lowell_small_angles
         ts[:,~self._is_large_angle] = t_lowell_small_angles
         return ts, cfs
@@ -515,7 +515,13 @@ class XiLikelihood:
             # Free memory after CF computation
             if self.config.enable_memory_cleanup:
                 del auto_prods, cross_prods, cross_combs, self._eigvals
-
+    
+    @staticmethod
+    @jax.jit
+    def compute_cov_block(products, cov_pos, k, l):
+        # products: shape (...), cov_pos: shape (4,)
+        return jnp.sum(products[cov_pos[0],k] * products[cov_pos[1],l].T +
+                    products[cov_pos[2],k] * products[cov_pos[3],l].T)
 
     def get_covariance_matrix_lowell(self):
         # get the covariance matrix for the full data vector exact part
@@ -526,7 +532,9 @@ class XiLikelihood:
         self._cov_lowell = jnp.full((self.n_data_points_full,self.n_data_points_full), jnp.nan)
         with computation_phase("Covariance matrix computation (low-ell)", log_memory=self.config.log_memory_usage):
             i = 0
-            products = jnp.array(self._products.copy())
+            products = self._products.view()
+            products.flags.writeable = False
+            products = jnp.array(products)
             for rcomb1 in self._numerical_redshift_bin_combinations:
                 # Iterate over all data points (xi+ and optionally xi- for each angular bin)
                 for k in range(self.n_data_points_per_rs_comb):
@@ -544,20 +552,10 @@ class XiLikelihood:
                                 
                                 cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
                                 # make this into a jax function? is quite slow...
-                                self._cov_lowell = self._cov_lowell.at[i, j].set(jnp.sum(
-                                    
-                                        jnp.sum(
-                                            products[cov_pos[0], k] * products[cov_pos[1], l].T
-                                        ) +
-                                        jnp.sum(
-                                            products[cov_pos[2], k] * products[cov_pos[3], l].T
-                                        )
-                                        
-                                    
-                                ))
+                                self._cov_lowell = self._cov_lowell.at[i, j].set(self.compute_cov_block(products, cov_pos, k, l))
                             j += 1
                     i += 1
-            
+        del products
         # Fill lower triangle by symmetry
         self._cov_lowell = jnp.where(
             jnp.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
