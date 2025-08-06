@@ -10,8 +10,7 @@ def create_mock_data(likelihood,mock_data_path,gaussian_covariance_path,random=N
     """Create mock data for the likelihood analysis."""
     
     theory_cls = likelihood.initiate_theory_cl(FIDUCIAL_COSMO)
-    likelihood.initiate_mask_specific()
-    likelihood.precompute_combination_matrices()
+    likelihood.setup_likelihood()
     likelihood._prepare_matrix_products()
 
     likelihood.get_covariance_matrix_lowell()
