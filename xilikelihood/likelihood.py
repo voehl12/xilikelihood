@@ -186,15 +186,7 @@ class XiLikelihood:
         # Angular bins
         self.ang_bins_in_deg = ang_bins_in_deg
         self._n_ang_bins = len(ang_bins_in_deg)
-        self._is_large_angle = [ang[0] >= self.config.large_angle_threshold for ang in ang_bins_in_deg]
-        # Data shape attributes for full, large, and small angles
-        self.data_shape_full = (self._n_redshift_bin_combs, self.n_correlation_types * self._n_ang_bins)
-        self.n_data_points_full = self.data_shape_full[0] * self.data_shape_full[1]
-        self.n_data_points_per_rs_comb = self.data_shape_full[1]
-        self.n_large_angles = int(np.sum(self._is_large_angle))
-        self.n_small_angles = self._n_ang_bins - self.n_large_angles
-        self.data_shape_large_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_large_angles)
-        self.data_shape_small_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_small_angles)
+        self._is_large_angle = np.array([ang[0] >= self.config.large_angle_threshold for ang in ang_bins_in_deg])
         
         # Redshift bins
         self.redshift_bins = redshift_bins
@@ -210,7 +202,15 @@ class XiLikelihood:
         ) = prepare_theory_cl_inputs(redshift_bins, noise)
         
         self._n_redshift_bin_combs = len(self._numerical_redshift_bin_combinations)
-
+        # Data shape attributes for full, large, and small angles
+        self.data_shape_full = (self._n_redshift_bin_combs, self.n_correlation_types * self._n_ang_bins)
+        self.n_data_points_full = self.data_shape_full[0] * self.data_shape_full[1]
+        self.n_data_points_per_rs_comb = self.data_shape_full[1]
+        self.n_large_angles = int(np.sum(self._is_large_angle))
+        self.n_small_angles = self._n_ang_bins - self.n_large_angles
+        self.data_shape_large_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_large_angles)
+        self.data_shape_small_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_small_angles)
+        
         # Exact lmax setup
         if exact_lmax is None:
             self._exact_lmax = mask.exact_lmax
@@ -444,17 +444,18 @@ class XiLikelihood:
         """Compute characteristic functions using configured parameters."""
         # now returns combination of exact and gaussian cfs, to be combined with high ell end and converted to pdf all together.
         logger.info("Computing characteristic functions...")
-        ts, cfs = np.zeros('datashape, config.cf_steps')
+        ts = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+        cfs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
         t_lowell, cfs_lowell = batched_cf_1d_jitted(
-            self._eigvals, self._ximax, steps=self.config.cf_steps
-        )
+            self._eigvals, self._ximax[:,self._is_large_angle], steps=self.config.cf_steps
+        ) # need to only pass ximax 
         t_lowell = np.asarray(t_lowell)
         cfs_lowell = np.asarray(cfs_lowell)
         cfs[:,self._is_large_angle] = cfs_lowell
         ts[:,self._is_large_angle] = t_lowell
-        gauss_means = self._lowell_means[:,~self._is_large_angle]
-        gauss_vars = self._lowell_means[:,~self._is_large_angle]
-        t_lowell_small_angles, cfs_lowell_small_angles = low_ell_gaussian_cf_1d(self._ximax, gauss_means, gauss_vars,steps=self.config.cf_steps)
+        gauss_means = self._means_lowell[:,~self._is_large_angle]
+        gauss_vars = self._means_lowell[:,~self._is_large_angle]
+        t_lowell_small_angles, cfs_lowell_small_angles = low_ell_gaussian_cf_1d(self._ximax[:,~self._is_large_angle], gauss_means, gauss_vars,steps=self.config.cf_steps)
         cfs[:,~self._is_large_angle] = cfs_lowell_small_angles
         ts[:,~self._is_large_angle] = t_lowell_small_angles
         return ts, cfs
@@ -480,7 +481,7 @@ class XiLikelihood:
             self._variances = np.zeros(self.data_shape_full)
             self._variances = self._compute_variances(auto_prods, cross_prods, cross_combs) # want to have these for all datapoints
 
-            large_angle_products = cop.select_large_angbins(products, self._is_large_angle,self._include_ximinus)
+            large_angle_products = cop.select_large_angbins(products, self._is_large_angle,self.include_ximinus)
             large_angle_products.flags.writeable = False
             
             eigvals_shape = self.data_shape_large_angles + (2 * large_angle_products.shape[-1],)
@@ -523,45 +524,47 @@ class XiLikelihood:
         
        
         self._cov_lowell = jnp.full((self.n_data_points_full,self.n_data_points_full), jnp.nan)
-
-        i = 0
-        products = jnp.array(self._products.copy())
-        for rcomb1 in self._numerical_redshift_bin_combinations:
-            # Iterate over all data points (xi+ and optionally xi- for each angular bin)
-            for k in range(self.n_data_points_per_rs_comb):
-                j = 0
-                for rcomb2 in self._numerical_redshift_bin_combinations:
-                    for l in range(self.n_data_points_per_rs_comb):
-                        if i <= j:
-                            all_combs = [
-                                (rcomb1[0], rcomb2[0]),
-                                (rcomb1[1], rcomb2[1]),
-                                (rcomb1[1], rcomb2[0]),
-                                (rcomb1[0], rcomb2[1]),
-                            ]
-                            sorted = [tuple(np.sort(comb)[::-1]) for comb in all_combs]
-                            
-                            cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
-                            # make this into a jax function? is quite slow...
-                            self._cov_lowell = self._cov_lowell.at[i, j].set(jnp.sum(
+        with computation_phase("Covariance matrix computation (low-ell)", log_memory=self.config.log_memory_usage):
+            i = 0
+            products = jnp.array(self._products.copy())
+            for rcomb1 in self._numerical_redshift_bin_combinations:
+                # Iterate over all data points (xi+ and optionally xi- for each angular bin)
+                for k in range(self.n_data_points_per_rs_comb):
+                    j = 0
+                    for rcomb2 in self._numerical_redshift_bin_combinations:
+                        for l in range(self.n_data_points_per_rs_comb):
+                            if i <= j:
+                                all_combs = [
+                                    (rcomb1[0], rcomb2[0]),
+                                    (rcomb1[1], rcomb2[1]),
+                                    (rcomb1[1], rcomb2[0]),
+                                    (rcomb1[0], rcomb2[1]),
+                                ]
+                                sorted = [tuple(np.sort(comb)[::-1]) for comb in all_combs]
                                 
-                                    jnp.sum(
-                                        products[cov_pos[0], k] * products[cov_pos[1], l].T
-                                    ) +
-                                    jnp.sum(
-                                        products[cov_pos[2], k] * products[cov_pos[3], l].T
-                                    )
+                                cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
+                                # make this into a jax function? is quite slow...
+                                self._cov_lowell = self._cov_lowell.at[i, j].set(jnp.sum(
                                     
-                                
-                            ))
-                        j += 1
-                i += 1
-        
+                                        jnp.sum(
+                                            products[cov_pos[0], k] * products[cov_pos[1], l].T
+                                        ) +
+                                        jnp.sum(
+                                            products[cov_pos[2], k] * products[cov_pos[3], l].T
+                                        )
+                                        
+                                    
+                                ))
+                            j += 1
+                    i += 1
+            
         # Fill lower triangle by symmetry
         self._cov_lowell = jnp.where(
             jnp.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
         )
-        return np.asarray(self._cov_lowell)
+        # Convert to numpy array for compatibility
+        self._cov_lowell = np.asarray(self._cov_lowell)
+        return self._cov_lowell
 
     def get_covariance_matrix_highell(self):
         # get the covariance matrix for the full data vector Gaussian part
