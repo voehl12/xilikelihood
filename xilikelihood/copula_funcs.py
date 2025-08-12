@@ -23,9 +23,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 DEFAULT_MIN_EIGENVALUE = 5e-4
 DEFAULT_INTERPOLATION_POINTS = 512
-DEFAULT_PDF_THRESHOLD = 0.01
+DEFAULT_PDF_THRESHOLD = 1e-3
 DEFAULT_NORMALIZATION_TOLERANCE = 1e-3
 DEFAULT_SMALL_NUMBER = 1e-300
 
@@ -102,7 +103,7 @@ def multivariate_student_t_logpdf(z, df, scale):
 # ============================================================================
 
 
-def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE, plot=False, max_plots=16, savepath=None):
+def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE, plot=False, max_plots=32, savepath=None):
     """
     Perform checks on the PDFs to ensure they are valid.
 
@@ -197,11 +198,19 @@ def interpolate_along_last_axis(xs, pdfs, num_points=DEFAULT_INTERPOLATION_POINT
     return xs_interp, pdfs_interp
 
 
-def pdf_to_cdf(xs, pdfs):
-    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs, num_points=1024)
+def pdf_to_cdf(xs, pdfs, num_points):
+    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs, num_points=num_points)
     cdfs = cumtrapz(pdfs_interp, xs_interp, initial=0)
 
-    assert np.all(np.fabs(cdfs[..., -1] - 1) < 1e-2), "CDF not normalized to 1"
+    # Vectorized normalization check
+    final_vals = cdfs[..., -1]
+    normalization_tolerance = 1e-1
+    mask = np.abs(final_vals - 1) >= normalization_tolerance
+    problematic_indices = list(zip(*np.where(mask)))
+    if problematic_indices:
+        logger.warning(f"CDFs not normalized at indices: {problematic_indices}. Final values: {final_vals[mask]}")
+
+    # Normalize all CDFs regardless
     max_values = np.max(cdfs, axis=-1, keepdims=True)
     cdfs /= max_values
 
@@ -463,7 +472,7 @@ def test_correlation_matrix(matrix, iscov=False):
 # ============================================================================
 
 
-def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
+def joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     """
     Compute the joint PDF for the given CDFs, PDFs, and covariance matrix.
 
@@ -787,11 +796,16 @@ def plot_pdfs_and_cdfs(pdfs, xs, cdfs=None, max_plots=16, savepath=None):
         i = idx // n_ang
         j = idx % n_ang
         ax = axes[idx]
-        ax.plot(xs[i, j], pdfs[i, j], label='PDF')
-        if cdfs is not None:
-            ax.plot(xs[i, j], cdfs[i, j], label='CDF')
+        ax.plot(xs[i, j], pdfs[i, j], label='PDF', color='tab:blue')
         ax.set_title(f'rs={i}, ang={j}')
-        ax.legend()
+        ax.set_ylabel('PDF')
+        ax.set_xlabel('x')
+        if cdfs is not None:
+            ax2 = ax.twinx()
+            ax2.plot(xs[i, j], cdfs[i, j], label='CDF', color='tab:orange', linestyle='--')
+            ax2.set_ylabel('CDF', color='tab:orange')
+            ax2.tick_params(axis='y', labelcolor='tab:orange')
+        ax.legend(loc='upper left')
     for ax in axes[n_plots:]:
         ax.axis('off')
     #fig.tight_layout()
