@@ -69,7 +69,7 @@ from .distributions import (
     mean_xi_gaussian_nD,
     batched_cf_1d_jitted, 
     high_ell_gaussian_cf_1d,
-    low_ell_gaussian_cf_1d, 
+    gaussian_pdf_1d,
     cf_to_pdf_1d,
     cov_xi_gaussian_nD,
     gaussian_2d,
@@ -187,6 +187,14 @@ class XiLikelihood:
         self.ang_bins_in_deg = ang_bins_in_deg
         self._n_ang_bins = len(ang_bins_in_deg)
         self._is_large_angle = np.array([ang[0] >= self.config.large_angle_threshold for ang in ang_bins_in_deg])
+        self.n_large_angles = int(np.sum(self._is_large_angle))
+        logger.info("Initialized XiLikelihood with %d large angles out of %d total angular bins, large angles at indices %s.",
+                    self.n_large_angles, self._n_ang_bins, np.where(self._is_large_angle)[0])
+        self.n_small_angles = self._n_ang_bins - self.n_large_angles
+        # Repeat _is_large_angle for both correlation types if needed
+        if self.n_correlation_types == 2:
+            self._is_large_angle = np.tile(self._is_large_angle, 2)
+        
         
         # Redshift bins
         self.redshift_bins = redshift_bins
@@ -206,8 +214,7 @@ class XiLikelihood:
         self.data_shape_full = (self._n_redshift_bin_combs, self.n_correlation_types * self._n_ang_bins)
         self.n_data_points_full = self.data_shape_full[0] * self.data_shape_full[1]
         self.n_data_points_per_rs_comb = self.data_shape_full[1]
-        self.n_large_angles = int(np.sum(self._is_large_angle))
-        self.n_small_angles = self._n_ang_bins - self.n_large_angles
+        
         self.data_shape_large_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_large_angles)
         self.data_shape_small_angles = (self._n_redshift_bin_combs, self.n_correlation_types * self.n_small_angles)
         
@@ -444,34 +451,20 @@ class XiLikelihood:
         """Compute characteristic functions using configured parameters."""
         # now returns combination of exact and gaussian cfs, to be combined with high ell end and converted to pdf all together.
         logger.info("Computing characteristic functions...")
-        ts = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
-        cfs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+        ts = np.zeros(self.data_shape_large_angles + (self.config.cf_steps-1,))
+        cfs = np.zeros(self.data_shape_large_angles + (self.config.cf_steps-1,),dtype=complex)
         t_lowell, cfs_lowell = batched_cf_1d_jitted(
-            self._eigvals, self._ximax[:,self._is_large_angle], steps=self.config.cf_steps
+            self._eigvals,  self._ximin[:,self._is_large_angle],self._ximax[:,self._is_large_angle], steps=self.config.cf_steps
         ) # need to only pass ximax 
-        t_lowell = np.asarray(t_lowell)
-        cfs_lowell = np.asarray(cfs_lowell)
-        cfs[:,self._is_large_angle] = cfs_lowell
-        ts[:,self._is_large_angle] = t_lowell
-        gauss_means = self._means_lowell[:,~self._is_large_angle]
-        gauss_vars = self._means_lowell[:,~self._is_large_angle]
-        t_lowell_small_angles, cfs_lowell_small_angles = low_ell_gaussian_cf_1d(self._ximin[:,~self._is_large_angle],self._ximax[:,~self._is_large_angle], gauss_means, gauss_vars,steps=self.config.cf_steps)
-        cfs[:,~self._is_large_angle] = cfs_lowell_small_angles
-        ts[:,~self._is_large_angle] = t_lowell_small_angles
+        ts = np.asarray(t_lowell)
+        cfs = np.asarray(cfs_lowell)
+        
         return ts, cfs
 
     def _get_cfs_1d_lowell(self):
         """Compute characteristic functions for low-ell part."""
         with computation_phase("Characteristic function computation (low-ell)", log_memory=self.config.log_memory_usage):
-            # select small angular bins for Gaussian likelihood
             
-            
-            logger.info("Starting CF computation...")
-        
-            # Handle doubled data vector when xi_minus is included
-            
-            
-        
             products = self._products.view() # extract large scale products at this point, possibly use data_subset
             # Make products read-only to prevent accidental modifications
             cross_prods = jnp.array(products[self._is_cov_cross]) # should be fine as all correlations are kept, just angles eliminated
@@ -481,7 +474,7 @@ class XiLikelihood:
             self._variances = np.zeros(self.data_shape_full)
             self._variances = self._compute_variances(auto_prods, cross_prods, cross_combs) # want to have these for all datapoints
 
-            large_angle_products = cop.select_large_angbins(products, self._is_large_angle,self.include_ximinus)
+            large_angle_products = products[:, self._is_large_angle, ...]
             large_angle_products.flags.writeable = False
             
             eigvals_shape = self.data_shape_large_angles + (2 * large_angle_products.shape[-1],)
@@ -495,12 +488,10 @@ class XiLikelihood:
             
             
             # Compute eigenvalues
-            # select means of the large angles here
-            # maybe keep all xi-ranges here because I need them for the Gaussian pdfs as well. Then
-            # implement the small angle part at the characteristic function level? i.e. here? then don't need distinction in
-            # adding high ell part. But numerical issues?
+            
             self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances))
             self._ximin = jnp.array(self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances))
+            #self._ximin = jnp.zeros_like(self._ximax)
             eigvals_auto_padded = self._compute_auto_eigenvalues(auto_prods)
             self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
 
@@ -548,9 +539,8 @@ class XiLikelihood:
                                     (rcomb1[1], rcomb2[0]),
                                     (rcomb1[0], rcomb2[1]),
                                 ]
-                                sorted = [tuple(np.sort(comb)[::-1]) for comb in all_combs]
                                 
-                                cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in sorted]
+                                cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in all_combs]
                                 # make this into a jax function? is quite slow...
                                 self._cov_lowell = self._cov_lowell.at[i, j].set(self.compute_cov_block(products, cov_pos, k, l))
                             j += 1
@@ -601,17 +591,17 @@ class XiLikelihood:
     def _get_cfs_1d_highell(self):
         # get the Gaussian cf for the high ell part
         vars = np.diag(self._cov_highell)
-        
         vars = vars.reshape(self.data_shape_full)
+        vars = vars[:,self._is_large_angle]  # only large angles
         #vars = cop.select_large_angbins(vars,self._is_large_angle,self.include_ximinus)
         #means_large_angles = cop.select_large_angbins(self._means_highell,self._is_large_angle,self.include_ximinus)
-        return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell, vars)
+        return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell[:,self._is_large_angle], vars)
 
     def _get_gaussian_marginals(self):
         pass
 
-    def marginals(self):
-        # get the marginal pdfs and potentially cdfs
+    def marginals_exact(self):
+        # get the marginal pdfs
         self._get_cfs_1d_lowell()
 
         if self._highell:
@@ -619,10 +609,21 @@ class XiLikelihood:
             self._cfs = self._cfs_lowell * self._get_cfs_1d_highell()
         else:
             self._cfs = self._cfs_lowell
+        
+        self._xs[:,self._is_large_angle], self._pdfs[:,self._is_large_angle] = cf_to_pdf_1d(self._t_lowell, self._cfs) # is tuple (x,pdf) with shape (croco,large_angs,n_points) each
 
-        self._marginals = cf_to_pdf_1d(self._t_lowell, self._cfs) # is tuple (x,pdf) with shape (croco,large_angs,n_points) each
-        # already contain gaussian and non gaussian parts
-        return self._marginals
+        return self._xs, self._pdfs
+
+    def marginals_gaussian(self):
+        gauss_means = self._mean[:,~self._is_large_angle]
+        gauss_vars = np.diag(self._cov).reshape(self.data_shape_full)[:,~self._is_large_angle]
+        logger.info("Means for the Gaussian marginals: %s", gauss_means)
+        logger.info("Variances for the Gaussian marginals: %s", gauss_vars)
+        xs_gauss, pdfs_gauss = gaussian_pdf_1d(gauss_means, gauss_vars, n_grid=self.config.cf_steps)
+        self._xs[:,~self._is_large_angle] = xs_gauss
+        self._pdfs[:,~self._is_large_angle] = pdfs_gauss
+
+        return self._xs, self._pdfs
 
     def gauss_compare(self, data, data_subset=None):
         # should always use a fixed covariance, produce on initialization?
@@ -669,9 +670,14 @@ class XiLikelihood:
             self._mean = self._means_lowell + self._means_highell
         logger.info("Covariance matrix and means prepared.")
         logger.info("Mean samples: %s", self._mean[:5, :5])
-        xs, pdfs = self.marginals()
-        self._cdfs, self._pdfs, self._xs = cop.pdf_to_cdf(xs, pdfs)  # Interpolated xs and pdfs
+        
+        self._xs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+        self._pdfs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+        self.marginals_exact()
+        self.marginals_gaussian()
+        self._cdfs, self._pdfs, self._xs = cop.pdf_to_cdf(self._xs, self._pdfs,num_points=self.config.pdf_steps)  # Interpolated xs and pdfs
         self.check_pdfs()
+
         del self._products
 
 
@@ -864,7 +870,7 @@ def fiducial_dataspace(
     ang_min: float = 0.5, 
     ang_max: float = 300,
     n_bins: int = 9, 
-    min_ang_cutoff: float = 15
+    min_ang_cutoff_in_arcmin: float = 15
 ) -> Tuple[List[RedshiftBin], List[Tuple[float, float]]]:
     """
     Generate standard KiDS-like analysis setup.
@@ -879,7 +885,7 @@ def fiducial_dataspace(
         Maximum angular scale in arcminutes
     n_bins : int
         Number of angular bins
-    min_ang_cutoff : float
+    min_ang_cutoff_in_arcmin : float
         Minimum angular scale cutoff in arcminutes
         
     Returns:
@@ -922,7 +928,7 @@ def fiducial_dataspace(
     )
     # Filter out bins smaller than cutoff
     filtered_ang_bins_in_arcmin = initial_ang_bins_in_arcmin[
-        initial_ang_bins_in_arcmin >= min_ang_cutoff
+        initial_ang_bins_in_arcmin >= min_ang_cutoff_in_arcmin
     ]
     # Add one more bin on the larger side according to the same pattern
     last_bin_ratio = filtered_ang_bins_in_arcmin[-1] / filtered_ang_bins_in_arcmin[-2]
