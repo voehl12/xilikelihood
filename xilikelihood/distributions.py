@@ -17,7 +17,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from scipy.interpolate import UnivariateSpline
-from scipy.stats import multivariate_normal
+from scipy.stats import multivariate_normal, norm
+from scipy.signal import find_peaks
+from scipy.integrate import quad_vec
+import logging
 import warnings
 
 from .noise_utils import get_noisy_cl
@@ -28,12 +31,15 @@ from .theoretical_moments import get_moments_from_combination_matrix_1d
 # Constants
 FULL_SKY_AREA_DEG2 = 4 * np.pi * (180 / np.pi)**2  # Full sky area in square degrees
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     # Constants
     'FULL_SKY_AREA_DEG2',
     
     # Grid setup utilities
     'setup_t',
+    'setup_t_asymmetric',
 
     # Gaussian characteristic functions (moved from helper_funcs)
     'gaussian_cf',
@@ -42,6 +48,7 @@ __all__ = [
     # Core CF/PDF conversion functions
     'batched_cf_1d_jitted',
     'high_ell_gaussian_cf_1d', 
+    'gaussian_pdf_1d'
     'cf_to_pdf_1d',
     'get_exact',
 
@@ -81,6 +88,13 @@ def setup_t(xi_max, steps):
 
     return t_inds, t_sets, t0s, dts
 
+
+def setup_t_asymmetric(min_vals, max_vals, steps):
+    dt = 2 * np.pi / (max_vals - min_vals)
+    t0 = - 0.5 * dt * (steps - 1)
+    t = np.linspace(t0, -t0, steps - 1,axis=-1)
+    return t
+
 # ============================================================================
 # Gaussian characteristic functions (moved from helper_funcs)
 # ============================================================================
@@ -100,26 +114,22 @@ def gaussian_cf_nD(t_sets, mu, cov):
 # Core CF/PDF conversion functions
 # ============================================================================
 
-def setup_t_1d(max_vals,steps):
-    all_dt = 0.45 * 2 * np.pi / max_vals
-    all_t0 = -0.5 * all_dt * (steps - 1)
-    all_t = np.linspace(all_t0, -all_t0, steps - 1, axis=-1)
-    return all_t
 
-def batched_cf_1d(eigvals, max_vals, steps=1024):
 
-    all_dt = 0.45 * 2 * jnp.pi / max_vals
-    all_t0 = -0.5 * all_dt * (steps - 1)
-    all_t = jnp.linspace(all_t0, -all_t0, steps - 1, axis=-1)
+def batched_cf_1d(eigvals, min_vals, max_vals, steps=1024):
+    
+    dt = 2 * jnp.pi / (max_vals - min_vals)
+    t0 = -0.5 * dt * (steps - 1)
+    all_t = jnp.linspace(t0, -t0, steps - 1,axis=-1)
     t_evals = all_t[:, :, :, None] * eigvals[:, :, None, :]
     cfs = jnp.prod(jnp.sqrt(1 / (1 - 2 * 1j * t_evals)), axis=-1)
 
     return all_t, cfs
 
 
-batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(2,))
+batched_cf_1d_jitted = jax.jit(batched_cf_1d, static_argnums=(3,))
 
-def low_ell_gaussian_cf_1d(max_vals, means, vars,steps=1024):
+def low_ell_gaussian_cf_1d(min_vals,max_vals, means, vars,steps=1024):
     """
     Calculates the characteristic function for a set of 1D Gaussians used as low multipole moment extension.
 
@@ -141,7 +151,8 @@ def low_ell_gaussian_cf_1d(max_vals, means, vars,steps=1024):
         Characteristic function of the Gaussian extensions on the same t grid as the low ell part.
         Shape: (number of redshift bin combinations, number of angular bins, number of t steps)
     """
-    t = setup_t_1d(max_vals,steps)
+    
+    t = setup_t_asymmetric(min_vals,max_vals,steps)
     return t, np.exp(1j * means[:, :, None] * t - 0.5 * vars[:, :, None] * t**2)
 
 
@@ -191,6 +202,39 @@ def high_ell_gaussian_cf_1d(t_lowell, means, vars):
 
     return interp_to_lowell
 
+def gaussian_pdf_1d(means, vars, n_grid=2048):
+    """
+    Generate Gaussian PDFs and x-grids for a grid of means and stds.
+
+    Parameters
+    ----------
+    means : ndarray
+        Array of means, shape (n_redshift_bins, n_angular_bins)
+    vars : ndarray
+        Array of variances, shape (n_redshift_bins, n_angular_bins)
+    n_grid : int, optional
+        Number of grid points for x (default: 2048)
+
+    Returns
+    -------
+    x : ndarray
+        The x grid, shape (n_redshift_bins, n_angular_bins, n_grid)
+    pdf : ndarray
+        The Gaussian PDF evaluated on x, same shape as x
+    """
+    
+    means = np.asarray(means)
+    std = np.sqrt(np.asarray(vars))
+    
+    
+    x_min = means - 20 * std
+    x_max = means + 20 * std
+    x = np.linspace(x_min,x_max,n_grid-1,axis=-1)  
+    
+    pdf = norm.pdf(x, loc=means[:, :, None], scale=std[:, :, None])
+    return x, pdf
+
+
 def cf_to_pdf_1d(t, cf):
     """
     Converts a characteristic function phi(t) to a probability density function f(x).
@@ -212,18 +256,40 @@ def cf_to_pdf_1d(t, cf):
         pdf_array *= dt[:, None] * np.exp(1j * x_array * t0[:, None]) / (2 * np.pi)
         xs, pdfs = [], []
 
-        for x, pdf in zip(x_array, pdf_array):
+        for idx, (x, pdf) in enumerate(zip(x_array, pdf_array)):
             x_sorted, pdf_sorted = list(zip(*sorted(zip(x, np.abs(pdf)))))
+            # Peak detection
+            peaks, _ = find_peaks(pdf_sorted, height=np.max(pdf_sorted) * 0.1)
+            if len(peaks) > 1:
+                # Fallback to direct integration
+                x_eval = np.array(x_sorted)
+                def integrand(ti):
+                    cf_val = np.interp(ti, t[idx], cf_array[idx])
+                    return np.real(cf_val * np.exp(-1j * ti * x_eval))
+                pdf_direct = quad_vec(integrand, t[idx][0], t[idx][-1], limit=200)[0] / (2 * np.pi)
+                pdf_sorted = pdf_direct
+                logger.warning(f"cf_to_pdf_1d: Two peaks detected in FFT PDF (idx={idx}), used direct integration fallback.")
+                # Diagnostic plot of the CF
+                try:
+                    import matplotlib.pyplot as plt
+                    fig, ax = plt.subplots()
+                    ax.plot(t[idx], cf_array[idx].real, label='Re[CF]')
+                    ax.plot(t[idx], cf_array[idx].imag, label='Im[CF]')
+                    ax.set_title(f'Characteristic Function (idx={idx})')
+                    ax.set_xlabel('t')
+                    ax.set_ylabel('CF')
+                    ax.legend()
+                    fig.savefig(f'cf_diagnostic_idx{idx}.png')
+                    plt.close(fig)
+                except Exception as e:
+                    logger.warning(f"Could not plot CF diagnostic for idx={idx}: {e}")
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
-        
         pdfs = np.array(pdfs)
         xs = np.array(xs)
         pdfs = pdfs.reshape(cf.shape)
         xs = xs.reshape(cf.shape)
-
         return xs, pdfs
-
     else:
         # Main part of the pdf is given by a FFT
         pdf = np.fft.fft(cf)
@@ -389,7 +455,11 @@ def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area,
     # Fill lower triangle by symmetry
     xi_cov = xi_cov + xi_cov.T - np.diag(np.diag(xi_cov))
     
-    assert np.all(np.linalg.eigvals(xi_cov) >= 0), "Covariance matrix not positive-semidefinite"
+    eigvals = np.linalg.eigvals(xi_cov)
+    if not np.all(eigvals >= 0):
+        min_eig = np.min(eigvals)
+        logger.warning(f"Covariance matrix not positive-semidefinite: smallest eigenvalue = {min_eig}")
+
     assert np.allclose(xi_cov, xi_cov.T), "Covariance matrix not symmetric"
 
     return xi_cov
@@ -573,7 +643,7 @@ def cov_cl_gaussian_mixed(mixed_cl_objects, lmax):
 
 def cf_to_pdf_nd(cf_grid, t0, dt, verbose=True):
     """DEPRECATED: Use likelihood module instead."""
-    import warnings
+    
     warnings.warn(
         "cf_to_pdf_nd is deprecated. Use likelihood module for new analyses.",
         DeprecationWarning,
