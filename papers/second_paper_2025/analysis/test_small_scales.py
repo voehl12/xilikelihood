@@ -21,7 +21,7 @@ xili_logger.setLevel(logging.DEBUG)
 # Set root logger to capture everything
 logging.getLogger().setLevel(logging.INFO)
 
-redshift_bins, angular_bins = xlh.fiducial_dataspace(min_ang_cutoff=0)
+redshift_bins, angular_bins = xlh.fiducial_dataspace(min_ang_cutoff_in_arcmin=0)
 mask = xlh.SphereMask(
     spins=MASK_CONFIG['spins'], 
     circmaskattr=MASK_CONFIG['circmaskattr'], 
@@ -29,20 +29,22 @@ mask = xlh.SphereMask(
     l_smooth=MASK_CONFIG['l_smooth'],
     working_dir=PACKAGE_DIR  # Use package root for shared arrays
 )
+angular_bins_in_deg = angular_bins[:-2]
+redshift_bins = redshift_bins[2:]
 likelihood = xlh.XiLikelihood(
     redshift_bins=redshift_bins,
-    ang_bins_in_deg=angular_bins,
+    ang_bins_in_deg=angular_bins_in_deg,
     mask=mask,
-    include_ximinus=False,  # Set to False for small scales
+    include_ximinus=False,  # Set to False for small scales, covariance for low ell is not set up properly yet.
     exact_lmax=EXACT_LMAX,
 )
 # Generate mock data and covariance
 mock_data_path = "mock_data_smallscales.npz"
 gaussian_covariance_path = "gaussian_covariance_smallscales.npz"
-#create_mock_data(likelihood, mock_data_path, gaussian_covariance_path)
+create_mock_data(likelihood, mock_data_path, gaussian_covariance_path)
 mock_data = np.load(mock_data_path)["data"]
 gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
 
 likelihood.gaussian_covariance = gaussian_covariance
 likelihood.setup_likelihood()
-logL = likelihood.loglikelihood(mock_data,FIDUCIAL_COSMO)
+logL = likelihood.loglikelihood(mock_data,FIDUCIAL_COSMO,highell=True)
