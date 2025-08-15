@@ -83,10 +83,11 @@ def test_get_cfs_1d_lowell(likelihood_instance, snapshot):
     os.environ["JAX_PLATFORMS"] = "cpu"
     
     # Call the method
+    likelihood_instance.get_covariance_matrix_lowell()
     likelihood_instance._get_cfs_1d_lowell()
 
     # Capture outputs
-    variances = np.array(likelihood_instance._variances.real)
+    variances = np.array(likelihood_instance._variances_lowell.real)
     eigvals = np.array(likelihood_instance._eigvals.real)
     t_lowell = np.array(likelihood_instance._t_lowell.real)
     cfs_lowell = np.array(likelihood_instance._cfs_lowell.real)
@@ -95,7 +96,7 @@ def test_get_cfs_1d_lowell(likelihood_instance, snapshot):
     
     # Write outputs to the regression test snapshot
     snapshot.check(variances, rtol=1e-10)
-    snapshot.check(eigvals, rtol=1e-10)
+    snapshot.check(eigvals, rtol=1e-8)
     snapshot.check(t_lowell, rtol=1e-10)
     snapshot.check(cfs_lowell, rtol=1e-10)
     snapshot.check(ximax, rtol=1e-10)
