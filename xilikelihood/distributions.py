@@ -27,6 +27,7 @@ from .noise_utils import get_noisy_cl
 from .cl2xi_transforms import get_integrated_wigners, pcls2xis, precompute_wigners_cache
 from .core_utils import check_property_equal
 from .theoretical_moments import get_moments_from_combination_matrix_1d
+from .diagnostic_tools import plot_cf
 
 # Constants
 FULL_SKY_AREA_DEG2 = 4 * np.pi * (180 / np.pi)**2  # Full sky area in square degrees
@@ -262,27 +263,15 @@ def cf_to_pdf_1d(t, cf):
             peaks, _ = find_peaks(pdf_sorted, height=np.max(pdf_sorted) * 0.1)
             if len(peaks) > 1:
                 # Fallback to direct integration
-                x_eval = np.array(x_sorted)
+                """ x_eval = np.array(x_sorted)
                 def integrand(ti):
                     cf_val = np.interp(ti, t[idx], cf_array[idx])
                     return np.real(cf_val * np.exp(-1j * ti * x_eval))
                 pdf_direct = quad_vec(integrand, t[idx][0], t[idx][-1], limit=200)[0] / (2 * np.pi)
-                pdf_sorted = pdf_direct
-                logger.warning(f"cf_to_pdf_1d: Two peaks detected in FFT PDF (idx={idx}), used direct integration fallback.")
+                pdf_sorted = pdf_direct """
+                logger.warning(f"cf_to_pdf_1d: Two peaks detected in FFT PDF (idx={idx}), plotting cf...")
                 # Diagnostic plot of the CF
-                try:
-                    import matplotlib.pyplot as plt
-                    fig, ax = plt.subplots()
-                    ax.plot(t[idx], cf_array[idx].real, label='Re[CF]')
-                    ax.plot(t[idx], cf_array[idx].imag, label='Im[CF]')
-                    ax.set_title(f'Characteristic Function (idx={idx})')
-                    ax.set_xlabel('t')
-                    ax.set_ylabel('CF')
-                    ax.legend()
-                    fig.savefig(f'cf_diagnostic_idx{idx}.png')
-                    plt.close(fig)
-                except Exception as e:
-                    logger.warning(f"Could not plot CF diagnostic for idx={idx}: {e}")
+                plot_cf(t,cf_array,idx)
             xs.append(x_sorted)
             pdfs.append(pdf_sorted)
         pdfs = np.array(pdfs)
