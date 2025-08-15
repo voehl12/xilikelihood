@@ -54,8 +54,10 @@ from scipy.stats import multivariate_normal
 
 # Graceful JAX import
 try:
-    import jax.numpy as jnp
     import jax
+    import jax.numpy as jnp
+    # Configure JAX to use double precision by default
+    jax.config.update("jax_enable_x64", False)
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
@@ -75,6 +77,7 @@ from .distributions import (
     gaussian_2d,
 )
 from .cl2xi_transforms import prep_prefactors, cl2pseudocl
+from .diagnostic_tools import plot_eigenvalue_distributions, analyze_significant_eigenvalues
 from . import copula_funcs as cop
 from .core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal
 
@@ -323,11 +326,12 @@ class XiLikelihood:
     
             covs = self._get_pseudo_alm_covariances()
             # Use combined matrices for both xi_plus and xi_minus (or just xi_plus if flag is False)
+            
             self._products = np.array(
                 [self._m_combined[:, :, None] * covs[i] for i in range(len(covs))]
             )  # all angular bins each, all covariances, includes xi+ and optionally xi-
             # products shape: (n_redshift_bin_combs, n_correlation_types*len(angular_bins), len(cov), len(cov))
-            
+            logger.info(f"products shape: {self._products.shape}, dtype: {self._products.dtype}, size: {self._products.nbytes/1e9:.2f} GB")
             logger.info("Calculating 1D means...")
             self.pseudo_cl = cl2pseudocl(self.mask.m_llp, self._theory_cl)
             
@@ -353,7 +357,7 @@ class XiLikelihood:
                 )
             
             # Optional validation check (can be expensive for large matrices)
-            if self.config.validate_means or logger.isEnabledFor(logging.DEBUG):
+            if self.config.validate_means:
                 # careful, this can only be run if all scales are included in the _products....
                 logger.info("Validating means with einsum computation...")
                 einsum_means = np.einsum("cbll->cb", self._products.copy())
@@ -374,32 +378,7 @@ class XiLikelihood:
                 del covs
             
         
-    def _compute_variances(self, auto_prods, cross_prods, cross_combs):
-        # eventually remove and use get_covariance_lowell
-        logger.info("Computing variances...")
-        auto_transposes = jnp.transpose(auto_prods, (0, 1, 3, 2))
-        
-        # Handle doubled data vector when xi_minus is included
-        # should include large angle distinction in initialization, but actually, variances are only used in cf compuation, so only large angles here is fine.
-        
-        variances = jnp.zeros(self.data_shape_full)
-
-        # Auto terms
-        variances = variances.at[~self._is_cov_cross].set(
-            2 * jnp.sum(auto_prods * auto_transposes, axis=(-2, -1))
-        )
-
-        # Cross terms
-        cross_transposes = jnp.transpose(cross_prods, (0, 1, 3, 2))
-        auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
-        variances = variances.at[self._is_cov_cross].set(jnp.sum(
-            cross_prods * cross_transposes, axis=(-2, -1)
-        ) + jnp.sum(
-            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1))
-        )
-        logger.info("Variances computed.")
-        return np.asarray(variances)
-    
+      
     def _compute_auto_eigenvalues(self, auto_prods):
         logger.info("Computing auto eigenvalues...")
         # shape (n_redshift_bins, len(angular_bins),len(cov))
@@ -465,48 +444,70 @@ class XiLikelihood:
         """Compute characteristic functions for low-ell part."""
         with computation_phase("Characteristic function computation (low-ell)", log_memory=self.config.log_memory_usage):
             
-            products = self._products.view() # extract large scale products at this point, possibly use data_subset
-            # Make products read-only to prevent accidental modifications
-            cross_prods = jnp.array(products[self._is_cov_cross]) # should be fine as all correlations are kept, just angles eliminated
-            auto_prods = jnp.array(products[~self._is_cov_cross])
-            cross_combs = self._numerical_redshift_bin_combinations[self._is_cov_cross]
-
-            self._variances = np.zeros(self.data_shape_full)
-            self._variances = self._compute_variances(auto_prods, cross_prods, cross_combs) # want to have these for all datapoints
-
+            products = self._products.view() 
+            
             large_angle_products = products[:, self._is_large_angle, ...]
             large_angle_products.flags.writeable = False
             
             eigvals_shape = self.data_shape_large_angles + (2 * large_angle_products.shape[-1],)
-            self._eigvals = jnp.zeros(eigvals_shape, dtype=complex)
+            self._eigvals = jnp.zeros(eigvals_shape,dtype=complex)
             
-            cross_prods = jnp.array(large_angle_products[self._is_cov_cross]) # should be fine as all correlations are kept, just angles eliminated
-            auto_prods = jnp.array(large_angle_products[~self._is_cov_cross])
+            cross_prods = np.array(large_angle_products[self._is_cov_cross])
+            auto_prods = np.array(large_angle_products[~self._is_cov_cross])
             if self.config.enable_memory_cleanup:
                 del large_angle_products, products
 
-            
-            
+            self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances_lowell))
+            self._ximin = jnp.array(self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances_lowell))
+
             # Compute eigenvalues
-            
-            self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances))
-            self._ximin = jnp.array(self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances))
-            #self._ximin = jnp.zeros_like(self._ximax)
             eigvals_auto_padded = self._compute_auto_eigenvalues(auto_prods)
             self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
-
+            cross_combs = self._numerical_redshift_bin_combinations[self._is_cov_cross]
             if len(cross_combs) > 0:
                 cross_eigvals = self._compute_cross_eigenvalues(cross_prods, auto_prods, cross_combs)
                 self._eigvals = self._eigvals.at[self._is_cov_cross].set(cross_eigvals)
 
+            if self.config.analyze_eigenvalues:
+                analyze_significant_eigenvalues(self._eigvals)
+                plot_eigenvalue_distributions(self._eigvals,save_dir=self.working_dir)
             # Compute CFs
             self._t_lowell, self._cfs_lowell = self._compute_cfs() 
 
             # Cleanup
             # Free memory after CF computation
             if self.config.enable_memory_cleanup:
-                del auto_prods, cross_prods, cross_combs, self._eigvals
+                del auto_prods, cross_prods, cross_combs
     
+
+    def precompute_covariance(self):
+        # Precompute all (i, j, k, l, cov_pos) for i <= j
+        index_tuples = []
+        cov_pos_list = []
+        i = 0
+        for rcomb1 in self._numerical_redshift_bin_combinations:
+                # Iterate over all data points (xi+ and optionally xi- for each angular bin)
+                for k in range(self.n_data_points_per_rs_comb):
+                    j = 0
+                    for rcomb2 in self._numerical_redshift_bin_combinations:
+                        for l in range(self.n_data_points_per_rs_comb):
+                            if i <= j:
+                                all_combs = [
+                                    (rcomb1[0], rcomb2[0]),
+                                    (rcomb1[1], rcomb2[1]),
+                                    (rcomb1[1], rcomb2[0]),
+                                    (rcomb1[0], rcomb2[1]),
+                                ]
+                                
+                                cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in all_combs]
+                                index_tuples.append([i, j, k, l])
+                                cov_pos_list.append(cov_pos)
+                            j += 1
+                    i += 1
+
+        self._index_tuples = np.array(index_tuples)
+        self._cov_pos_list = np.array(cov_pos_list)
+
     @staticmethod
     @jax.jit
     def compute_cov_block(products, cov_pos, k, l):
@@ -522,36 +523,30 @@ class XiLikelihood:
        
         self._cov_lowell = jnp.full((self.n_data_points_full,self.n_data_points_full), jnp.nan)
         with computation_phase("Covariance matrix computation (low-ell)", log_memory=self.config.log_memory_usage):
-            i = 0
+            
             products = self._products.view()
             products.flags.writeable = False
             products = jnp.array(products)
-            for rcomb1 in self._numerical_redshift_bin_combinations:
-                # Iterate over all data points (xi+ and optionally xi- for each angular bin)
-                for k in range(self.n_data_points_per_rs_comb):
-                    j = 0
-                    for rcomb2 in self._numerical_redshift_bin_combinations:
-                        for l in range(self.n_data_points_per_rs_comb):
-                            if i <= j:
-                                all_combs = [
-                                    (rcomb1[0], rcomb2[0]),
-                                    (rcomb1[1], rcomb2[1]),
-                                    (rcomb1[1], rcomb2[0]),
-                                    (rcomb1[0], rcomb2[1]),
-                                ]
-                                
-                                cov_pos = [self._n_to_bin_comb_mapper.get_index(comb) for comb in all_combs]
-                                # make this into a jax function? is quite slow...
-                                self._cov_lowell = self._cov_lowell.at[i, j].set(self.compute_cov_block(products, cov_pos, k, l))
-                            j += 1
-                    i += 1
-        del products
+            # quadruple for loop has been moved to prepare_covariance, now need to write a jax vmap here to speed things up.
+            vectorized_compute_cov_block = jax.vmap(self.compute_cov_block, in_axes=(None,0,0,0))
+            cov_mat_entries = vectorized_compute_cov_block(
+                products, 
+                self._cov_pos_list, 
+                self._index_tuples[:, 2],  # k
+                self._index_tuples[:, 3]   # l
+            )
+            i_list = self._index_tuples[:, 0]  # i
+            j_list = self._index_tuples[:, 1]  # j
+            self._cov_lowell = self._cov_lowell.at[(i_list, j_list)].set(cov_mat_entries)
+            if self.config.enable_memory_cleanup:
+                del products
         # Fill lower triangle by symmetry
         self._cov_lowell = jnp.where(
             jnp.isnan(self._cov_lowell), self._cov_lowell.T, self._cov_lowell
         )
         # Convert to numpy array for compatibility
         self._cov_lowell = np.asarray(self._cov_lowell)
+        self._variances_lowell = np.diag(self._cov_lowell).reshape(self.data_shape_full)
         return self._cov_lowell
 
     def get_covariance_matrix_highell(self):
@@ -590,12 +585,10 @@ class XiLikelihood:
 
     def _get_cfs_1d_highell(self):
         # get the Gaussian cf for the high ell part
-        vars = np.diag(self._cov_highell)
-        vars = vars.reshape(self.data_shape_full)
-        vars = vars[:,self._is_large_angle]  # only large angles
-        #vars = cop.select_large_angbins(vars,self._is_large_angle,self.include_ximinus)
-        #means_large_angles = cop.select_large_angbins(self._means_highell,self._is_large_angle,self.include_ximinus)
-        return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell[:,self._is_large_angle], vars)
+        vars_highell = np.diag(self._cov_highell)
+        vars_highell = vars_highell.reshape(self.data_shape_full)
+        vars_highell = vars_highell[:,self._is_large_angle]  # only large angles
+        return high_ell_gaussian_cf_1d(self._t_lowell, self._means_highell[:,self._is_large_angle], vars_highell)
 
     def _get_gaussian_marginals(self):
         pass
@@ -611,7 +604,8 @@ class XiLikelihood:
             self._cfs = self._cfs_lowell
         
         self._xs[:,self._is_large_angle], self._pdfs[:,self._is_large_angle] = cf_to_pdf_1d(self._t_lowell, self._cfs) # is tuple (x,pdf) with shape (croco,large_angs,n_points) each
-
+        if self.config.enable_memory_cleanup:
+            del self._t_lowell, self._cfs_lowell, self._cfs
         return self._xs, self._pdfs
 
     def marginals_gaussian(self):
@@ -622,6 +616,8 @@ class XiLikelihood:
         xs_gauss, pdfs_gauss = gaussian_pdf_1d(gauss_means, gauss_vars, n_grid=self.config.cf_steps)
         self._xs[:,~self._is_large_angle] = xs_gauss
         self._pdfs[:,~self._is_large_angle] = pdfs_gauss
+        if self.config.enable_memory_cleanup:
+            del gauss_means, gauss_vars, xs_gauss, pdfs_gauss
 
         return self._xs, self._pdfs
 
@@ -704,18 +700,15 @@ class XiLikelihood:
             Log-likelihood value, optionally with Gaussian comparison.
         """
         
-        start_time = time.time()
-        self._prepare_likelihood_components(cosmology, highell)
+        with computation_phase("Log-likelihood evaluation", log_memory=self.config.log_memory_usage):
+            self._prepare_likelihood_components(cosmology, highell)
 
-        # Quick check to ensure data and self._xs have matching first two dimensions
-        if data.shape[:2] != self._xs.shape[:2]:
-            raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
+            # Quick check to ensure data and self._xs have matching first two dimensions
+            if data.shape[:2] != self._xs.shape[:2]:
+                raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
 
-        # Ensure all arrays passed to copula-based likelihood evaluation are NumPy arrays
-        likelihood = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
-
-        elapsed = time.time() - start_time
-        logger.info(f"Likelihood evaluation took {elapsed:.3f} seconds.")
+            # Ensure all arrays passed to copula-based likelihood evaluation are NumPy arrays
+            likelihood = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
 
         if gausscompare:
             return likelihood, self.gauss_compare(data, data_subset=data_subset)
@@ -862,8 +855,12 @@ class XiLikelihood:
                        
             self.initiate_mask_specific()
             self.precompute_combination_matrices()
+            self.precompute_covariance()
             
             logger.info("Likelihood setup complete! Ready for cosmology-dependent computations.")
+
+    
+    
 
 def fiducial_dataspace(
     redshift_directory: Optional[str] = None,
