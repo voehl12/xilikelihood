@@ -97,6 +97,18 @@ def plot_eigenvalue_distributions(eigvals, max_marginals=10, save_dir=None, show
 
 
 
+def plot_cf(t,cf_array,idx):
+    fig, ax = plt.subplots()
+    ax.plot(t[idx], cf_array[idx].real, label='Re[CF]')
+    ax.plot(t[idx], cf_array[idx].imag, label='Im[CF]')
+    ax.set_title(f'Characteristic Function (idx={idx})')
+    ax.set_xlabel('t')
+    ax.set_ylabel('CF')
+    ax.legend()
+    fig.savefig(f'cf_diagnostic_idx{idx}.png')
+    plt.close(fig)
+
+
 def plot_pdfs_and_cdfs(pdfs, xs, cdfs=None, max_plots=16, savepath=None):
     """
     Plot PDFs and (optionally) CDFs for each (redshift, angular bin) combination.

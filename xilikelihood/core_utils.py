@@ -38,7 +38,7 @@ class LikelihoodConfig:
     
     # Validation and debugging
     validate_means: bool = False  # Expensive validation check for mean calculations
-    
+    analyze_eigenvalues: bool = False
     large_angle_threshold: float = 15/60  # Threshold for large angle bins in degrees
     # File paths
     working_dir: Optional[str] = None
