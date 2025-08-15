@@ -49,7 +49,7 @@ print(subset_pairs)
 
 clear_cache = True  # Set this flag to True to clear the cache
 
-cache_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/data"
+cache_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/data/postrefactor"
 
 if clear_cache:
     
@@ -87,4 +87,4 @@ for pair in subset_pairs:
         
 filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
 correlations = [3, 10, 12]
-plot_corner(simspath=filepath, lmax=mask.lmax, njobs=1000,save_path="comparison_to_sims_with_bootstrap_gauss_test.png",redshift_indices=correlations,angular_indices=ab,nbins=256)
+plot_corner(simspath=filepath, lmax=mask.lmax, njobs=1000,save_path="comparison_to_sims_with_bootstrap_gauss.png",redshift_indices=correlations,angular_indices=ab,nbins=256)

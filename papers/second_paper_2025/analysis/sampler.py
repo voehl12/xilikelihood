@@ -10,6 +10,8 @@ from nautilus import Prior, Sampler
 from xilikelihood.copula_funcs import data_subset, cov_subset, expand_subset_for_ximinus
 from xilikelihood.theory_cl import BinCombinationMapper
 from mock_data_generation import create_mock_data
+import corner
+import matplotlib.pyplot as plt
 
 
 from config import (
@@ -133,7 +135,7 @@ def likelihood(cosmology):
         logger.error(f"Likelihood evaluation failed for {cosmology}: {e}")
         exit() 
 
-results_path = f'sampler_results_{jobnumber}_l20.h5'
+results_path = f'sampler_results_{jobnumber}_l20_kidsplus.h5'
 logger.info("Setting up Nautilus sampler...")
 sampler = Sampler(prior, likelihood, n_live=16,filepath=results_path)
 logger.info("Starting sampling...")
@@ -141,4 +143,11 @@ sampler.run(verbose=True)
 
 logger.info("Sampling completed!")
 
+points, log_w, log_l = sampler.posterior()
+corner.corner(
+    points, weights=np.exp(log_w), bins=20, labels=prior.keys, color='purple',
+    plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
 
+
+
+plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus.png')
