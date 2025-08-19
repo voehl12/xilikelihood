@@ -318,6 +318,8 @@ class BinCombinationMapper:
                 combination = (i, j)
                 self.index_to_comb[index] = combination
                 self.comb_to_index[combination] = index
+                combination_rev = (j,i)
+                self.comb_to_index[combination_rev] = index
                 self.combinations.append([i, j])
                 index += 1
         self.combinations = np.array(self.combinations)

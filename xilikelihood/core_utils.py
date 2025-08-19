@@ -24,8 +24,9 @@ class LikelihoodConfig:
     
     # CF computation settings
     cf_steps: int = 4096
-    ximax_sigma_factor: float = 200.0
-    ximin_sigma_factor: float = 5.0
+    pdf_steps: int = 1024
+    ximax_sigma_factor: float = 70.0
+    ximin_sigma_factor: float = 70.0
     
     # Covariance settings
     cov_ell_buffer: int = 10
@@ -37,7 +38,8 @@ class LikelihoodConfig:
     
     # Validation and debugging
     validate_means: bool = False  # Expensive validation check for mean calculations
-    
+    analyze_eigenvalues: bool = False
+    large_angle_threshold: float = 15/60  # Threshold for large angle bins in degrees
     # File paths
     working_dir: Optional[str] = None
     

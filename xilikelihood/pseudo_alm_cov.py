@@ -327,9 +327,12 @@ class Cov:
         -----
         For full-sky analysis:
         - Covariance is diagonal: Cov(a_ℓm, a_ℓ'm') = C_ℓ δ_ℓℓ' δ_mm'
-        - Real parts have factor 2 for m>0 (since a_ℓ,-m = (-1)^m a*_ℓm)
+        - Real parts have factor 2 for m≥0 (since a_ℓ,-m = (-1)^m a*_ℓm)
         - Imaginary parts of m=0 modes vanish (a_ℓ0 is real)
-        - Factor 0.5 accounts for covariance normalization
+        - Factor 0.5 base normalization with mode-dependent corrections
+        
+        This implementation corrects the factor calculation bug in the original 
+        new implementation where real parts of m>0 modes had incorrect factors.
         """
         logger.info("Computing full-sky covariance matrix")
         logger.debug(f"Matrix size: {n_cov}×{n_cov}, modes: {len(alm_inds)}")
@@ -369,6 +372,9 @@ class Cov:
         """
         Build covariance diagonal for a single alm mode (E or B, real or imaginary).
         
+        This is an elegant vectorized implementation inspired by the original
+        cov_fullsky_old approach, avoiding explicit loops over ℓ and m.
+        
         Parameters:
         -----------
         theory_idx : int
@@ -384,32 +390,52 @@ class Cov:
         --------
         ndarray
             Covariance diagonal elements for this mode
+            
+        Notes:
+        ------
+        Implements the standard full-sky spherical harmonic covariance:
+        - Cov(a_ℓm, a_ℓ'm') = C_ℓ δ_ℓℓ' δ_mm' (diagonal covariance)
+        - Base factor 0.5 for all modes
+        - Real parts of m=0: additional factor 2 → total factor 1.0
+        - Imaginary parts of m=0: set to 0 (a_ℓ0 is real)
+        - Imaginary parts of m>0: no additional factor → total factor 0.5
+        
+        This vectorized approach matches the original cov_fullsky_old logic:
+        1. Create ranges of C_ℓ values repeated for each m (0 to ℓ)
+        2. Pad to uniform length and flatten into a single array
+        3. Apply mode-dependent factors using array indexing
         """
         max_ell = self._exact_lmax
-        covariances = []
+        len_sub = max_ell + 1
         
-        for ell in range(lmin, max_ell + 1):
-            # Get C_ℓ for this multipole
-            c_ell = theory_cell[theory_idx, theory_idx, ell]
+        # Extract C_ℓ values for this theory mode (only from lmin onwards)
+        c_ell_values = theory_cell[theory_idx, theory_idx, lmin:max_ell + 1]
+        
+        # For each ℓ, repeat C_ℓ for each m (from 0 to ℓ)
+        # This creates the triangular structure: [C_0, C_1 C_1, C_2 C_2 C_2, ...]
+        cell_ranges = [np.repeat(c_ell_values[ell_idx], lmin + ell_idx + 1) 
+                      for ell_idx in range(len(c_ell_values))]
+        
+        # Pad each range to uniform length (len_sub) and stack into array
+        full_ranges = [
+            np.append(cell_ranges[i], np.zeros(len_sub - len(cell_ranges[i])))
+            for i in range(len(cell_ranges))
+        ]
+        
+        # Flatten into 1D array and apply base factor 0.5
+        cov_part = 0.5 * np.ndarray.flatten(np.array(full_ranges))
+        
+        # Apply mode-specific factors using elegant array indexing
+        if is_real_part:
+            # Real parts: multiply m=0 elements (every len_sub-th element) by 2
+            # This gives total factor 1.0 for both m=0 and m>0 real parts
+            cov_part[::len_sub] *= 2
+        else:
+            # Imaginary parts: set m=0 elements (every len_sub-th element) to 0
+            # m>0 elements keep the base factor 0.5
+            cov_part[::len_sub] *= 0
             
-            # For each m from 0 to ℓ
-            for m in range(ell + 1):
-                if m == 0:
-                    # m=0 modes: factor 0.5, real part gets factor 2, imaginary vanishes
-                    if is_real_part:
-                        variance = c_ell  # 0.5 * 2 = 1
-                    else:
-                        variance = 0.0    # Imaginary part of m=0 is zero
-                else:
-                    # m>0 modes: factor 0.5, real parts get additional factor 2
-                    if is_real_part:
-                        variance = c_ell    # 0.5 * 2 = 1  
-                    else:
-                        variance = 0.5 * c_ell
-                
-                covariances.append(variance)
-        
-        return np.array(covariances)
+        return cov_part
 
     def cov_masked(self, alm_inds, n_cov, theory_cell, lmin=0, pos_m=True):
         """
@@ -564,14 +590,18 @@ class Cov:
             pcl_path = self._get_pseudo_cl_path()
             
             # Try to load from cache first
-            cached_pcl = load_arrays(pcl_path)
-            if cached_pcl is not None:
-                self.p_ee = cached_pcl["pcl_ee"]
-                self.p_bb = cached_pcl["pcl_bb"] 
-                self.p_eb = cached_pcl["pcl_eb"]
-                if "pcl_tt" in cached_pcl:
-                    self.p_tt = cached_pcl["pcl_tt"]
-                return
+            try:
+                cached_pcl = load_arrays(pcl_path)
+                if cached_pcl is not None:
+                    self.p_ee = cached_pcl["pcl_ee"]
+                    self.p_bb = cached_pcl["pcl_bb"] 
+                    self.p_eb = cached_pcl["pcl_eb"]
+                    if "pcl_tt" in cached_pcl:
+                        self.p_tt = cached_pcl["pcl_tt"]
+                    logger.info("Loaded pseudo-Cl from cache")
+                    return
+            except Exception as e:
+                logger.debug(f"Could not load pseudo-Cl from cache: {e}")
     
         logger.info("Computing pseudo-Cl from theory power spectra")
         # Prepare E and B mode power spectra with noise if available

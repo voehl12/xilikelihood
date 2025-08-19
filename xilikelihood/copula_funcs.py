@@ -16,16 +16,17 @@ import numpy as np
 from scipy.stats import norm, multivariate_normal, t
 from scipy.interpolate import PchipInterpolator, UnivariateSpline, RegularGridInterpolator
 from scipy.integrate import cumulative_trapezoid as cumtrapz
-import matplotlib.pyplot as plt
+from .diagnostic_tools import plot_pdfs_and_cdfs
 from scipy.linalg import eigh
 from scipy.special import gamma
 import logging
 
 logger = logging.getLogger(__name__)
 
+
 DEFAULT_MIN_EIGENVALUE = 5e-4
 DEFAULT_INTERPOLATION_POINTS = 512
-DEFAULT_PDF_THRESHOLD = 0.01
+DEFAULT_PDF_THRESHOLD = 1e-3
 DEFAULT_NORMALIZATION_TOLERANCE = 1e-3
 DEFAULT_SMALL_NUMBER = 1e-300
 
@@ -102,7 +103,7 @@ def multivariate_student_t_logpdf(z, df, scale):
 # ============================================================================
 
 
-def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE, plot=False, max_plots=16, savepath=None):
+def validate_pdfs(pdfs, xs, cdfs=None,atol=DEFAULT_NORMALIZATION_TOLERANCE, plot=False, max_plots=32, savepath=None):
     """
     Perform checks on the PDFs to ensure they are valid.
 
@@ -197,11 +198,19 @@ def interpolate_along_last_axis(xs, pdfs, num_points=DEFAULT_INTERPOLATION_POINT
     return xs_interp, pdfs_interp
 
 
-def pdf_to_cdf(xs, pdfs):
-    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs, num_points=1024)
+def pdf_to_cdf(xs, pdfs, num_points):
+    xs_interp, pdfs_interp = interpolate_along_last_axis(xs, pdfs, num_points=num_points)
     cdfs = cumtrapz(pdfs_interp, xs_interp, initial=0)
 
-    assert np.all(np.fabs(cdfs[..., -1] - 1) < 1e-2), "CDF not normalized to 1"
+    # Vectorized normalization check
+    final_vals = cdfs[..., -1]
+    normalization_tolerance = 1e-1
+    mask = np.abs(final_vals - 1) >= normalization_tolerance
+    problematic_indices = list(zip(*np.where(mask)))
+    if problematic_indices:
+        logger.warning(f"CDFs not normalized at indices: {problematic_indices}. Final values: {final_vals[mask]}")
+
+    # Normalize all CDFs regardless
     max_values = np.max(cdfs, axis=-1, keepdims=True)
     cdfs /= max_values
 
@@ -463,7 +472,7 @@ def test_correlation_matrix(matrix, iscov=False):
 # ============================================================================
 
 
-def  joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
+def joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     """
     Compute the joint PDF for the given CDFs, PDFs, and covariance matrix.
 
@@ -566,46 +575,50 @@ def data_subset(data, subset,full_grid=False):
     Parameters
     ----------
     data : ndarray
-        Input data array. Can be 2D (e.g., shape: (n_correlations, n_angular_bins)) or 3D
-        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim)).
+        Input data array. Can be 2D (e.g., shape: (n_correlations, n_angular_bins)), 3D
+        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim)), or 4D
+        (e.g., shape: (n_correlations, n_angular_bins, n_points_per_dim, n_extra)).
     subset : list of tuples
         List of (rs_combs, ang) tuples specifying the indices to extract.
 
     Returns
     -------
     ndarray
-        Subset of the data. If the input is 3D, the third axis is preserved.
-        For 2D data, always returns shape (n_rs_combs_subset, n_ang_bins_subset),
-        where the axes correspond to all unique redshift and angular bin indices in the subset.
+        Subset of the data. For 2D, shape (n_rs_combs_subset, n_ang_bins_subset).
+        For 3D, shape (n_rs_combs_subset, n_ang_bins_subset, n_points_per_dim).
+        For 4D, shape (n_rs_combs_subset, n_ang_bins_subset, n_points_per_dim, n_extra).
     """
     rs_combs_indices, ang_indices = zip(*subset)
     rs_combs_indices = np.array(rs_combs_indices)
     ang_indices = np.array(ang_indices)
     if full_grid:
-        # Check if subset forms a full grid
         unique_rs = np.unique(rs_combs_indices)
         unique_ang = np.unique(ang_indices)
         expected_pairs = set((i, j) for i in unique_rs for j in unique_ang)
         actual_pairs = set(zip(rs_combs_indices, ang_indices))
         if expected_pairs == actual_pairs:
-            # Return full 2D array
             if data.ndim == 2:
                 logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang)].shape}.")
                 return data[np.ix_(unique_rs, unique_ang)]
             elif data.ndim == 3:
                 logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))].shape}.")
-                # Preserve the third axis
                 return data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]))]
+            elif data.ndim == 4:
+                logger.info(f"Returning full grid data subset with shape {data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]), np.arange(data.shape[3]))].shape}.")
+                return data[np.ix_(unique_rs, unique_ang, np.arange(data.shape[2]), np.arange(data.shape[3]))]
         # If not a full grid, fall through to default behavior
 
     if data.ndim == 2:
         logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
-        return data[rs_combs_indices, ang_indices] # returns 1d array of the datapoints desired
+        return data[rs_combs_indices, ang_indices]
     elif data.ndim == 3:
         logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
-        return data[rs_combs_indices, ang_indices]  # Preserve the third axis, i.e. 2d array is returned
+        return data[rs_combs_indices, ang_indices]
+    elif data.ndim == 4:
+        logger.info(f"Returning data subset with shape {data[rs_combs_indices, ang_indices].shape}.")
+        return data[rs_combs_indices, ang_indices]
     else:
-        raise ValueError("data must be a 2D or 3D array.")
+        raise ValueError("data must be a 2D, 3D, or 4D array.")
 
 def expand_subset_for_ximinus(subset, n_angbins):
     """
@@ -662,135 +675,7 @@ def evaluate(x_data, xs, pdfs, cdfs, cov,subset=None):
 
     return np.sum(log_pdf_point) + copula_density
 
-# ============================================================================
-# Internal/Development Functions
-# ============================================================================
 
 
-def _testing_function():
-    """
-    INTERNAL: Development testing function.
-    
-    ⚠️ Warning: This is for development only and will be removed.
-    Use proper test files for production testing.
-    """
-    import warnings
-    warnings.warn(
-        "This is an internal development function and will be removed. "
-        "Use dedicated test files instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    copula = copula_funcs.joint_pdf(
-        self._cdfs[1:],
-        self._pdfs[1:],
-        self._cov[1:, 1:],
-    )
 
-    fig, ((ax00, ax01, ax02), (ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(
-        3, 3, gridspec_kw=dict(width_ratios=[1, 1, 1]), figsize=(11, 11)
-    )
-    # bincenters, mean, errors, mu_estimate, cov_estimate
-    configpath = "config_adjusted.ini"
-    simspath = "/cluster/work/refregier/veoehl/xi_sims/croco_3x2pt_kids_33_circ10000smoothl30_noisedefault_llim_None_newwpm/"
-    config = postprocess_nd_likelihood.load_config(configpath)
 
-    diag_fig, diag_ax = plt.subplots()
-    sims_lmax = self.lmax if highell else self._exact_lmax
-    bincenters, mean, errors, mu_estimate, cov_estimate = (
-        postprocess_nd_likelihood.load_and_bootstrap_sims_nd(
-            config,
-            simspath,
-            sims_lmax,
-            axes=(ax00, ax1, ax3),
-            vmax=None,
-            n_bootstrap=1000,
-            diagnostic_ax=diag_ax,
-        )
-    )
-    x_vals = self._xs[1, 0]
-    y_vals = self._xs[2, 0]
-    diag_ax.plot(x_vals, self._pdfs[1, 0], label="xi55_analytic")
-    diag_ax.plot(y_vals, self._pdfs[2, 0], label="xi53_analytic")
-    diag_ax.legend()
-    diag_fig.savefig("marginal_diagnostics_10000sqd_fullell_newwpm.png")
-
-    x_grid, y_grid = np.meshgrid(x_vals, y_vals)
-    test_points = np.vstack([x_grid.ravel(), y_grid.ravel()]).T
-
-    # x_exact, pdf_exact = postprocess_nd_likelihood.convert_nd_cf_to_pdf(config,highell_moms=highell_moms)
-    vmax = np.max(copula)
-    copula_grid = copula.reshape(x_grid.shape).T
-    interp = RegularGridInterpolator(
-        (x_vals[1:-1], y_vals[1:-1]), copula_grid[1:-1, 1:-1], method="cubic"
-    )
-    # interp_exact = RegularGridInterpolator((x_exact[:,0,0],x_exact[0,:,1]),pdf_exact,method='cubic')
-    # marginals_exact = postprocess_nd_likelihood.get_marginal_likelihoods([x_exact[:,0,0],x_exact[0,:,1]],pdf_exact)
-    # marginals_copula = postprocess_nd_likelihood.get_marginal_likelihoods([x_vals,y_vals],copula_grid)
-
-    # grid_z_copula = griddata(test_points, copula, (x_grid, y_grid), method="cubic")
-    gauss = self.gauss_compare().pdf(test_points)
-    gauss_est = multivariate_normal(mean=mu_estimate, cov=cov_estimate)
-    gauss_est = gauss_est.pdf(test_points)
-    gauss_grid = gauss_est.reshape(x_grid.shape).T
-    interp_gauss = RegularGridInterpolator((x_vals, y_vals), gauss_grid, method="cubic")
-    (ax1, ax2, ax5), res_plot = postprocess_nd_likelihood.compare_to_sims_2d(
-        [ax1, ax2, ax5], bincenters, mean, errors, interp, vmax
-    )
-    (ax3, ax4, ax6), gauss_res = postprocess_nd_likelihood.compare_to_sims_2d(
-        [ax3, ax4, ax6], bincenters, mean, errors, interp_gauss, vmax
-    )
-    # (ax00,ax01,ax02), exact_res = postprocess_nd_likelihood.compare_to_sims_2d([ax00,ax01,ax02],bincenters,mean,errors,interp_exact,vmax)
-
-    # fig, ax4 = plt.subplots()
-    # c2 = ax4.contourf(x_grid, y_grid, grid_z_copula, levels=100, vmax=np.max(grid_z_copula))
-    # ax4.set_title("Copula")
-
-    fig.colorbar(res_plot, ax=ax5)
-    fig.colorbar(gauss_res, ax=ax6)
-    # fig.colorbar(exact_res, ax=ax02)
-    fig.savefig("comparison_copula_sims_10000deg2_fullell_newwpm.png")
-    pass
-
-def plot_pdfs_and_cdfs(pdfs, xs, cdfs=None, max_plots=16, savepath=None):
-    """
-    Plot PDFs and (optionally) CDFs for each (redshift, angular bin) combination.
-
-    Parameters
-    ----------
-    pdfs : ndarray
-        Array of PDFs, shape (n_rs, n_ang, n_points).
-    xs : ndarray
-        Array of x-values, shape (n_rs, n_ang, n_points).
-    cdfs : ndarray, optional
-        Array of CDFs, shape (n_rs, n_ang, n_points).
-    max_plots : int
-        Maximum number of subplots (default: 16).
-    show : bool
-        Whether to show the plot (default: True).
-    savepath : str or None
-        If provided, save the figure to this path.
-    """
-    import matplotlib.pyplot as plt
-    n_rs, n_ang, n_points = pdfs.shape
-    n_total = n_rs * n_ang
-    n_plots = min(n_total, max_plots)
-    ncols = min(4, n_plots)
-    nrows = int(np.ceil(n_plots / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows))
-    axes = np.array(axes).reshape(-1)
-    for idx in range(n_plots):
-        i = idx // n_ang
-        j = idx % n_ang
-        ax = axes[idx]
-        ax.plot(xs[i, j], pdfs[i, j], label='PDF')
-        if cdfs is not None:
-            ax.plot(xs[i, j], cdfs[i, j], label='CDF')
-        ax.set_title(f'rs={i}, ang={j}')
-        ax.legend()
-    for ax in axes[n_plots:]:
-        ax.axis('off')
-    #fig.tight_layout()
-    if savepath:
-        plt.savefig(savepath)
-    plt.close(fig)

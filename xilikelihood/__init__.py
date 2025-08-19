@@ -21,6 +21,7 @@ from . import distributions
 from . import wpm_funcs
 from . import theoretical_moments
 from . import pseudo_alm_cov
+from . import mock_data
 
 __all__ = [
     # Main workflow functions
@@ -47,6 +48,8 @@ __all__ = [
     'distributions',
     'wpm_funcs', 
     'theoretical_moments',
+    'pseudo_alm_cov',
+    'mock_data',
     'copula_funcs'
     
     # Package info

@@ -74,9 +74,11 @@ subset = [(rs_index,ang_indices[0]) for rs_index in rs_indices]
 if include_ximinus:
     subset = expand_subset_for_ximinus(subset, len(ang_bins_in_deg))
     n_angbins *= 2
+
 ang_bins_in_deg = ang_bins_in_deg[2:-1]
 redshift_bins = redshift_bins[3:]
 # now need to run with full-ish datavector. with this and ell max 20, it converged in 1 day, 19 hours
+
 logger.info(f"Reduced: {len(redshift_bins)} redshift bins, {len(ang_bins_in_deg)} angular bins")
 
 
@@ -87,8 +89,8 @@ xilikelihood = xili.XiLikelihood(
 
 logger.info("Loading mock data and covariance...")
 # need to update mockdata including xi_minus, can also check values here, which one is correct
-mock_data_path = DATA_DIR / DATA_FILES['10000sqd_random']['mock_data']
-gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_random']['covariance']
+mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['mock_data']
+gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['covariance']
 
 #create_mock_data(xilikelihood, mock_data_path, gaussian_covariance_path,random=None)
 mock_data = np.load(mock_data_path)["data"]
@@ -132,11 +134,12 @@ def likelihood(cosmology):
         logger.error(f"Likelihood evaluation failed for {cosmology}: {e}")
         exit() 
 
-results_path = f'sampler_results_{jobnumber}_l20.h5'
+results_path = f'sampler_results_{jobnumber}_l20_kidsplus.h5'
 logger.info("Setting up Nautilus sampler...")
 sampler = Sampler(prior, likelihood, n_live=16,filepath=results_path)
 logger.info("Starting sampling...")
 sampler.run(verbose=True)
+
 logger.info("Sampling completed!")
 
 points, log_w, log_l = sampler.posterior()
@@ -144,4 +147,5 @@ corner.corner(
     points, weights=np.exp(log_w), bins=20, labels=prior.keys, color='purple',
     plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
 
-plt.savefig('new_corner_plot.png')
+plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus.png')
+
