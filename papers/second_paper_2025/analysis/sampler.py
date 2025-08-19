@@ -13,7 +13,6 @@ from mock_data_generation import create_mock_data
 import corner
 import matplotlib.pyplot as plt
 
-
 from config import (
     EXACT_LMAX,
     MASK_CONFIG,
@@ -76,8 +75,8 @@ if include_ximinus:
     subset = expand_subset_for_ximinus(subset, len(ang_bins_in_deg))
     n_angbins *= 2
 
-#ang_bins_in_deg = ang_bins_in_deg[2:-1]
-#redshift_bins = redshift_bins[3:]
+ang_bins_in_deg = ang_bins_in_deg[2:-1]
+redshift_bins = redshift_bins[3:]
 # now need to run with full-ish datavector. with this and ell max 20, it converged in 1 day, 19 hours
 
 logger.info(f"Reduced: {len(redshift_bins)} redshift bins, {len(ang_bins_in_deg)} angular bins")
@@ -148,6 +147,5 @@ corner.corner(
     points, weights=np.exp(log_w), bins=20, labels=prior.keys, color='purple',
     plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
 
-
-
 plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus.png')
+
