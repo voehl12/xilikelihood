@@ -35,7 +35,7 @@ __all__ = [
     'gaussian_copula_density',
     'student_t_copula_density', 
     'gaussian_copula_point_density',
-    'joint_pdf',
+    'joint_logpdf',
     'joint_pdf_2d',
     
     # PDF/CDF utilities
@@ -204,7 +204,7 @@ def pdf_to_cdf(xs, pdfs, num_points):
 
     # Vectorized normalization check
     final_vals = cdfs[..., -1]
-    normalization_tolerance = 1e-1
+    normalization_tolerance = 1e-2
     mask = np.abs(final_vals - 1) >= normalization_tolerance
     problematic_indices = list(zip(*np.where(mask)))
     if problematic_indices:
@@ -375,17 +375,37 @@ def student_t_copula_density(cdfs, covariance_matrix, df):
     - copula_density: ndarray
         Log-density of the Student-t copula (shape: (n_points,)).
     """
-    # Convert CDFs to Student-t space
+    # Convert CDFs to Student-t space with boundary protection
     cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
-    z = t.ppf(cdfs_flat, df)  # same shape as cdfs: (n_dims, n_points_per_dim)
+    
+    # Check for problematic CDF values that cause infinite quantiles
+    n_zeros = np.sum(cdfs_flat == 0.0)
+    n_ones = np.sum(cdfs_flat == 1.0)
+    if n_zeros > 0 or n_ones > 0:
+        logger.warning(f"Student-t copula: Found {n_zeros} exact zeros and {n_ones} exact ones in CDFs. "
+                      f"This will cause infinite quantiles and copula failure. "
+                      f"Consider using Gaussian copula for realistic cosmological data.")
+    
+    # Clip CDFs to avoid infinite quantiles (essential for realistic marginals)
+    epsilon = 1e-12  # Small but not too small to avoid numerical issues
+    cdfs_clipped = np.clip(cdfs_flat, epsilon, 1 - epsilon)
+    
+    # Warn if clipping was necessary
+    n_clipped = np.sum((cdfs_flat != cdfs_clipped))
+    if n_clipped > 0:
+        logger.warning(f"Student-t copula: Clipped {n_clipped} CDF values to avoid infinite quantiles. "
+                      f"This may affect marginal recovery accuracy.")
+    
+    z = t.ppf(cdfs_clipped, df)  # same shape as cdfs: (n_dims, n_points_per_dim)
     ppf_points = meshgrid_and_recast(z) # (n_points, n_dims)
+    
     # Convert covariance matrix to correlation matrix
     corr_matrix = covariance_to_correlation(covariance_matrix)
 
-    # Compute the multivariate Student-t log PDF
-    
     # Scale matrix for the multivariate Student-t distribution
-    scale = corr_matrix * (df - 2)/ df
+    # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
+    # This ensures the covariance matrix equals the correlation matrix
+    scale = corr_matrix * (df - 2) / df
 
     # Compute the multivariate Student-t log PDF
     mv_t_logpdf = multivariate_student_t_logpdf(ppf_points, df, scale)
@@ -472,7 +492,7 @@ def test_correlation_matrix(matrix, iscov=False):
 # ============================================================================
 
 
-def joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
+def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     """
     Compute the joint PDF for the given CDFs, PDFs, and covariance matrix.
 
@@ -500,8 +520,27 @@ def joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     if copula_type == "student-t" and df is None:
         raise ValueError("Degrees of freedom (df) must be provided for Student-t copula.")
     
-    if copula_type == "student-t" and df <= 2:
-        logger.warning(f"Low degrees of freedom (df={df}) may cause numerical issues.")
+    if copula_type == "student-t":
+        # Enhanced warnings for numerical stability
+        if df <= 2:
+            logger.warning(f"Very low degrees of freedom (df={df} ≤ 2) will cause numerical instability. "
+                          f"Student-t copulas require df > 2. Consider df ≥ 5 for stable results.")
+        elif df < 5:
+            logger.warning(f"Low degrees of freedom (df={df} < 5) may cause numerical issues with high correlations. "
+                          f"Consider df ≥ 5 for more stable results.")
+        
+        # Check for problematic correlation combinations
+        if hasattr(cov, 'shape') and len(cov.shape) == 2:
+            # Convert to correlation matrix to check correlations
+            corr_matrix = covariance_to_correlation(cov)
+            max_corr = np.max(np.abs(corr_matrix[~np.eye(corr_matrix.shape[0], dtype=bool)]))
+            
+            if df < 5 and max_corr > 0.8:
+                logger.warning(f"High correlation (max |ρ|={max_corr:.3f}) with low df={df} "
+                              f"may cause marginal recovery errors >5%. Consider df ≥ 5 or |ρ| ≤ 0.7.")
+            elif df < 10 and max_corr > 0.9:
+                logger.warning(f"Very high correlation (max |ρ|={max_corr:.3f}) with df={df} "
+                              f"may cause numerical issues. Consider df ≥ 10 for |ρ| > 0.9.")
     
 
     # Flatten the PDFs along the first two axes
@@ -521,14 +560,14 @@ def joint_pdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     log_pdf_points = np.log(pdf_points)  # Shape: (n_total_points, n_dims)
   
 
-    # Compute joint PDF
-    joint_pdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
+    # Compute joint PDF (in log space, then exponentiate)
+    joint_logpdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
 
     # Reshape the joint PDF to match the original data space
     shape = (n_points_per_dim,) * n_dim
-    joint_pdf_reshaped = joint_pdf_values.reshape(shape)  # Shape: (n_points_per_dim,) * ndim
+    joint_logpdf_reshaped = joint_logpdf_values.reshape(shape)  # Shape: (n_points_per_dim,) * ndim
 
-    return joint_pdf_reshaped
+    return joint_logpdf_reshaped
 
 
 def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):

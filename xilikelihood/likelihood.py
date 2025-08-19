@@ -765,10 +765,10 @@ class XiLikelihood:
         # Prepare the likelihood components
         self._prepare_likelihood_components(cosmology, highell)
 
-        # Compute the joint PDF using cop.joint_pdf
-        joint_pdf_values = cop.joint_pdf(self._cdfs, self._pdfs, self._cov)
+        # Compute the joint PDF using cop.joint_logpdf
+        joint_logpdf_values = cop.joint_logpdf(self._cdfs, self._pdfs, self._cov)
 
-        return self._xs, joint_pdf_values
+        return self._xs, joint_logpdf_values
 
 
 
@@ -805,7 +805,7 @@ class XiLikelihood:
         xs_subset = cop.data_subset(self._xs, data_subset)
         pdfs_subset = cop.data_subset(self._pdfs, data_subset)
         cdfs_subset = cop.data_subset(self._cdfs, data_subset)
-        log_pdf_2d = cop.joint_pdf(cdfs_subset, np.asarray(pdfs_subset), np.asarray(cov_2d))
+        log_pdf_2d = cop.joint_logpdf(cdfs_subset, np.asarray(pdfs_subset), np.asarray(cov_2d))
         
         
         if gausscompare:
