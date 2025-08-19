@@ -561,13 +561,13 @@ def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
   
 
     # Compute joint PDF (in log space, then exponentiate)
-    log_joint_pdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
+    joint_logpdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
 
     # Reshape the joint PDF to match the original data space
     shape = (n_points_per_dim,) * n_dim
-    joint_pdf_reshaped = joint_pdf_values.reshape(shape)  # Shape: (n_points_per_dim,) * ndim
+    joint_logpdf_reshaped = joint_logpdf_values.reshape(shape)  # Shape: (n_points_per_dim,) * ndim
 
-    return joint_pdf_reshaped
+    return joint_logpdf_reshaped
 
 
 def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
