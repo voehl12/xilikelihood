@@ -50,6 +50,17 @@ papers/paper2_copula_likelihood/
 - [x] **Confirm xi-minus support** - Verified working through existing architecture
 - [ ] **Scale-dependent marginals** - Implement scale cuts for Gaussian marginals
 - [ ] **Clean function names** (optional) - `posterior_from_1d_firstpaper()` → `posterior_from_measurement()`
+- [ ] Save all setup/configuration parameters (mask, angular bins, redshift bins, prior ranges, etc.) to a YAML or JSON file at the start of every run.
+    - Include: mask parameters, angular bin edges, redshift bin edges, prior ranges, and any other relevant config.
+    - Save to a file named e.g. `run_setup_{jobnumber}.yaml` or `run_setup_{jobnumber}.json` in the output/log directory.
+    - Log the path to this file in the main log.
+- [ ] Add a function to load and print this config for any run, for full reproducibility.
+- [ ] Optionally: Save a hash or timestamp of the main code files used for the run.
+- [ ] Document this workflow in the README for future users.
+
+---
+
+This will ensure every run is fully reproducible and the setup is always recorded, even if the script changes later.
 
 ## ✅ REFACTORING COMPLETE!
 
