@@ -253,7 +253,7 @@ class XiLikelihood:
         """
         Wrapper for PDF validation. Delegates the actual checks to a utility function.
         """
-        cop.validate_pdfs(self._pdfs, self._xs, self._cdfs,plot=False,savepath="pdfs_validation.png")
+        cop.validate_pdfs(self._pdfs, self._xs, self._cdfs,plot=True,savepath="pdfs_validation.png")
 
     def precompute_combination_matrices(self):
         # prefactors is a 3D array with shape (len(angles), 2, out_lmax)
