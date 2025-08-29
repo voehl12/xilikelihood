@@ -18,7 +18,7 @@ FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
 # Mask configuration
 MASK_CONFIG = {
     "spins": [2], 
-    "circmaskattr": (10000, 256), 
+    "circmaskattr": (10000, 512), 
     "l_smooth": 30
 }
 
