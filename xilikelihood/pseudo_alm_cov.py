@@ -157,7 +157,7 @@ class Cov:
         self.cov_alm = self.cov_alm_general(alm_kinds, pos_m=True, ischain=ischain)
         return self.cov_alm
 
-    def cov_alm_general(self, alm_kinds, pos_m=True, lmin=0, ischain=True):
+    def cov_alm_general(self, alm_kinds, pos_m=True, lmin=0, ischain=True, check_conditioning=False):
         """
         Calculate covariance matrix for specified pseudo-alm modes.
 
@@ -176,6 +176,8 @@ class Cov:
             Minimum multipole to include
         ischain : bool, default=False
             If True, skip file I/O operations
+        check_conditioning : bool, default=False
+            If True, check matrix conditioning (eigenvalues, condition number)
 
         Returns:
         --------
@@ -271,24 +273,29 @@ class Cov:
                 logger.info("Asymmetry within acceptable tolerance - symmetrizing")
                 cov_matrix = 0.5 * (cov_matrix + cov_matrix.T)
 
-        # Check matrix conditioning
-        try:
-            eigenvals = np.linalg.eigvals(cov_matrix)
-            min_eigenval = np.min(eigenvals)
-            condition_number = np.max(eigenvals) / max(min_eigenval, 1e-16)
-            
-            if min_eigenval <= 0:
-                if abs(min_eigenval) < 1e-15:
-                    # should replace these by zero?
-                    logger.debug(f"Small negative eigenvalue (numerical precision): min eigenvalue = {min_eigenval:.2e}")
-                else:
-                    logger.warning(f"Non-positive definite matrix: min eigenvalue = {min_eigenval:.2e}")
-            if condition_number > 1e12:
-                logger.warning(f"Ill-conditioned matrix: condition number = {condition_number:.2e}")
-                
-            logger.debug(f"Matrix condition number: {condition_number:.2e}")
-        except Exception as e:
-            logger.warning(f"Could not compute matrix condition: {e}") 
+        # Check matrix conditioning (debug mode only)
+        if check_conditioning:
+            try:
+                eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
+                min_eigenval = np.min(eigenvals)
+                condition_number = np.max(eigenvals) / max(min_eigenval, 1e-16)
+                neg_eig_mask = eigenvals < 0
+                num_neg = np.sum(neg_eig_mask)
+                if num_neg > 0:
+                    logger.warning(f"Setting {num_neg} eigenvalues < 0 to zero out of {len(eigenvals)} total.")
+                    eigenvals[neg_eig_mask] = 0.0
+                    cov_matrix = (eigenvecs @ np.diag(eigenvals) @ eigenvecs.T)
+                    cov_matrix = 0.5 * (cov_matrix + cov_matrix.T)
+                if min_eigenval <= 0:
+                    if abs(min_eigenval) < 1e-14:
+                        logger.debug(f"Small negative eigenvalue (numerical precision): min eigenvalue = {min_eigenval:.2e}")
+                    else:
+                        logger.warning(f"Non-positive definite matrix: min eigenvalue = {min_eigenval:.2e}")
+                if condition_number > 1e12:
+                    logger.warning(f"Ill-conditioned matrix: condition number = {condition_number:.2e}")
+                logger.debug(f"Matrix condition number: {condition_number:.2e}")
+            except Exception as e:
+                logger.warning(f"Could not compute matrix condition: {e}") 
 
         self.cov_alm = cov_matrix
         # Save to cache if not in chain mode
