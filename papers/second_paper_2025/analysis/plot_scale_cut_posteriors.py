@@ -25,6 +25,8 @@ except ImportError:
 
 def load_chains(chain_dir, pattern="chain_scale_cut_*.npz"):
     files = sorted(glob.glob(os.path.join(chain_dir, pattern)))
+    # Exclude files ending with _stuckwalker.npz
+    files = [f for f in files if not f.endswith('_stuckwalker.npz')]
     chains = []
     for f in files:
         data = np.load(f, allow_pickle=True)
@@ -48,10 +50,19 @@ def load_chains(chain_dir, pattern="chain_scale_cut_*.npz"):
 def plot_posteriors(chains, outdir="plots_scale_cut_posteriors"):
     os.makedirs(outdir, exist_ok=True)
     for chain in chains:
-        samples = chain['samples']
+        samples_raw = chain['samples']
         param_names = list(chain['param_names'])
         scale_cut = chain['scale_cut']
         label = f"scale_cut={scale_cut:.3f}"
+        
+        # Flatten samples if they're not already flattened
+        if len(samples_raw.shape) == 3:
+            # (n_steps, n_walkers, n_params) -> (n_samples, n_params)
+            samples = samples_raw.reshape(-1, samples_raw.shape[-1])
+        else:
+            # Already flattened
+            samples = samples_raw
+            
         n_params = samples.shape[1]
         if n_params >= 2 and ARVIZ_AVAILABLE:
             # Use from_dict for robust variable naming
@@ -90,9 +101,18 @@ def plot_overlay_contours(chains, outdir="plots_scale_cut_posteriors", param_pai
         param_pair = [chains[0]['param_names'][0], chains[0]['param_names'][1]]
     plt.figure(figsize=(6,6))
     for i, chain in enumerate(chains):
-        samples = chain['samples']
+        samples_raw = chain['samples']
         param_names = list(chain['param_names'])
         scale_cut = chain['scale_cut']
+        
+        # Flatten samples if they're not already flattened
+        if len(samples_raw.shape) == 3:
+            # (n_steps, n_walkers, n_params) -> (n_samples, n_params)
+            samples = samples_raw.reshape(-1, samples_raw.shape[-1])
+        else:
+            # Already flattened
+            samples = samples_raw
+            
         # Get indices for the chosen parameters
         idx1 = param_names.index(param_pair[0])
         idx2 = param_names.index(param_pair[1])
@@ -130,25 +150,38 @@ def plot_overlay_contours(chains, outdir="plots_scale_cut_posteriors", param_pai
     plt.close()
     print(f"Overlay contour plot saved to {outdir}/overlay_contours.png")
 
-def plot_traces_and_autocorr(chains, outdir="plots_scale_cut_posteriors_traces", n_walkers=6, n_steps=2000, burn_in=100):
+def plot_traces_and_autocorr(chains, outdir="plots_scale_cut_posteriors_traces", n_walkers=6, n_steps=2000, burn_in=0):
     import matplotlib.pyplot as plt
     os.makedirs(outdir, exist_ok=True)
     for chain in chains:
-        samples_flat = chain['samples']
+        samples_raw = chain['samples']
         param_names = list(chain['param_names'])
         scale_cut = chain['scale_cut']
-        # Reshape to (n_steps, n_walkers, n_params)
-        n_params = samples_flat.shape[1]
-        try:
-            samples = samples_flat.reshape((n_steps-burn_in, n_walkers, n_params))
-        except Exception as e:
-            print(f"Reshape failed for scale_cut={scale_cut}: {e}")
+        
+        # Handle different sample shapes: check if already in (n_steps, n_walkers, n_params) or flattened
+        if len(samples_raw.shape) == 3:
+            # Already in (n_steps, n_walkers, n_params) format
+            samples = samples_raw[burn_in:]  # Remove burn-in
+            actual_n_steps, actual_n_walkers, n_params = samples.shape
+            print(f"Using unflattened samples: {samples.shape}")
+        elif len(samples_raw.shape) == 2:
+            # Flattened format (n_samples, n_params) - need to reshape
+            n_params = samples_raw.shape[1]
+            try:
+                samples = samples_raw.reshape((n_steps, n_walkers, n_params))[burn_in:]
+                actual_n_steps, actual_n_walkers, n_params = samples.shape
+                print(f"Reshaped flattened samples: {samples.shape}")
+            except Exception as e:
+                print(f"Reshape failed for scale_cut={scale_cut}: {e}, shape was {samples_raw.shape}")
+                continue
+        else:
+            print(f"Unexpected sample shape for scale_cut={scale_cut}: {samples_raw.shape}")
             continue
         # Trace plots: one plot per parameter, all walkers overplotted
         colors = plt.cm.tab10.colors
         for i, pname in enumerate(param_names):
             plt.figure(figsize=(8, 3))
-            for w in range(n_walkers):
+            for w in range(actual_n_walkers):
                 plt.plot(samples[:, w, i], color=colors[w % len(colors)], alpha=0.8, label=f"walker {w+1}")
             plt.title(f"Trace plot: {pname} (scale_cut={scale_cut:.1f} arcmin)")
             plt.xlabel("Step")
