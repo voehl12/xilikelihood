@@ -2,14 +2,14 @@
 
 #SBATCH --mail-type=END,FAIL
 #SBATCH --time=5:00:00    
-#SBATCH --cpus-per-task=16
-#SBATCH --mem-per-cpu=2048
-#SBATCH --job-name=2d_post_10000
-#SBATCH --array=1-500
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=1024
+#SBATCH --job-name=2d_post_fixed_cov
+#SBATCH --array=0-999
 #SBATCH --output=2dpost.out
 #SBATCH --error=2dpost.err
 
-module load stack/2024-06 swig/4.1.1-ipvpwcc python/3.11.6 gcc/12.2.0 cmake/3.27.7
+module load stack/2024-06 gcc/12.2.0 swig/4.1.1-ipvpwcc python/3.11.6 cuda/12.1.1 nccl/2.18.3-1 openblas/0.3.24 python_cuda/3.11.6 cmake/3.27.7 cudnn/9.2.0
 export JAX_PLATFORMS=cpu
 source /cluster/home/veoehl/xilikelihood/2ptlikelihood/bin/activate
-python /cluster/home/veoehl/xilikelihood/papers/second_paper_2025/analysis/s8_om_posterior.py $SLURM_ARRAY_TASK_ID
+python /cluster/home/veoehl/xilikelihood/papers/second_paper_2025/analysis/s8_om_posterior.py $SLURM_ARRAY_TASK_ID --n-jobs=$SLURM_ARRAY_TASK_COUNT --scale-cut-index=2
