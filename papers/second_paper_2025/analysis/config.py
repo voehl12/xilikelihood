@@ -35,8 +35,8 @@ S8_GRIDS = {
 
 # Parameter grids for 2D analysis
 PARAM_GRIDS = {
-    "omega_m": (0.2, 0.45, 100),
-    "s8": (0.7, 0.9, 100)
+    "omega_m": (0.2, 0.45, 200),
+    "s8": (0.7, 0.9, 200)
 }
 
 # Job configuration

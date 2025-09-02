@@ -97,10 +97,18 @@ def initialize_walkers_from_chains(chains, n_walkers, param_names, priors, logge
 import glob
 
 
-def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_walkers=6, n_steps=2000, use_nested=False, output_dir="/cluster/scratch/veoehl/scale_cut_chains", init_from_chains=True):
+def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_walkers=6, n_steps=2000, use_nested=False, output_dir="/cluster/scratch/veoehl/scale_cut_chains", init_from_chains=True, use_fixed_covariance=False):
+    # Adjust output directory and filenames based on covariance mode
+    cov_mode = "fixed_cov" if use_fixed_covariance else "std_cov"
+    output_dir = os.path.join(output_dir, cov_mode)
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Get parent directory if needed
+    parent_output_dir = os.path.dirname(output_dir)
+    # Or if you want the grandparent: os.path.dirname(os.path.dirname(output_dir))
+    
     # Setup logging
-    log_path = os.path.join(output_dir, f'sampler_scale_cut_job{jobnumber}.log')
+    log_path = os.path.join(output_dir, f'sampler_scale_cut_job{jobnumber}_{cov_mode}.log')
     logger = logging.getLogger(f'sampler_scale_cut_job{jobnumber}')
     logger.setLevel(logging.DEBUG)
     file_handler = logging.FileHandler(log_path)
@@ -150,6 +158,11 @@ def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_w
     logger.info(f"Angular bins {np.arange(xilikelihood._n_ang_bins)[~xilikelihood._is_large_angle]} are treated with Gaussian marginals")
     xilikelihood.setup_likelihood()
     xilikelihood.gaussian_covariance = gaussian_covariance
+    if use_fixed_covariance:
+        xilikelihood.enable_fixed_covariance(True)
+        logger.info("Fixed covariance mode enabled - covariance will be cosmology-independent")
+    else:
+        logger.info("Standard mode - covariance will be cosmology-dependent")
     logger.info("Gaussian covariance set successfully")
     # Priors
     omega_m_prior = np.linspace(0.1, 0.5, 100)
@@ -174,15 +187,15 @@ def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_w
             return -1e30
     # Run sampler
     if use_nested:
-        results_path = os.path.join(output_dir, f'sampler_results_scale_cut_{scale_cut_deg}_job{jobnumber}_nested.h5')
+        results_path = os.path.join(output_dir, f'sampler_results_scale_cut_{scale_cut_deg}_job{jobnumber}_{cov_mode}_nested.h5')
         logger.info("Setting up Nautilus sampler...")
         sampler = Sampler(prior, likelihood, n_live=16, filepath=results_path)
         logger.info("Starting nested sampling...")
         sampler.run(verbose=True)
         logger.info("Nested sampling completed!")
         points, log_w, log_l = sampler.posterior()
-        np.savez(os.path.join(output_dir, f'chain_scale_cut_{scale_cut_deg}_job{jobnumber}_nested.npz'), points=points, log_w=log_w, log_l=log_l, log_path=log_path, param_names=params)
-        logger.info(f"Chain saved: chain_scale_cut_{scale_cut_deg}_job{jobnumber}_nested.npz")
+        np.savez(os.path.join(output_dir, f'chain_scale_cut_{scale_cut_deg}_job{jobnumber}_{cov_mode}_nested.npz'), points=points, log_w=log_w, log_l=log_l, log_path=log_path, param_names=params)
+        logger.info(f"Chain saved: chain_scale_cut_{scale_cut_deg}_job{jobnumber}_{cov_mode}_nested.npz")
         return points, log_w, log_l, log_path
     else:
         import emcee
@@ -193,7 +206,8 @@ def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_w
         p0 = None
         if init_from_chains:
             logger.info("Attempting to initialize walkers from existing chains...")
-            chains = load_chains_for_init(output_dir)
+            # Search in parent directory to find chains from any covariance mode
+            chains = load_chains_for_init(parent_output_dir)
             p0_from_chains = initialize_walkers_from_chains(chains, n_walkers, params, bounds, logger)
             if p0_from_chains is not None:
                 p0 = p0_from_chains
@@ -231,18 +245,19 @@ def run_sampler_for_scale_cut(scale_cut_deg, jobnumber=0, n_redshift_bins=2, n_w
         sampler.run_mcmc(p0, n_steps, progress=True)
         logger.info("emcee sampling completed!")
         flat_samples = sampler.get_chain(discard=0, thin=1, flat=False)
-        np.savez(os.path.join(output_dir, f'chain_scale_cut_{scale_cut_deg}_job{jobnumber}_emcee.npz'), samples=flat_samples, log_path=log_path, param_names=params)
-        logger.info(f"Chain saved: chain_scale_cut_{scale_cut_deg}_job{jobnumber}_emcee_run2.npz")
+        np.savez(os.path.join(output_dir, f'chain_scale_cut_{scale_cut_deg}_job{jobnumber}_{cov_mode}_emcee.npz'), samples=flat_samples, log_path=log_path, param_names=params)
+        logger.info(f"Chain saved: chain_scale_cut_{scale_cut_deg}_job{jobnumber}_{cov_mode}_emcee.npz")
         return flat_samples, log_path
 
 if __name__ == "__main__":
     # Define the array of scale cuts to sweep over
     scale_cuts_deg = np.array([10, 20, 50, 100, 300, 1200]) / 60.  
     if len(sys.argv) < 2:
-        print("Usage: python sampler_scale_cut_sweep.py <jobnumber> [--nested] [--random-init]")
+        print("Usage: python sampler_scale_cut_sweep.py <jobnumber> [--nested] [--random-init] [--fixed-cov]")
         print(f"Available job numbers: 1 to {len(scale_cuts_deg)}")
         print("  --nested: Use nested sampling instead of emcee")
         print("  --random-init: Use random initialization instead of loading from existing chains")
+        print("  --fixed-cov: Use fixed covariance (cosmology-independent)")
         sys.exit(1)
     jobnumber = int(sys.argv[1]) - 1
     if not (0 <= jobnumber < len(scale_cuts_deg)):
@@ -251,4 +266,5 @@ if __name__ == "__main__":
     scale_cut = scale_cuts_deg[jobnumber]
     use_nested = "--nested" in sys.argv
     use_random_init = "--random-init" in sys.argv
-    run_sampler_for_scale_cut(scale_cut, jobnumber=jobnumber, use_nested=use_nested, init_from_chains=not use_random_init)
+    use_fixed_cov = "--fixed-cov" in sys.argv
+    run_sampler_for_scale_cut(scale_cut, jobnumber=jobnumber, use_nested=use_nested, init_from_chains=not use_random_init, use_fixed_covariance=use_fixed_cov)
