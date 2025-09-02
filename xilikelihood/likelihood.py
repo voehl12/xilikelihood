@@ -656,14 +656,23 @@ class XiLikelihood:
         self.initiate_theory_cl(cosmology)
         self._prepare_matrix_products()
 
-        self._cov = self.get_covariance_matrix_lowell()
+        # Branch: use fixed covariance if available and configured
+        if getattr(self.config, 'use_fixed_covariance', False) and self.gaussian_covariance is not None:
+            logger.info("Using fixed covariance matrix (cosmology-independent)")
+            self._cov = self.gaussian_covariance
+        else:
+            # Standard cosmology-dependent covariance
+            self._cov = self.get_covariance_matrix_lowell()
+            if self._highell:
+                self.get_covariance_matrix_highell()
+                self._cov = self._cov_lowell + self._cov_highell
+                
+        # Always compute cosmology-dependent means
         self._mean = self._means_lowell
-
         if self._highell:
-            self.get_covariance_matrix_highell()
             self._get_means_highell()
-            self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
+            
         logger.info("Covariance matrix and means prepared.")
         logger.info("Mean samples: %s", self._mean[:5, :5])
         
@@ -698,6 +707,12 @@ class XiLikelihood:
         -------
         float or tuple
             Log-likelihood value, optionally with Gaussian comparison.
+            
+        Notes
+        -----
+        Covariance behavior can be controlled via `enable_fixed_covariance()`:
+        - Fixed mode: Uses precomputed gaussian_covariance (cosmology-independent)
+        - Standard mode: Computes new covariance for each cosmology (default)
         """
         
         with computation_phase("Log-likelihood evaluation", log_memory=self.config.log_memory_usage):
@@ -860,6 +875,26 @@ class XiLikelihood:
             logger.info("Likelihood setup complete! Ready for cosmology-dependent computations.")
 
     
+    def enable_fixed_covariance(self, use_fixed: bool = True):
+        """
+        Enable or disable fixed covariance mode.
+        
+        When enabled, uses the precomputed gaussian_covariance matrix instead of
+        computing a new covariance for each cosmology. This is useful for
+        analyses where you want to isolate the effect of cosmology on the mean
+        while keeping the covariance fixed.
+        
+        Parameters:
+        -----------
+        use_fixed : bool, default=True
+            Whether to use fixed covariance. If True, requires that
+            self.gaussian_covariance is set.
+        """
+        self.config.use_fixed_covariance = use_fixed
+        if use_fixed and self.gaussian_covariance is None:
+            logger.warning("Fixed covariance mode enabled but gaussian_covariance is None. "
+                         "Set gaussian_covariance before running likelihood evaluations.")
+        logger.info(f"Fixed covariance mode: {'enabled' if use_fixed else 'disabled'}")
     
 
 def fiducial_dataspace(
