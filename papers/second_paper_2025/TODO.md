@@ -107,20 +107,213 @@ papers/paper2_copula_likelihood/
     - Document the impact on posterior shape, computation time, and stability.
     - Add plotting utilities to overlay fixed vs. varying covariance results.
 
-## ✅ REFACTORING COMPLETE!
+// ...existing content...
 
-All major tasks have been completed successfully:
-- ✅ Organized structure in papers/second_paper_2025/
-- ✅ Extracted configuration to config.py with centralized parameters
-- ✅ Separated data generation utilities  
-- ✅ Clean analysis functions with proper imports
-- ✅ Comprehensive documentation and README
-- ✅ Updated job submission scripts
-- ✅ Integrated config.py across all analysis files
-- ✅ Confirmed xi-minus support working correctly
+## Tail Dependence Analysis for Copula Selection
 
-The S8 analysis pipeline is now well-organized and maintainable!
+### **Motivation**
+Current analysis uses theoretical covariance matrix (same for both Gaussian and Student-t copulas) with fiducial mean data. This doesn't test which copula better captures realistic correlation function dependencies. Need empirical validation using map-based simulations.
 
-## 🚀 NEXT: Scale-Dependent Marginals
+### **Implementation Plan**
 
-Implement scale cuts for Gaussian marginals to enable scale-dependent analysis.
+#### **1. Generate Realistic Correlation Function Ensemble**
+```python
+def generate_realistic_correlation_data(n_realizations=1000, cosmology=None):
+    """
+    Generate realistic correlation function measurements from map simulations.
+    Captures: shot noise, shape noise, mask effects, non-Gaussian features
+    """
+    correlation_realizations = []
+    
+    for i in range(n_realizations):
+        # Generate realistic maps with all observational effects
+        maps = xlh.generate_realistic_maps(
+            cosmology=cosmology or FIDUCIAL_COSMO,
+            include_shape_noise=True,
+            include_shot_noise=True,
+            apply_survey_mask=True,
+            add_systematics=True,
+            realization_seed=i
+        )
+        
+        # Measure correlation functions from maps
+        xi_plus, xi_minus = xlh.measure_correlation_functions(maps, ...)
+        correlation_data = flatten_correlation_measurements(xi_plus, xi_minus)
+        correlation_realizations.append(correlation_data)
+    
+    return np.array(correlation_realizations)  # Shape: (n_realizations, n_correlations)
+```
+
+#### **2. Transform to Uniform Margins (Isolate Copula Structure)**
+```python
+def transform_to_uniform_margins(correlation_data):
+    """
+    Transform each correlation function type to uniform [0,1] margins.
+    This isolates the pure dependence structure (copula) from marginal distributions.
+    """
+    n_realizations, n_correlations = correlation_data.shape
+    uniform_data = np.zeros_like(correlation_data)
+    
+    for i in range(n_correlations):
+        # Empirical CDF transformation: ranks → uniform [0,1]
+        values = correlation_data[:, i]
+        ranks = stats.rankdata(values, method='average')
+        uniform_data[:, i] = ranks / (n_realizations + 1)
+    
+    return uniform_data
+```
+
+#### **3. Measure Empirical Tail Dependence**
+```python
+def measure_tail_dependence(uniform_data, quantile_thresholds=[0.90, 0.95, 0.99]):
+    """
+    Measure tail dependence coefficients between correlation function pairs.
+    
+    Key concepts:
+    - Upper tail dependence λ_U = lim_{t→1⁻} P(U_j > t | U_i > t)
+    - Lower tail dependence λ_L = lim_{t→0⁺} P(U_j ≤ t | U_i ≤ t)
+    
+    Copula signatures:
+    - Gaussian: λ_U = λ_L = 0 (no tail dependence)
+    - Student-t: λ_U = λ_L > 0 (symmetric tail dependence)
+    """
+    n_realizations, n_correlations = uniform_data.shape
+    results = {}
+    
+    for threshold in quantile_thresholds:
+        pair_results = {}
+        
+        for i in range(n_correlations):
+            for j in range(i+1, n_correlations):
+                u_i = uniform_data[:, i]
+                u_j = uniform_data[:, j]
+                
+                # Upper tail dependence
+                upper_mask_i = u_i > threshold
+                upper_mask_j = u_j > threshold
+                upper_mask_both = upper_mask_i & upper_mask_j
+                
+                n_upper_i = np.sum(upper_mask_i)
+                n_upper_both = np.sum(upper_mask_both)
+                lambda_upper = n_upper_both / n_upper_i if n_upper_i > 10 else np.nan
+                
+                # Lower tail dependence  
+                lower_threshold = 1 - threshold
+                lower_mask_i = u_i <= lower_threshold
+                lower_mask_j = u_j <= lower_threshold
+                lower_mask_both = lower_mask_i & lower_mask_j
+                
+                n_lower_i = np.sum(lower_mask_i)
+                n_lower_both = np.sum(lower_mask_both)
+                lambda_lower = n_lower_both / n_lower_i if n_lower_i > 10 else np.nan
+                
+                pair_results[f'corr_{i}_{j}'] = {
+                    'lambda_upper': lambda_upper,
+                    'lambda_lower': lambda_lower,
+                    'correlation_type': classify_correlation_pair(i, j)
+                }
+        
+        results[f'threshold_{threshold}'] = pair_results
+    
+    return results
+```
+
+#### **4. High-Dimensional Analysis Strategies**
+
+**A. Covariance-Guided Analysis** (Prioritize high-correlation pairs):
+```python
+def covariance_guided_tail_analysis(correlation_data, covariance_matrix, top_k=20):
+    """
+    Smart approach: Focus tail dependence analysis on pairs with highest linear correlation.
+    Rationale: High covariance often correlates with tail dependence.
+    """
+    # Extract correlation coefficients, sort by strength, analyze top pairs
+```
+
+**B. Physical Grouping** (Reduce dimensionality meaningfully):
+```python
+def block_tail_dependence(correlation_data, block_structure):
+    """
+    Group measurements by physics:
+    - 'small_scales': angular bins 0-2
+    - 'large_scales': angular bins 6-8  
+    - 'redshift_1': all z-bin 1 measurements
+    - 'cross_correlations': ξ+ vs ξ- dependencies
+    
+    Analyze tail dependence between blocks instead of all pairs.
+    """
+```
+
+**C. Principal Component Analysis**:
+```python
+def pc_tail_dependence_analysis(correlation_data):
+    """
+    1. PCA on correlation data → identify dominant modes
+    2. Transform PC scores to uniform margins
+    3. Analyze tail dependence between top 5-10 PCs
+    Much more tractable than 1,431 pairwise comparisons!
+    """
+```
+
+#### **5. Copula Model Comparison**
+```python
+def compare_copulas_on_realistic_data(correlation_realizations):
+    """
+    Compare how well different copulas model realistic correlation data:
+    1. Fit both Gaussian and Student-t copulas to ensemble
+    2. Compute likelihood for each realization under each copula
+    3. Statistical test (paired t-test) for which fits better
+    4. Information criteria (AIC/BIC) comparison
+    """
+```
+
+#### **6. Integration with Existing Analysis**
+
+**Modify `s8_copula_comparison.py`**:
+- Add `--use-simulations` flag to generate realistic data instead of fiducial
+- Add `--tail-analysis` flag to perform tail dependence tests
+- Compare copula choice recommendation from tail analysis vs. parameter constraint differences
+
+**Expected Workflow**:
+```python
+# 1. Generate simulation ensemble
+ensemble = generate_realistic_correlation_data(n_realizations=1000)
+
+# 2. Analyze tail dependence structure  
+tail_results = covariance_guided_tail_analysis(ensemble, empirical_cov)
+recommendation = interpret_tail_dependence_for_copulas(tail_results)
+
+# 3. Compare with parameter inference results
+if recommendation['copula'] == 'student_t':
+    print("Tail dependence analysis supports Student-t copula choice")
+    print(f"Confidence: {recommendation['confidence']}")
+    
+# 4. Validate: does the data-driven choice match the parameter constraint differences?
+```
+
+### **Deliverables**
+
+1. **`tail_dependence_analysis.py`** - Complete implementation
+2. **Modified `s8_copula_comparison.py`** - Integration with existing workflow  
+3. **Validation study** - Compare tail-based recommendations with parameter constraint differences
+4. **Documentation** - Clear explanation of methodology and physical interpretation
+
+### **Expected Impact**
+
+- **Data-driven copula selection** instead of ad-hoc choice
+- **Physical understanding** of which correlation function dependencies drive copula effects
+- **Methodological contribution** - first systematic copula analysis for cosmological 2-point functions
+- **Practical guidance** for Stage IV surveys (Euclid, Roman, Rubin)
+
+### **Timeline**
+- [ ] Implement basic tail dependence measurement (1 week)
+- [ ] Add high-dimensional analysis strategies (1 week)  
+- [ ] Integrate with existing S8 analysis (1 week)
+- [ ] Validation and documentation (1 week)
+
+### **References**
+- **Nelsen (2006)** - "An Introduction to Copulas" (methodology)
+- **Sellentin & Heavens (2016)** - Student-t likelihoods in cosmology
+- **Your current work** - systematic copula comparison for correlation functions
+
+---
