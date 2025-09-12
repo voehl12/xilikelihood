@@ -686,7 +686,7 @@ class XiLikelihood:
         del self._products
 
 
-    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False, data_subset=None):
+    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False, data_subset=None, use_student_t=None):
         """
         Compute the log-likelihood for a given cosmology and data point.
 
@@ -702,6 +702,9 @@ class XiLikelihood:
             Whether to compare with Gaussian likelihood, by default False.
         data_subset : list, optional
             Subset of data to evaluate, by default None.
+        use_student_t : bool, optional
+            Whether to use Student-t copula instead of Gaussian. If None, uses 
+            the value from LikelihoodConfig (default: None).
 
         Returns
         -------
@@ -713,6 +716,11 @@ class XiLikelihood:
         Covariance behavior can be controlled via `enable_fixed_covariance()`:
         - Fixed mode: Uses precomputed gaussian_covariance (cosmology-independent)
         - Standard mode: Computes new covariance for each cosmology (default)
+        
+        Copula behavior can be controlled via `use_student_t` parameter:
+        - use_student_t=True: Uses Student-t copula with config.student_t_dof degrees of freedom
+        - use_student_t=False: Uses Gaussian copula (default)
+        - use_student_t=None: Uses config.use_student_t setting
         """
         
         with computation_phase("Log-likelihood evaluation", log_memory=self.config.log_memory_usage):
@@ -722,8 +730,33 @@ class XiLikelihood:
             if data.shape[:2] != self._xs.shape[:2]:
                 raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
 
+            # Determine copula type and parameters
+            if use_student_t is None:
+                use_student_t = self.config.use_student_t
+            
+            if use_student_t:
+                copula_type = "student-t"
+                copula_kwargs = {
+                    'df': self.config.student_t_dof,
+                    'stability_check': self.config.student_t_stability_check
+                }
+                logger.info(f"Using Student-t copula with df={self.config.student_t_dof}, stability_check={self.config.student_t_stability_check}")
+            else:
+                copula_type = "gaussian"
+                copula_kwargs = {}
+                logger.debug("Using Gaussian copula")
+
             # Ensure all arrays passed to copula-based likelihood evaluation are NumPy arrays
-            likelihood = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
+            likelihood = cop.evaluate(
+                np.asarray(data), 
+                np.asarray(self._xs), 
+                np.asarray(self._pdfs), 
+                np.asarray(self._cdfs), 
+                np.asarray(self._cov), 
+                subset=data_subset,
+                copula_type=copula_type,
+                **copula_kwargs
+            )
 
         if gausscompare:
             return likelihood, self.gauss_compare(data, data_subset=data_subset)
@@ -860,7 +893,7 @@ class XiLikelihood:
         """
 
         if hasattr(self, '_prefactors'):
-            logger.warning("Likelihood already set up - skipping redundant setup")
+            logger.info("Likelihood already set up - skipping redundant setup")
             return
     
         logger.info("Setting up likelihood computation (one-time initialization)...")
