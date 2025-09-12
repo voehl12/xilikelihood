@@ -18,7 +18,7 @@ FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
 # Mask configuration
 MASK_CONFIG = {
     "spins": [2], 
-    "circmaskattr": (10000, 512), 
+    "circmaskattr": (10000, 256), 
     "l_smooth": 30
 }
 
@@ -28,9 +28,10 @@ FIDUCIAL_ANG_BINS = "from_fiducial_dataspace"  # Use xlh.fiducial_dataspace()
 
 # S8 grids for different analyses
 S8_GRIDS = {
-    "narrow": (0.7, 0.9, 200),    # (min, max, n_points)
+    "narrow": (0.7, 0.9, 100),    # (min, max, n_points)
     "medium": (0.6, 1.0, 200), 
-    "wide": (0.4, 1.2, 200)
+    "wide": (0.4, 1.2, 200),
+    "test": (0.7,0.9,20)
 }
 
 # Parameter grids for 2D analysis
