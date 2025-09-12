@@ -6,7 +6,7 @@ xilikelihood: Two-point correlation function likelihood analysis.
 __version__ = "0.1.0"
 
 # Core user-facing functions
-from .core_utils import ensure_jax_device
+from .core_utils import ensure_jax_device, LikelihoodConfig
 ensure_jax_device()
 from .simulate import simulate_correlation_functions
 from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin
@@ -34,6 +34,7 @@ __all__ = [
     'SphereMask',
     'RedshiftBin',
     'XiLikelihood',
+    'LikelihoodConfig',
     
     # Key utilities
     'save_arrays',
