@@ -39,8 +39,14 @@ class LikelihoodConfig:
     # Validation and debugging
     validate_means: bool = False  # Expensive validation check for mean calculations
     analyze_eigenvalues: bool = False
-    use_fixed_covariane: bool = False
-    large_angle_threshold: float = 15/60  # Threshold for large angle bins in degrees
+    use_fixed_covariance: bool = False
+    large_angle_threshold: float = 1  # Threshold for large angle bins in degrees
+    
+    # Student-t coupling settings
+    use_student_t: bool = False
+    student_t_dof: float = 4.0  # degrees of freedom
+    student_t_stability_check: bool = True  # enable stability validation
+    
     # File paths
     working_dir: Optional[str] = None
     
@@ -52,6 +58,10 @@ class LikelihoodConfig:
             raise ValueError("ximax_sigma_factor must be positive")
         if self.ximin_sigma_factor <= 0:
             raise ValueError("ximin_sigma_factor must be positive")
+        if self.student_t_dof <= 2.0:
+            raise ValueError("student_t_dof must be > 2.0 for finite variance")
+        if self.student_t_dof > 100.0:
+            logger.warning(f"student_t_dof={self.student_t_dof} is very large, consider using Gaussian mode instead")
         
 
 
@@ -169,6 +179,81 @@ def computation_phase(phase_name: str, log_memory: bool = True):
         logger.info(f"Completed {phase_name} in {elapsed:.2f}s")
         gc.collect()
 
+@contextmanager
+def logging_context(log_file=None, level="INFO", console_output=True):
+    """
+    Context manager for setting up logging configuration.
+    
+    Parameters:
+    -----------
+    log_file : str or Path, optional
+        Path to log file. If None, no file logging.
+    level : str
+        Logging level ("DEBUG", "INFO", "WARNING", "ERROR")
+    console_output : bool
+        Whether to also output to console
+        
+    Yields:
+    -------
+    logger : logging.Logger
+        Configured logger instance
+    """
+    # Store original logging configuration
+    original_handlers = logging.root.handlers[:]
+    original_level = logging.root.level
+    
+    # Clear existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Set up new configuration
+    log_level = getattr(logging, level.upper())
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    handlers = []
+    
+    # Add file handler if requested
+    if log_file is not None:
+        file_handler = logging.FileHandler(log_file, mode='w')
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(logging.Formatter(log_format))
+        handlers.append(file_handler)
+    
+    # Add console handler if requested
+    if console_output:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(logging.Formatter(log_format))
+        handlers.append(console_handler)
+    
+    # Configure logging
+    logging.basicConfig(
+        level=log_level,
+        format=log_format,
+        handlers=handlers,
+        force=True
+    )
+    
+    # Configure xilikelihood package logging
+    xlh_logger = logging.getLogger('xilikelihood')
+    xlh_logger.setLevel(log_level)
+    
+    # Get the main logger
+    logger = logging.getLogger('s8_copula_comparison')
+    logger.setLevel(log_level)
+    
+    try:
+        logger.info(f"Logging initialized (level: {level})")
+        if log_file:
+            logger.info(f"Log file: {log_file}")
+        yield logger
+    finally:
+        # Restore original logging configuration
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+        logging.root.handlers = original_handlers
+        logging.root.level = original_level
+
 # ============================================================================
 # Utility Functions
 # ============================================================================
@@ -197,4 +282,5 @@ __all__ = [
     'temporary_arrays', 
     'computation_phase',
     'check_property_equal',
+    'logging_context',
 ]
