@@ -589,8 +589,10 @@ class Exact2DCF:
         involved_combinations = np.array(involved_combinations)  # Convert to numpy array for slicing
         angular_bins = np.array([ang_bin_i, ang_bin_j])  # Angular bins as array
         
-        # Store involved combinations as attribute for reference
+        # Store involved combinations and unique bins info as attributes for reference
         self._involved_combinations = involved_combinations
+        self._unique_bins = unique_bins
+        self._n_unique_bins = len(unique_bins)
         
         # Extract all products at once using 2D advanced indexing
         # Shape: (n_combinations, 2, size, size) - consistent with _products structure
@@ -617,25 +619,141 @@ class Exact2DCF:
         cf_value : complex
             Characteristic function value
         """
-        # TODO: Matrix construction depends on redshift bin configuration:
-        # - Number of unique redshift bins (2-4)
-        # - Auto vs cross correlations
-        # - Whether correlation functions share redshift bins
-        # Need to work out the general pattern to avoid multiple if statements
+        # Classify correlation types using is_croco attribute
+        correlation_type = self._classify_correlation_type()
         
-        # Access precomputed products and context
-        products_2d = self._products_2d
-        involved_combinations = self._involved_combinations
-        components = self._components
-        
-        # Combined matrix: PLACEHOLDER - needs proper construction logic
-        # The matrix construction will depend on the specific redshift bin configuration
-        
-        # For now, return a placeholder to avoid errors
-        combined_matrix = np.eye(products_2d.shape[-1])  # Identity matrix placeholder
+        # Dispatch to appropriate matrix constructor
+        if correlation_type == "auto-auto":
+            combined_matrix = self._build_auto_auto_matrix(tset)
+        elif correlation_type == "cross-cross":
+            combined_matrix = self._build_cross_cross_matrix(tset)
+        else:  # cross-auto
+            combined_matrix = self._build_cross_auto_matrix(tset)
         
         evals = np.linalg.eigvals(combined_matrix)
         return tset, np.prod((1 - 2j * evals) ** -0.5)
+    
+    def _classify_correlation_type(self):
+        """
+        Classify the type of correlation pair for matrix construction.
+        
+        Uses the _is_cov_cross attribute from XiLikelihood to determine if redshift
+        bin combinations correspond to auto-correlations or cross-correlations.
+        
+        Returns:
+        --------
+        str
+            One of "auto-auto", "cross-cross", or "cross-auto"
+        """
+        (rs_comb_i, ang_bin_i), (rs_comb_j, ang_bin_j) = self._components
+        
+        # Check if each correlation function is auto or cross using _is_cov_cross
+        # _is_cov_cross[i] = True means rs_comb i is a cross-correlation (different redshift bins)
+        # _is_cov_cross[i] = False means rs_comb i is an auto-correlation (same redshift bins)
+        is_auto_i = not self.xi_likelihood._is_cov_cross[rs_comb_i]  
+        is_auto_j = not self.xi_likelihood._is_cov_cross[rs_comb_j]  
+        
+        if is_auto_i and is_auto_j:
+            correlation_type = "auto-auto"
+        elif not is_auto_i and not is_auto_j:
+            correlation_type = "cross-cross"
+        else:
+            correlation_type = "cross-auto"
+        
+        logger.debug(f"Correlation type: {correlation_type} (rs_comb {rs_comb_i}: auto={is_auto_i}, "
+                    f"rs_comb {rs_comb_j}: auto={is_auto_j})")
+        logger.debug(f"Involved combinations: {self._involved_combinations}")
+        
+        return correlation_type
+    
+    def _build_auto_auto_matrix(self, tset):
+        """
+        Build combined matrix for auto-auto correlation case.
+        
+        For two auto-correlations ξ⁺(z_i,z_i) and ξ⁺(z_j,z_j), the covariance 
+        structure involves 2 unique redshift bins with 3 combinations:
+        - (i,i): auto-covariance for bin i
+        - (j,j): auto-covariance for bin j  
+        - (i,j): cross-covariance between bins i and j (if i != j)
+        
+        Parameters:
+        -----------
+        tset : array_like, shape (2,)
+            2D point in characteristic function space (t_i, t_j)
+            
+        Returns:
+        --------
+        combined_matrix : array_like, shape (2, 2)
+            Combined covariance matrix for the two correlation functions
+        """
+        products_2d = self._products_2d  # Shape: (n_combinations, 2, size, size)
+        involved_combinations = self._involved_combinations
+        
+        (rs_comb_i, ang_bin_i), (rs_comb_j, ang_bin_j) = self._components
+        t_i, t_j = tset
+        
+        # For auto-auto case, we expect either 1 or 3 combinations:
+        # - If 1 combination: same redshift bins (i,i) 
+        # - If 3 combinations: different redshift bins (i,i), (j,j), (i,j)
+        
+        logger.debug(f"Auto-auto case with {len(involved_combinations)} combinations")
+        
+        if len(involved_combinations) == 1:
+            # Same redshift bins - simplified case with only 1 covariance block
+            
+            # Single auto-correlation covariance block
+            auto_product = products_2d[0]  # Shape: (2, size, size)
+            
+            # Build diagonal matrix using both angular bins
+            combined_matrix = t_i * auto_product[0] + t_j * auto_product[1]
+           
+            
+        else:
+            # Different redshift bins - full case with 3 combinations
+            
+            # The involved_combinations are ordered: (min_bin, min_bin), (min_bin, max_bin), (max_bin, max_bin)
+            # We need to map these to our specific correlation functions
+            
+            # Extract the M @ cov products for both angular bins
+            auto_product_i = products_2d[0, 0]  # First auto-correlation, first angular bin
+            auto_product_j = products_2d[2, 1]  # Second auto-correlation, second angular bin
+            # need to check whether this selection is correct (ordering of products_2d)
+            # Cross-correlation terms: off-diagonal elements
+            cross_product_ij = products_2d[1, 0]  # Cross-covariance, first angular bin
+            cross_product_ji = products_2d[1, 1]  # Cross-covariance, second angular bin
+            
+            # Build the 2x2 combined matrix
+            combined_matrix = np.array([
+                [t_i * auto_product_i,      t_i * cross_product_ij],
+                [t_j * cross_product_ji,    t_j * auto_product_j]
+            ])
+        
+        logger.debug(f"Built auto-auto matrix for t=({t_i:.3f}, {t_j:.3f}): "
+                    f"shape {combined_matrix.shape}, det={np.linalg.det(combined_matrix):.3e}")
+        
+        return combined_matrix
+    
+    def _build_cross_cross_matrix(self, tset):
+        """
+        Build combined matrix for cross-cross correlation case.
+        
+        TODO: Implement cross-cross correlation matrix construction.
+        This is more complex due to potentially 4 unique redshift bins.
+        """
+        logger.debug("Cross-cross matrix construction not yet implemented")
+        # Placeholder - return identity for now
+        return np.eye(2)
+    
+    def _build_cross_auto_matrix(self, tset):
+        """
+        Build combined matrix for cross-auto correlation case.
+        
+        TODO: Implement cross-auto correlation matrix construction.
+        This has intermediate complexity with 2-3 unique redshift bins.
+        """
+        logger.debug("Cross-auto matrix construction not yet implemented")
+        # Placeholder - return identity for now
+        return np.eye(2)
     
     # Note: The following methods (_build_2d_matrices_from_components, _build_full_redshift_covariance, 
     # _build_correlation_m_matrix) are no longer needed since we use precomputed _products directly.
