@@ -297,6 +297,8 @@ class XiLikelihood:
             self._m_xiplus = np.tile(m_xiplus, (1, 4))
             self._m_combined = self._m_xiplus
         
+    
+        
    
        
         
@@ -325,6 +327,8 @@ class XiLikelihood:
         with computation_phase("matrix products preparation", log_memory=self.config.log_memory_usage):
     
             covs = self._get_pseudo_alm_covariances()
+            self.pseudo_alm_cov_size = covs[0].shape[0]
+                
             # Use combined matrices for both xi_plus and xi_minus (or just xi_plus if flag is False)
             
             self._products = np.array(
@@ -457,9 +461,6 @@ class XiLikelihood:
             if self.config.enable_memory_cleanup:
                 del large_angle_products, products
 
-            self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances_lowell))
-            self._ximin = jnp.array(self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances_lowell))
-
             # Compute eigenvalues
             eigvals_auto_padded = self._compute_auto_eigenvalues(auto_prods)
             self._eigvals = self._eigvals.at[~self._is_cov_cross].set(eigvals_auto_padded)
@@ -547,6 +548,11 @@ class XiLikelihood:
         # Convert to numpy array for compatibility
         self._cov_lowell = np.asarray(self._cov_lowell)
         self._variances_lowell = np.diag(self._cov_lowell).reshape(self.data_shape_full)
+        
+        # Compute ximax and ximin now that we have means and variances
+        self._ximax = jnp.array(self._means_lowell + self.config.ximax_sigma_factor * jnp.sqrt(self._variances_lowell))
+        self._ximin = jnp.array(self._means_lowell - self.config.ximin_sigma_factor * jnp.sqrt(self._variances_lowell))
+        
         return self._cov_lowell
 
     def get_covariance_matrix_highell(self):
