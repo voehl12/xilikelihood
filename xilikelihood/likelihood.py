@@ -827,22 +827,32 @@ class XiLikelihood:
 
 
 
-    def likelihood_function_2d(self, data_subset=None,gausscompare=False):
+    def likelihood_function_2d(self, data_subset=None, gausscompare=False, use_student_t=None):
         """
         Return a 2D subset of the likelihood as a joint PDF at a given cosmology.
 
         Parameters
         ----------
-        cosmology : dict
-            Cosmological parameters.
-        
         data_subset : list
             Subset of data to evaluate (e.g., 2D indices).
+        gausscompare : bool, optional
+            Whether to compare with Gaussian likelihood, by default False.
+        use_student_t : bool, optional
+            Whether to use Student-t copula instead of Gaussian. If None, uses 
+            the value from LikelihoodConfig (default: None).
 
         Returns
         -------
         tuple
             xs and joint PDF values for the specified 2D subset.
+            If gausscompare=True, returns (xs, copula_log_pdf, gaussian_log_pdf).
+            
+        Notes
+        -----
+        Copula behavior can be controlled via `use_student_t` parameter:
+        - use_student_t=True: Uses Student-t copula with config.student_t_dof degrees of freedom
+        - use_student_t=False: Uses Gaussian copula (default)
+        - use_student_t=None: Uses config.use_student_t setting
         """
         if data_subset is None:
             raise ValueError("data_subset must be specified for likelihood_function_2d.")
@@ -854,13 +864,30 @@ class XiLikelihood:
         if not hasattr(self, '_cov') or self._cov is None:
             raise RuntimeError("Likelihood not prepared. Call prepare_likelihood_components() first")
     
+        # Determine copula type and parameters
+        if use_student_t is None:
+            use_student_t = self.config.use_student_t
+        
+        if use_student_t:
+            copula_type = "student-t"
+            copula_kwargs = {'df': self.config.student_t_dof}
+            logger.info(f"Using Student-t copula for 2D likelihood with df={self.config.student_t_dof}")
+        else:
+            copula_type = "gaussian"
+            copula_kwargs = {}
+            logger.debug("Using Gaussian copula for 2D likelihood")
         
         cov_2d = cop.cov_subset(self._cov, data_subset, self._n_ang_bins)  # Use _n_ang_bins
         xs_subset = cop.data_subset(self._xs, data_subset)
         pdfs_subset = cop.data_subset(self._pdfs, data_subset)
         cdfs_subset = cop.data_subset(self._cdfs, data_subset)
-        log_pdf_2d = cop.joint_logpdf(cdfs_subset, np.asarray(pdfs_subset), np.asarray(cov_2d))
-        
+        log_pdf_2d = cop.joint_logpdf(
+            cdfs_subset, 
+            np.asarray(pdfs_subset), 
+            np.asarray(cov_2d),
+            copula_type=copula_type,
+            **copula_kwargs
+        )
         
         if gausscompare:
             means_subset = cop.data_subset(self._mean, data_subset)
