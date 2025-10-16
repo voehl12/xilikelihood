@@ -653,6 +653,10 @@ def main():
                         help="Enable verbose logging")
     parser.add_argument("--no-log-file", action="store_true",
                         help="Disable file logging")
+    parser.add_argument("--with-tail-analysis", action="store_true",
+                        help="Include tail dependence analysis for copula validation")
+    parser.add_argument("--tail-realizations", type=int, default=500,
+                        help="Number of realizations for tail dependence analysis")
 
     args = parser.parse_args()
     
@@ -730,6 +734,41 @@ def main():
             
         logger.info(f"Correlation type: {args.correlation_type}")
         logger.info(f"Student-t DoF: {args.student_t_dof}, S8 grid: {args.s8_grid}")
+        
+        # Run tail dependence analysis if requested
+        tail_results = None
+        if args.with_tail_analysis:
+            logger.info("Running tail dependence analysis for copula validation...")
+            try:
+                # Use functional approach - simpler than class
+                from papers.second_paper_2025.analysis.tail_dependence_functional import analyze_tail_dependence
+                
+                tail_results = {}
+                for n_datapoints in selected_n_datapoints:
+                    logger.info(f"Tail dependence analysis for {n_datapoints} datapoints...")
+                    
+                    result = analyze_tail_dependence(
+                        n_realizations=args.tail_realizations,
+                        n_datapoints=n_datapoints,
+                        correlation_type=args.correlation_type,
+                        n_angular_bins=args.n_angular_bins,
+                        output_dir=Path(args.output_dir) / "tail_dependence",
+                        verbose=args.verbose
+                    )
+                    
+                    tail_results[n_datapoints] = result
+                    recommendation = result['recommended_copula']
+                    tail_coeffs = result['tail_coefficients']
+                    
+                    logger.info(f"  Recommended copula: {recommendation}")
+                    logger.info(f"  Tail dependence - Upper: {tail_coeffs['upper_tail_avg']:.3f}, Lower: {tail_coeffs['lower_tail_avg']:.3f}")
+            
+            except ImportError:
+                logger.warning("Could not import tail_dependence_functional module. Skipping tail analysis.")
+            except Exception as e:
+                logger.error(f"Error in tail dependence analysis: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         # Compute posteriors for each number of datapoints
         all_results = []

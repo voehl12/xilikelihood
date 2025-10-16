@@ -6,7 +6,7 @@ xilikelihood: Two-point correlation function likelihood analysis.
 __version__ = "0.1.0"
 
 # Core user-facing functions
-from .core_utils import ensure_jax_device, LikelihoodConfig
+from .core_utils import ensure_jax_device, LikelihoodConfig, fiducial_cosmo
 ensure_jax_device()
 from .simulate import simulate_correlation_functions
 from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin
@@ -15,6 +15,10 @@ from .mask_props import SphereMask
 from .file_handling import save_arrays, load_arrays, generate_filename
 from .cl2xi_transforms import pcl2xi, prep_prefactors
 from .data_statistics import bootstrap, compute_simulation_moments
+
+# Student-t copula tools
+from .exact_2d import Exact2DLikelihood
+from .nu_estimation import estimate_nu_from_exact_2d, quick_nu_estimate, plot_nu_comparison
 
 # Advanced users can access submodules
 from . import distributions
@@ -29,6 +33,7 @@ __all__ = [
     'generate_theory_cl', 
     'prepare_theory_cl_inputs',
     'fiducial_dataspace',
+    'fiducial_cosmo',
     
     # Essential objects
     'SphereMask',
@@ -44,6 +49,12 @@ __all__ = [
     'prep_prefactors',
     'bootstrap',
     'compute_simulation_moments',
+    
+    # Student-t copula tools
+    'Exact2DLikelihood',
+    'estimate_nu_from_exact_2d',
+    'quick_nu_estimate',
+    'plot_nu_comparison',
     
     # Advanced submodules
     'distributions',

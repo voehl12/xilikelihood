@@ -76,7 +76,7 @@ def main():
                         help="Correlation type used in jobs")
     parser.add_argument("--n-jobs", type=int, default=4,
                         help="Number of jobs in the array")
-    parser.add_argument("--exclude-jobs", nargs="+", type=int, default=[1],
+    parser.add_argument("--exclude-jobs", nargs="+", type=int, default=None,
                         help="Job indices to exclude (default: [1])")
     
     args = parser.parse_args()

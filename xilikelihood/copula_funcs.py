@@ -311,56 +311,54 @@ def pdf_and_cdf_point_eval(x_data, xs, pdfs, cdfs):
 # ============================================================================
 
 def gaussian_copula_density(cdfs, covariance_matrix):
-    # Convert u and v to normal space
     cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
-    z = norm.ppf(cdfs_flat)  # same shape as cdfs
-
-    corr_matrix = covariance_to_correlation(covariance_matrix)
+    z, corr_matrix = _gaussian_copula_core(cdfs_flat, covariance_matrix, function_name="Gaussian copula (grid)")
     mean = np.zeros(len(corr_matrix))
-    mvn = multivariate_normal(
-        mean=mean, cov=corr_matrix
-    )  # multivariate normal with right correlation structure
-    
+    mvn = multivariate_normal(mean=mean, cov=corr_matrix)
     ppf_points = meshgrid_and_recast(z)
-    mvariate_pdf = mvn.logpdf(ppf_points)  # evaluate mv normal at ppf points
-
-    pdf = norm.logpdf(z)  # evaluate normal at the inverse cdf points
-    
-    pdf_points = meshgrid_and_recast(pdf)  # reshape to 2D array
-
-    # log Copula density
+    mvariate_pdf = mvn.logpdf(ppf_points)
+    pdf = norm.logpdf(z)
+    pdf_points = meshgrid_and_recast(pdf)
     copula_density = mvariate_pdf - np.sum(pdf_points, axis=1)
-    
-   
     return copula_density
 
 def gaussian_copula_point_density(cdf_point, covariance_matrix):
-    # Clip CDFs to avoid infinite quantiles (essential for realistic marginals)
-    epsilon = 1e-12  # Small but not too small to avoid numerical issues
-    cdf_clipped = np.clip(cdf_point, epsilon, 1 - epsilon)
-    
-    # Warn if clipping was necessary
-    n_clipped = np.sum(cdf_point != cdf_clipped)
-    if n_clipped > 0:
-        logger.warning(f"Gaussian copula: Clipped {n_clipped} CDF values to avoid infinite quantiles")
-    
-    z = norm.ppf(cdf_clipped)
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-    
-    
+    z, corr_matrix = _gaussian_copula_core(cdf_point, covariance_matrix, function_name="Gaussian copula (point)")
     mean = np.zeros(len(corr_matrix))
-    mvn = multivariate_normal(
-        mean=mean, cov=corr_matrix
-    )  # multivariate normal with right correlation structure
+    mvn = multivariate_normal(mean=mean, cov=corr_matrix)
     z = z.flatten()
     mvariate_pdf = mvn.logpdf(z)
     pdf = norm.logpdf(z)
     return mvariate_pdf - np.sum(pdf)
+def _gaussian_copula_core(cdf_data, covariance_matrix, epsilon=1e-12, function_name="Gaussian copula"):
+    """
+    Core computation for Gaussian copula density.
+    Parameters:
+    - cdf_data: ndarray
+        CDF values. Can be flattened for grid evaluation or 1D for point evaluation.
+    - covariance_matrix: ndarray
+        Covariance matrix for the copula.
+    - epsilon: float
+        Clipping threshold for CDF values to avoid infinite quantiles.
+    - function_name: str
+        Name for logging purposes.
+    Returns:
+    - z: ndarray
+        Transformed values in normal space.
+    - corr_matrix: ndarray
+        Correlation matrix.
+    """
+    cdf_clipped = np.clip(cdf_data, epsilon, 1 - epsilon)
+    n_clipped = np.sum(cdf_data != cdf_clipped)
+    if n_clipped > 0:
+        logger.warning(f"{function_name}: Clipped {n_clipped} CDF values to avoid infinite quantiles")
+    z = norm.ppf(cdf_clipped)
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    return z, corr_matrix
 
 
-def gaussian_copula_density_2d(u, v, covariance_matrix):
+def gaussian_copula_density_2d(u, v, covariance_matrix, epsilon=1e-12):
     # Clip CDFs to avoid infinite quantiles
-    epsilon = 1e-12
     u_clipped = np.clip(u, epsilon, 1 - epsilon)
     v_clipped = np.clip(v, epsilon, 1 - epsilon)
     
@@ -386,7 +384,104 @@ def gaussian_copula_density_2d(u, v, covariance_matrix):
     copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
-def student_t_copula_density(cdfs, covariance_matrix, df):
+def _get_epsilon_for_df(df):
+    """
+    Get adaptive epsilon based on degrees of freedom for Student-t copula stability.
+    
+    Parameters:
+    - df: float
+        Degrees of freedom for the Student-t distribution.
+        
+    Returns:
+    - epsilon: float
+        Appropriate clipping threshold for the given df.
+    """
+    if df <= 5:
+        return 1e-6  # Conservative for very low df
+    elif df <= 10:
+        return 1e-8  # Moderate for low df  
+    else:
+        return 1e-10  # Less conservative for higher df
+
+def _student_t_copula_core(cdf_data, covariance_matrix, df, epsilon=None, stability_check=False, function_name="Student-t copula"):
+    """
+    Core computation for Student-t copula density.
+    
+    Parameters:
+    - cdf_data: ndarray
+        CDF values. Can be flattened for grid evaluation or 1D for point evaluation.
+    - covariance_matrix: ndarray
+        Covariance matrix for the copula.
+    - df: float
+        Degrees of freedom for the Student-t distribution.
+    - epsilon: float, optional
+        Clipping threshold for CDF values. If None, will be determined based on df.
+    - stability_check: bool
+        Whether to perform stability checks on the correlation matrix.
+    - function_name: str
+        Name for logging purposes.
+        
+    Returns:
+    - z: ndarray
+        Transformed values in Student-t space.
+    - scale: ndarray
+        Scale matrix for multivariate Student-t.
+    """
+    # Use adaptive epsilon based on degrees of freedom if not provided
+    if epsilon is None:
+        epsilon = _get_epsilon_for_df(df)
+        logger.debug(f"{function_name}: Using adaptive epsilon={epsilon} for df={df}")
+    
+    # Check for problematic CDF values that cause infinite quantiles
+    
+    
+    # Clip CDFs to avoid infinite quantiles
+    cdf_clipped = np.clip(cdf_data, epsilon, 1 - epsilon)
+    
+    # Warn if clipping was necessary
+    n_clipped = np.sum(cdf_data != cdf_clipped)
+    if n_clipped > 0:
+        logger.warning(f"{function_name}: Clipped {n_clipped} CDF values to avoid infinite quantiles. "
+                      f"This may affect marginal recovery accuracy.")
+    
+    # Convert CDFs to Student-t space
+    z = t.ppf(cdf_clipped, df)
+    
+    # Convert covariance matrix to correlation matrix
+    corr_matrix = covariance_to_correlation(covariance_matrix)
+    
+    # Stability check for correlation matrix (if requested)
+    if stability_check:
+        eigenvals, _ = eigh(corr_matrix)
+        min_eigenval = np.min(eigenvals)
+        condition_number = np.max(eigenvals) / min_eigenval
+        
+        if min_eigenval <= 0:
+            logger.error(f"{function_name}: Correlation matrix is not positive definite. "
+                        f"Minimum eigenvalue: {min_eigenval}")
+            raise ValueError("Correlation matrix must be positive definite for Student-t copula")
+        
+        if min_eigenval < DEFAULT_MIN_EIGENVALUE:
+            logger.warning(f"{function_name}: Correlation matrix is poorly conditioned. "
+                          f"Minimum eigenvalue: {min_eigenval}, condition number: {condition_number}")
+        
+        if condition_number > 1e12:
+            logger.warning(f"{function_name}: Very high condition number: {condition_number}. "
+                          f"Results may be numerically unstable.")
+    
+    # Check degrees of freedom
+    if df <= 2:
+        logger.warning(f"{function_name}: df={df} <= 2 may cause numerical issues. "
+                      f"Consider using df > 2 for better stability.")
+    
+    # Scale matrix for the multivariate Student-t distribution
+    # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
+    # This ensures the covariance matrix equals the correlation matrix
+    scale = corr_matrix * (df - 2) / df
+    
+    return z, scale
+
+def student_t_copula_density(cdfs, covariance_matrix, df, epsilon=None):
     """
     Compute the log-density of the Student-t copula.
 
@@ -397,6 +492,8 @@ def student_t_copula_density(cdfs, covariance_matrix, df):
         Covariance matrix for the copula (shape: (n_dims, n_dims)).
     - df: float
         Degrees of freedom for the Student-t distribution.
+    - epsilon: float, optional
+        Clipping threshold for CDF values. If None, will be determined based on df.
 
     Returns:
     - copula_density: ndarray
@@ -405,35 +502,15 @@ def student_t_copula_density(cdfs, covariance_matrix, df):
     # Convert CDFs to Student-t space with boundary protection
     cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
     
-    # Check for problematic CDF values that cause infinite quantiles
-    n_zeros = np.sum(cdfs_flat == 0.0)
-    n_ones = np.sum(cdfs_flat == 1.0)
-    if n_zeros > 0 or n_ones > 0:
-        logger.warning(f"Student-t copula: Found {n_zeros} exact zeros and {n_ones} exact ones in CDFs. "
-                      f"This will cause infinite quantiles and copula failure. "
-                      f"Consider using Gaussian copula for realistic cosmological data.")
+    # Use core computation with adaptive epsilon
+    z, scale = _student_t_copula_core(
+        cdfs_flat, covariance_matrix, df, epsilon=epsilon,
+        stability_check=False, function_name="Student-t copula"
+    )
     
-    # Clip CDFs to avoid infinite quantiles (essential for realistic marginals)
-    epsilon = 1e-12  # Small but not too small to avoid numerical issues
-    cdfs_clipped = np.clip(cdfs_flat, epsilon, 1 - epsilon)
+    # Grid-specific processing
+    ppf_points = meshgrid_and_recast(z)  # (n_points, n_dims)
     
-    # Warn if clipping was necessary
-    n_clipped = np.sum((cdfs_flat != cdfs_clipped))
-    if n_clipped > 0:
-        logger.warning(f"Student-t copula: Clipped {n_clipped} CDF values to avoid infinite quantiles. "
-                      f"This may affect marginal recovery accuracy.")
-    
-    z = t.ppf(cdfs_clipped, df)  # same shape as cdfs: (n_dims, n_points_per_dim)
-    ppf_points = meshgrid_and_recast(z) # (n_points, n_dims)
-    
-    # Convert covariance matrix to correlation matrix
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-
-    # Scale matrix for the multivariate Student-t distribution
-    # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
-    # This ensures the covariance matrix equals the correlation matrix
-    scale = corr_matrix * (df - 2) / df
-
     # Compute the multivariate Student-t log PDF
     mv_t_logpdf = multivariate_student_t_logpdf(ppf_points, df, scale)
 
@@ -447,7 +524,7 @@ def student_t_copula_density(cdfs, covariance_matrix, df):
 
     return copula_density
 
-def student_t_copula_point_density(cdf_point, covariance_matrix, df, stability_check=True):
+def student_t_copula_point_density(cdf_point, covariance_matrix, df, epsilon=None, stability_check=True):
     """
     Compute the log-density of the Student-t copula at a single point.
     
@@ -460,6 +537,8 @@ def student_t_copula_point_density(cdf_point, covariance_matrix, df, stability_c
         Covariance matrix for the copula (shape: (n_dims, n_dims)).
     - df: float
         Degrees of freedom for the Student-t distribution.
+    - epsilon: float, optional
+        Clipping threshold for CDF values. If None, will be determined based on df.
     - stability_check: bool
         Whether to perform stability checks on the correlation matrix.
         
@@ -467,58 +546,14 @@ def student_t_copula_point_density(cdf_point, covariance_matrix, df, stability_c
     - float
         Log copula density at the point.
     """
-    # Check for problematic CDF values that cause infinite quantiles
-    n_zeros = np.sum(cdf_point == 0.0)
-    n_ones = np.sum(cdf_point == 1.0)
-    if n_zeros > 0 or n_ones > 0:
-        logger.warning(f"Student-t copula point evaluation: Found {n_zeros} exact zeros and {n_ones} exact ones in CDFs. "
-                      f"This will cause infinite quantiles and copula failure. "
-                      f"Consider using Gaussian copula for realistic cosmological data.")
+    # Use core computation with stability check and adaptive epsilon
+    z, scale = _student_t_copula_core(
+        cdf_point, covariance_matrix, df, epsilon=epsilon,
+        stability_check=stability_check, function_name="Student-t copula point evaluation"
+    )
     
-    # Clip CDFs to avoid infinite quantiles (essential for realistic marginals)
-    epsilon = 1e-12  # Small but not too small to avoid numerical issues
-    cdf_clipped = np.clip(cdf_point, epsilon, 1 - epsilon)
-    
-    # Warn if clipping was necessary
-    n_clipped = np.sum(cdf_point != cdf_clipped)
-    if n_clipped > 0:
-        logger.warning(f"Student-t copula point evaluation: Clipped {n_clipped} CDF values to avoid infinite quantiles. "
-                      f"This may affect marginal recovery accuracy.")
-    
-    # Convert CDFs to Student-t space
-    z = t.ppf(cdf_clipped, df)
+    # Point-specific processing
     z = z.flatten()
-    
-    # Convert covariance matrix to correlation matrix
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-    
-    # Stability check for correlation matrix
-    if stability_check:
-        eigenvals, _ = eigh(corr_matrix)
-        min_eigenval = np.min(eigenvals)
-        condition_number = np.max(eigenvals) / min_eigenval
-        
-        if min_eigenval <= 0:
-            logger.error(f"Student-t copula: Correlation matrix is not positive definite. "
-                        f"Minimum eigenvalue: {min_eigenval}")
-            raise ValueError("Correlation matrix must be positive definite for Student-t copula")
-        
-        if min_eigenval < DEFAULT_MIN_EIGENVALUE:
-            logger.warning(f"Student-t copula: Correlation matrix is poorly conditioned. "
-                          f"Minimum eigenvalue: {min_eigenval}, condition number: {condition_number}")
-        
-        if condition_number > 1e12:
-            logger.warning(f"Student-t copula: Very high condition number: {condition_number}. "
-                          f"Results may be numerically unstable.")
-    
-    # Scale matrix for the multivariate Student-t distribution
-    # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
-    # This ensures the covariance matrix equals the correlation matrix
-    if df <= 2:
-        logger.warning(f"Student-t copula: df={df} <= 2 may cause numerical issues. "
-                      f"Consider using df > 2 for better stability.")
-    
-    scale = corr_matrix * (df - 2) / df
     
     # Compute the multivariate Student-t log PDF
     mv_t_logpdf = multivariate_student_t_logpdf(z, df, scale)
@@ -663,7 +698,9 @@ def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     if copula_type == "gaussian":
         copula_density = gaussian_copula_density(cdfs, cov)  # Shape: (n_total_points,)
     elif copula_type == "student-t":
-        copula_density = student_t_copula_density(cdfs, cov, df)
+        # Use adaptive epsilon for Student-t copula based on df
+        epsilon = _get_epsilon_for_df(df)
+        copula_density = student_t_copula_density(cdfs, cov, df, epsilon=epsilon)
     else:
         raise ValueError(f"Unsupported copula type: {copula_type}")
     
@@ -830,7 +867,9 @@ def evaluate(x_data, xs, pdfs, cdfs, cov, subset=None, copula_type="gaussian", d
     if copula_type == "gaussian":
         copula_density = gaussian_copula_point_density(cdf_point, cov)
     elif copula_type == "student-t":
-        copula_density = student_t_copula_point_density(cdf_point, cov, df, stability_check)
+        # Use adaptive epsilon for Student-t copula based on df
+        epsilon = _get_epsilon_for_df(df)
+        copula_density = student_t_copula_point_density(cdf_point, cov, df, epsilon=epsilon, stability_check=stability_check)
     else:
         raise ValueError(f"Unsupported copula type: {copula_type}. Use 'gaussian' or 'student-t'.")
 

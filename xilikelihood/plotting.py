@@ -274,7 +274,8 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
     else:
         diff_hist = (sim_mean - exact_grid)
         rel_res = diff_hist / sim_std
-    print("Mean deviation from simulations: {} std".format(np.mean(np.fabs(rel_res))))
+    mean_dev = np.mean(np.fabs(rel_res))
+    print("Mean deviation from simulations: {:.3f} std".format(mean_dev))
 
     # Display values per pixel using a heatmap
     im = axes.pcolormesh(bincenters_x, bincenters_y,
@@ -285,11 +286,17 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
         vmin=-vmax, 
         vmax=vmax
     )
+    
+    # Add text annotation with mean deviation
+    axes.text(0.05, 0.95, r'Mean dev: {:.3f}$\sigma$'.format(mean_dev), 
+              transform=axes.transAxes, fontsize=10, 
+              verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
     #im2 = axes.contour(bincenters_x, bincenters_y,exact_grid,cmap='gray',levels=5)
 
     return im
 
-def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100):
+def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100, copula_tag="gauss", cache_dir=None):
     """
     Create a corner plot with 2D marginals and 1D histograms for simulations,
     and overlay PDF contours. Additionally, compare 2D histograms to analytic PDFs.
@@ -312,7 +319,8 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
       # Two auto and one cross-correlation
       # Two angular bins
     selected_data = sims[:, redshift_indices, :][:, :, angular_indices].reshape(sims.shape[0], -1)
-    filepath = '/cluster/work/refregier/veoehl'
+    # Use cache_dir if provided, else default to simspath
+    filepath = cache_dir if cache_dir is not None else simspath
     # Create a corner plot
     fig, axes = plt.subplots(len(selected_data[0]), len(selected_data[0]), figsize=(10, 10))
     colorbar_ax = fig.add_axes([0.96, 0.2, 0.02, 0.6])  # Add a new axis for the colorbar
@@ -348,7 +356,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                     redshift_idx_j, angular_idx_j = divmod(j+1, len(angular_indices))
                     axis = 0
                 # Load and overlay the 1D marginal from the random pair
-                marginal_data = load_2d_pdf(filepath, redshift_idx_i, angular_idx_i, redshift_idx_j,angular_idx_j,integrate_axis=axis)
+                marginal_data = load_2d_pdf(filepath, redshift_idx_i, angular_idx_i, redshift_idx_j,angular_idx_j,integrate_axis=axis, copula_tag=copula_tag)
                 
                 if marginal_data is not None:
                     x_marginal, marginal = marginal_data
@@ -363,7 +371,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                     selected_data[:, i], selected_data[:, j],
                     bins=nbins, cmap="Reds", density=True
                 ) """
-                plot_2d_from_cache(ax, filepath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j)
+                plot_2d_from_cache(ax, filepath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j, copula_tag=copula_tag)
                 
 
                 
@@ -390,7 +398,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                 std_dev = (np.ma.masked_where(density == 0, std_dev))
 
                 # Load analytic PDF
-                pdf_data = load_2d_pdf(filepath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i)
+                pdf_data = load_2d_pdf(filepath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i, copula_tag=copula_tag)
                 if pdf_data is not None:
                     x_pdf, y_pdf, pdf_grid = pdf_data
 
@@ -420,7 +428,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
     else:
         plt.show()
 
-def plot_2d_from_cache(ax, filepath, i, j, k, l):
+def plot_2d_from_cache(ax, filepath, i, j, k, l, copula_tag="gauss"):
     """
     Load a 2D likelihood cache file and plot the PDF.
 
@@ -436,7 +444,7 @@ def plot_2d_from_cache(ax, filepath, i, j, k, l):
         Indices for the second dimension (e.g., redshift_bin, angular_bin).
     """
     try:
-        data = load_2d_pdf(filepath, i, j, k, l)
+        data = load_2d_pdf(filepath, i, j, k, l, copula_tag=copula_tag)
         if data is not None:
             x, y, pdf = data
             X, Y = np.meshgrid(x, y)
@@ -448,7 +456,7 @@ def plot_2d_from_cache(ax, filepath, i, j, k, l):
 
 
 
-def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
+def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None, copula_tag="gauss"):
     """
     Load a 2D likelihood PDF from the cache file and optionally integrate it.
 
@@ -480,7 +488,7 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
         - marginal : ndarray
             1D marginal PDF values.
     """
-    cache_file = f"{filepath}/likelihood_2d_cache_{i}_{j}_{k}_{l}.npz"
+    cache_file = f"{filepath}/likelihood_2d_cache_{copula_tag}_{i}_{j}_{k}_{l}.npz"
     
     try:
         data = np.load(cache_file)

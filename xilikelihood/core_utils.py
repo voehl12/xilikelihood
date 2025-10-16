@@ -24,7 +24,7 @@ class LikelihoodConfig:
     
     # CF computation settings
     cf_steps: int = 2048
-    pdf_steps: int = 1024
+    pdf_steps: int = 2048
     ximax_sigma_factor: float = 200.0
     ximin_sigma_factor: float = 70.0
     
@@ -277,8 +277,45 @@ def check_property_equal(instances, property_name):
 
 
 
+# ============================================================================
+# Fiducial Cosmology
+# ============================================================================
+
+def fiducial_cosmo():
+    """
+    Return standard fiducial cosmology parameters used throughout xilikelihood.
+    
+    This provides a consistent set of cosmological parameters for testing,
+    examples, and default analysis configurations. Based on Planck 2018 
+    results and commonly used in weak lensing surveys.
+    
+    Returns
+    -------
+    dict
+        Dictionary containing cosmological parameters:
+        - 'omega_m': Matter density parameter (0.31)
+        - 's8': Amplitude of matter fluctuations (0.8)
+        
+    Examples
+    --------
+    >>> import xilikelihood as xlh
+    >>> cosmo = xlh.fiducial_cosmo()
+    >>> print(cosmo)
+    {'omega_m': 0.31, 's8': 0.8}
+    
+    >>> # Use in likelihood evaluation
+    >>> likelihood = xlh.XiLikelihood(...)
+    >>> logL = likelihood.loglikelihood(data, xlh.fiducial_cosmo())
+    """
+    return {
+        'omega_m': 0.31,  # Matter density parameter (Planck 2018-like)
+        's8': 0.8         # Amplitude of matter fluctuations
+    }
+
+
 __all__ = [
     'LikelihoodConfig',
+    'fiducial_cosmo',
     'temporary_arrays', 
     'computation_phase',
     'check_property_equal',
