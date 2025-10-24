@@ -65,7 +65,7 @@ except ImportError:
 
 
 # Internal imports
-from .theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin
+from .theory_cl import prepare_theory_cl_inputs, generate_theory_cl, RedshiftBin, load_kids_redshift_bins
 from .pseudo_alm_cov import Cov
 from .distributions import (
     mean_xi_gaussian_nD,
@@ -891,33 +891,8 @@ def fiducial_dataspace(
         (redshift_bins, angular_bins) for likelihood initialization
     """
     
-    # Default to package-relative path
-    if redshift_directory is None:
-        # Get the directory where this module is located
-        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        redshift_directory = os.path.join(package_dir, "redshift_bins", "KiDS")
-
-    if not os.path.exists(redshift_directory):
-        raise FileNotFoundError(f"Redshift directory not found: {redshift_directory}")
-    
-    redshift_filepaths = os.listdir(redshift_directory)
-    pattern = re.compile(r"TOMO(\d+)")
-    nbins = []
-    matched_files = []
-    for f in redshift_filepaths:
-        match = pattern.search(f)
-        if match:  
-            nbins.append(int(match.group(1)))
-            matched_files.append(f)
-
-    
-    if not nbins:
-        raise ValueError(f"No TOMO files found in {redshift_directory}")
-    redshift_bins = [
-        RedshiftBin(nbin=i, filepath=os.path.join(redshift_directory, f)) 
-        for i, f in zip(nbins, matched_files)
-    ]
-    redshift_bins_sorted = sorted(redshift_bins, key=lambda x: x.nbin)
+    # Load KiDS redshift bins using the standalone utility function
+    redshift_bins_sorted = load_kids_redshift_bins(directory=redshift_directory)
 
     # Create angular bins
     initial_ang_bins_in_arcmin = np.logspace(
