@@ -1,5 +1,7 @@
 import numpy as np
 import os
+os.environ['JAX_PLATFORMS'] = 'cpu'
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 from itertools import product, combinations
 import xilikelihood as xlh
 from xilikelihood.plotting import plot_corner
@@ -37,9 +39,9 @@ rs_selection = [redshift_bins[i] for i in rs]
 ab_selection = [ang_bins_in_deg[i] for i in ab]
 print(ab_selection)
 likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False)
+        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False,highell=False)
 likelihood.setup_likelihood()
-likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=True)
+likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=False)
 #xs,pdfs = likelihood._xs,likelihood._pdfs
 data_subset = list(product(np.arange(3), np.arange(2)))
 
@@ -85,6 +87,6 @@ for pair in subset_pairs:
         np.savez(cache_file, x=x, likelihood_2d=loglikelihood_2d, gauss_loglikelihood=gauss_loglikelihood)
         del loglikelihood_2d, gauss_loglikelihood
         
-filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
+filepath = "/cluster/scratch/veoehl/xi_sims/"
 correlations = [3, 10, 12]
-plot_corner(simspath=filepath, lmax=mask.lmax, njobs=1000,save_path="comparison_to_sims_with_bootstrap_gauss.png",redshift_indices=correlations,angular_indices=ab,nbins=256)
+plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=EXACT_LMAX, njobs=1000,save_path="comparison_to_gaussiansims_with_bootstrap.png",redshift_indices=correlations,angular_indices=ab,nbins=256)
