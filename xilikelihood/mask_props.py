@@ -193,7 +193,6 @@ class SphereMask:
                 sigma=np.abs(sigma),
                 iter=50,
                 use_pixel_weights=True,
-                datapath="/cluster/home/veoehl/xilikelihood/masterenv/lib/python3.8/site-packages/healpy/data/",
             )
             logger.info("Mask smoothing completed successfully")
         except Exception as e:
