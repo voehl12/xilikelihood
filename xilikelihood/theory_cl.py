@@ -25,7 +25,7 @@ Examples
 
 
 import numpy as np
-import os
+import re
 import scipy.stats 
 from pathlib import Path
 import logging
@@ -61,6 +61,7 @@ __all__ = [
     'get_cl',
     'prepare_theory_cl_inputs',
     'generate_theory_cl',
+    'load_kids_redshift_bins',
     
     # Legacy functions (if needed)
     'clnames',
@@ -71,8 +72,8 @@ class RedshiftBin:
     """
     A class to store and handle redshift bins.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     nbin : int
         Bin number identifier
     z : array_like, optional
@@ -85,11 +86,17 @@ class RedshiftBin:
         Standard deviation for Gaussian distribution
     filepath : str, optional
         Path to file containing z, nz data
+        
+    Attributes
+    ----------
+    z_eff : float
+        Effective redshift computed as sum(z * nz) / sum(nz), computed once and cached
     """
 
     def __init__(self, nbin, z=None, nz=None, zmean=None, zsig=None, filepath=None):
         self.nbin = nbin
         self.name = f"bin{nbin:d}"
+        self._z_eff = None  # Cache for effective redshift
         
         if filepath is not None:
             self._load_from_file(filepath)
@@ -100,6 +107,20 @@ class RedshiftBin:
             self.nz = np.array(nz)
         else:
             raise ValueError("Must provide either filepath, (z,nz), or (z,zmean,zsig)")
+    
+    @property
+    def z_eff(self):
+        """
+        Effective redshift computed as the mean of the distribution weighted by nz.
+        
+        Returns
+        -------
+        float
+            Effective redshift: sum(z * nz) / sum(nz)
+        """
+        if self._z_eff is None:
+            self._z_eff = np.sum(self.z * self.nz) / np.sum(self.nz)
+        return self._z_eff
     
     def _load_from_file(self, filepath):
         """Load redshift distribution from file."""
@@ -115,6 +136,71 @@ class RedshiftBin:
         self.zmean = zmean
         self.zsig = zsig
         self.nz = scipy.stats.norm.pdf(self.z, loc=zmean, scale=zsig)
+
+
+def load_kids_redshift_bins(directory=None):
+    """
+    Load KiDS tomographic redshift bins from directory.
+    
+    Parameters
+    ----------
+    directory : str, optional
+        Directory containing KiDS TOMO*.asc files. If None, uses package default.
+        
+    Returns
+    -------
+    list of RedshiftBin
+        Sorted list of RedshiftBin objects (sorted by bin number)
+        
+    Examples
+    --------
+    >>> # Load default KiDS bins
+    >>> bins = load_kids_redshift_bins()
+    >>> 
+    >>> # Load from custom directory
+    >>> bins = load_kids_redshift_bins("/path/to/kids/bins")
+    >>> 
+    >>> # Use in analysis
+    >>> bin1, bin2 = bins[0], bins[1]
+    """
+    # Default to package-relative path
+    if directory is None:
+        package_dir = Path(__file__).parent.parent
+        directory = package_dir / "redshift_bins" / "KiDS"
+    else:
+        directory = Path(directory)
+    
+    if not directory.exists():
+        raise FileNotFoundError(f"Redshift directory not found: {directory}")
+    
+    # Find all TOMO files
+    pattern = re.compile(r"TOMO(\d+)")
+    nbins = []
+    matched_files = []
+    
+    for filepath in directory.iterdir():
+        if not filepath.is_file():
+            continue
+        match = pattern.search(filepath.name)
+        if match:
+            nbins.append(int(match.group(1)))
+            matched_files.append(filepath)
+    
+    if not nbins:
+        raise ValueError(f"No TOMO files found in {directory}")
+    
+    # Create RedshiftBin objects
+    redshift_bins = [
+        RedshiftBin(nbin=nbin, filepath=str(filepath))
+        for nbin, filepath in zip(nbins, matched_files)
+    ]
+    
+    # Sort by bin number
+    redshift_bins_sorted = sorted(redshift_bins, key=lambda x: x.nbin)
+    
+    logger.info(f"Loaded {len(redshift_bins_sorted)} KiDS redshift bins from {directory}")
+    return redshift_bins_sorted
+
 
 class TheoryCl:
     """
