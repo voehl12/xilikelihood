@@ -3,6 +3,7 @@ Correlation function simulation utilities.
 
 This module provides functions for simulating two-point correlation functions
 from theoretical power spectra using either pseudo-C_l estimators or TreeCorr.
+It requires the GLASS package for map generation, version >2025.1, requiring numpy>2.1
 
 Main Functions
 --------------
@@ -47,7 +48,18 @@ except ImportError:
     HAS_TREECORR = False
     
 
-import glass.fields
+try:
+    import glass
+    import glass.fields
+    import glass.lensing
+    HAS_GLASS = True
+except ImportError:
+    HAS_GLASS = False
+    _GLASS_ERROR_MSG = (
+        "GLASS package is required for map simulations. "
+        "Install with: pip install xilikelihood[simulate]\n"
+        "Or: pip install glass"
+    )
 import time
 
 from .cl2xi_transforms import pcl2xi, prep_prefactors
@@ -62,6 +74,7 @@ __all__ = [
     # Core utilities that users might need
     'create_maps',
     'add_noise_to_maps',
+    'apply_mask_to_maps',
     'compute_pseudo_cl',
     'compute_correlation_functions',
     'get_noise_sigma',
@@ -81,38 +94,122 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def create_maps(power_spectra, nside, lmax=None):
+def create_maps(theory_cl_list, nside, field_type="gaussian"):
     """
-    Create Gaussian random maps using GLASS for 1D or nD cases.
+    Create random maps using GLASS for 1D or nD cases.
     
     Parameters
     ----------
-    power_spectra : list of arrays
-        List of C_l arrays for cross-correlations
-        - For 1D: [cl_ee] (single power spectrum)
-        - For nD: [cl_11, cl_22, cl_12, cl_33, cl_32, cl_31, ...]
-        Only E-mode C_ells (T and B set to zero in GLASS)
+    theory_cl_list : list of TheoryCl
+        Theory power spectra objects containing power spectra and z_bins
     nside : int
         HEALPix resolution parameter
     lmax : int, optional
-        Maximum multipole (not used by GLASS but kept for compatibility)
+        Maximum multipole for kappa → shear conversion
+    field_type : str, optional
+        Type of random field to generate. Options:
+        - "gaussian": Gaussian random fields (default)
+        - "lognormal": Log-normal random fields
         
     Returns
     -------
     maps : ndarray
-        - For 1D: shape (3, n_pix) - single T,Q,U map
+        - For 1D: shape (3, n_pix) - single T,Q,U map (T=0, Q=γ1, U=-γ2)
         - For nD: shape (n_fields, 3, n_pix) - multiple T,Q,U maps
+        
+    Notes
+    -----
+    This function generates convergence (kappa) maps using GLASS, then converts
+    them to shear (γ1, γ2) using glass.fields.from_convergence(), and finally
+    converts to polarization maps (T=0, Q=γ1, U=-γ2) for cosmic shear analysis.
+    
+    For lognormal fields, effective redshifts are computed from the z_bins in
+    theory_cl_list to properly account for the nonlinear transformation.
+
+    Raises
+    ------
+    ImportError
+        If GLASS package is not installed.
+
     """
+    if not HAS_GLASS:
+        raise ImportError(_GLASS_ERROR_MSG)
+    # Extract power spectra from theory_cl_list
+    power_spectra = [cl.ee.copy() for cl in theory_cl_list]
+    n_spectra = len(power_spectra)
+    n_fields = glass.nfields_from_nspectra(n_spectra) 
+        
+    
     if len(power_spectra) == 0:
         npix = hp.nside2npix(nside)
         return np.zeros((3, npix))
     
-    # Use GLASS generator correctly (your implementation is right!)
-    fields = glass.fields.generate_gaussian(power_spectra, nside=nside)
+    # Generate fields based on field type
+    if field_type.lower() == "gaussian":
+        fields = [glass.grf.Normal() for _ in range(n_fields)]
+        gls = power_spectra
+        
+    elif field_type.lower() == "lognormal":
+        # Power spectra are ordered by BinCombinationMapper: for n bins we have n(n+1)/2 spectra
+        
+
+        # Extract effective redshifts from the first n_bins theory_cl objects (the auto-correlations)
+        # Auto-correlations are at indices 0, 1, 3, 6, ... (triangular numbers)
+        z_effs = []
+        auto_indices = [i*(i+1)//2 for i in range(n_fields)]  # 0, 1, 3, 6, 10, ...
+        
+        for idx in auto_indices:
+            theory_cl = theory_cl_list[idx]
+            if theory_cl.z_bins is None:
+                raise ValueError(f"TheoryCl object must have z_bins for lognormal generation")
+            # For auto-correlation, both bins are the same
+            bin1, bin2 = theory_cl.z_bins
+            z_effs.append(bin1.z_eff)
+        
+        logger.info(f"Using {n_fields} unique redshift bins for lognormal")
+        logger.info(f"Effective redshifts: {z_effs}")
+        
+        # Apply lognormal transformation following GLASS methodology
+        shift = glass.lognormal_shift_hilbert2011
+        fields = [glass.grf.Lognormal(shift(z)) for z in z_effs]
+        gls = glass.compute_gaussian_spectra(fields=fields, spectra=power_spectra)
+        gls = np.array(gls)
+        # Set first two elements of each row to zero (ℓ=0,1 monopole/dipole)
+        gls[:, :2] = 0
+    else:
+        raise ValueError(f"Unknown field_type: {field_type}. Must be 'gaussian' or 'lognormal'.")
+
+    samples = glass.generate(fields, gls, nside)
+    
     field_list = []
     while True:
         try:
-            maps_TQU = next(fields)
+            kappa_map = next(samples)  # This is the convergence map
+            
+            # Convert kappa to shear using GLASS
+            # Use lmax if provided, otherwise let GLASS use its default
+            # from_convergence returns a tuple when shear=True: (shear, ...)
+            result = glass.lensing.from_convergence(kappa_map, shear=True, lmax=None)
+            
+            # Extract shear from tuple (first element)
+            gamma = result[0] if isinstance(result, tuple) else result
+            
+            # Flatten to 1D if needed (in case of shape (1, n_pix))
+            if gamma.ndim > 1:
+                gamma = gamma.ravel()
+            
+            gamma1 = np.real(gamma)
+            gamma2 = np.imag(gamma)
+            
+            # Convert shear components (γ1, γ2) to polarization (Q, U)
+            # GLASS convention requires: Q = -γ₂, U = γ₁
+            # This ensures proper E/B mode separation in masked measurements
+            T_map = np.zeros_like(gamma1)  # No temperature for pure shear
+            Q_map = -gamma2
+            U_map = gamma1
+            
+            # Stack into T,Q,U format expected by the rest of the pipeline
+            maps_TQU = np.array([T_map, Q_map, U_map])
             field_list.append(maps_TQU)
         except StopIteration:
             break
@@ -204,6 +301,48 @@ def add_noise_to_maps(maps, nside, noise_sigmas=None, lmax=None):
         return maps_noisy     # Shape (n_fields, 3, n_pix)
 
 
+def apply_mask_to_maps(maps, mask):
+    """
+    Apply mask(s) to maps in pixel space with proper broadcasting.
+    
+    Parameters
+    ----------
+    maps : ndarray
+        Maps to mask
+        - 1D case: shape (3, n_pix) - single T,Q,U map
+        - nD case: shape (n_fields, 3, n_pix) - multiple T,Q,U maps
+    mask : ndarray
+        Mask array. Values should be 0 (masked) or 1 (unmasked),
+        or any weight between 0 and 1. Can be:
+        - shape (n_pix,): Single mask applied to all fields
+        - shape (n_fields, n_pix): One mask per field (for nD maps only)
+        
+    Returns
+    -------
+    masked_maps : ndarray
+        Maps with mask applied (same shape as input)
+        
+    Examples
+    --------
+    >>> # Single field with single mask
+    >>> maps = create_maps(theory_cl_list, nside)  # shape (3, n_pix)
+    >>> masked = apply_mask_to_maps(maps, mask.mask)  # mask shape (n_pix,)
+    
+    >>> # Multiple fields with per-field masks
+    >>> maps = create_maps(theory_cl_list, nside)  # shape (n_fields, 3, n_pix)
+    >>> masks = np.array([mask1, mask2, ...])  # shape (n_fields, n_pix)
+    >>> masked = apply_mask_to_maps(maps, masks)
+    """
+    if maps.ndim == 2:  # 1D case: (3, n_pix)
+        # Broadcast mask across T, Q, U
+        return maps * mask[None, :]
+    else:  # nD case: (n_fields, 3, n_pix)
+        # Handle both single mask and per-field masks via broadcasting
+        # mask (n_pix,) broadcasts to (n_fields, 3, n_pix)
+        # mask (n_fields, n_pix) broadcasts to (n_fields, 3, n_pix)
+        return maps * mask[:, None, :] if mask.ndim == 2 else maps * mask[None, None, :]
+
+
 def compute_pseudo_cl(maps_list, masks, fullsky=False, healpy_datapath=None):
     """
     Compute pseudo-C_l from masked maps.
@@ -241,9 +380,10 @@ def compute_pseudo_cl(maps_list, masks, fullsky=False, healpy_datapath=None):
                 cl_list.append([cl_results[1], cl_results[2], cl_results[4]])  # E, B, EB
         return np.array(cl_list)
     else:
-        pcl_list = []
-        masked_fields = masks[:, None, :] * maps_list
+        # Apply masks using the reusable function
+        masked_fields = apply_mask_to_maps(maps_list, masks)
         
+        pcl_list = []
         for i, field_i in enumerate(masked_fields):
             for j, field_j in reversed(list(enumerate(masked_fields[:i+1]))):
                 try:
@@ -312,7 +452,8 @@ def simulate_correlation_functions(
     save_path=None,
     save_pcl=False,
     plot_diagnostics=False,
-    run_name="simulation"
+    run_name="simulation",
+    field_type="gaussian"
 ):
     """
     Simulate correlation functions for 1D or nD cases.
@@ -345,12 +486,23 @@ def simulate_correlation_functions(
         Whether to create diagnostic plots
     run_name : str
         Name for this simulation run
+    field_type : str, optional
+        Type of random field to generate ("gaussian" or "lognormal")
         
     Returns
     -------
     results : dict
         Dictionary with simulation results
+
+    Raises
+    ------
+    ImportError
+        If GLASS package is not installed.
+
     """
+    if not HAS_GLASS:
+        raise ImportError(_GLASS_ERROR_MSG)
+    
     # Validate method availability
     if method == "treecorr" and not HAS_TREECORR:
         raise ImportError("TreeCorr not available. Install with: pip install treecorr")
@@ -373,7 +525,7 @@ def simulate_correlation_functions(
     # Auto-generate save path if not provided
     if save_path is None:
         sigma_name = theory_cl_list[0].sigmaname
-        folder_name = f"croco_{run_name}_{mask.name}_{sigma_name}_{method}_llim_{lmax}"
+        folder_name = f"croco_{run_name}_{mask.name}_{sigma_name}_{method}_{field_type}_llim_{lmax}"
         save_path = os.path.join("simulations", folder_name)
     
     os.makedirs(save_path, exist_ok=True)
@@ -385,12 +537,12 @@ def simulate_correlation_functions(
     if method == "pcl_estimator":
         return _simulate_pcl_estimator(
             theory_cl_list, mask, angular_bins, job_id, n_batch,
-            lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics
+            lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics,field_type
         )
     elif method == "treecorr":
         return _simulate_treecorr(
             theory_cl_list, mask, angular_bins, job_id, n_batch,
-            add_noise, save_path, plot_diagnostics
+            add_noise, save_path, plot_diagnostics, field_type
         )
     else:
         raise ValueError(f"Unknown method: {method}")
@@ -399,7 +551,7 @@ def simulate_correlation_functions(
 
 def _simulate_pcl_estimator(
     theory_cl_list, mask, angular_bins, job_id, n_batch,
-    lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics
+    lmax, lmin, add_noise, save_path, save_pcl, plot_diagnostics, field_type
 ):
     """Pseudo_C_ell estimator simulation implementation."""
   
@@ -414,9 +566,6 @@ def _simulate_pcl_estimator(
         sim_mask = mask.mask
     # Prepare prefactors for C_l to xi transformation
     prefactors = prep_prefactors(angular_bins, mask.wl, mask.lmax, mask.lmax)
-    
-    # Extract power spectra for GLASS
-    power_spectra = [cl.ee.copy() for cl in theory_cl_list]
     
     # Setup noise sigmas
     noise_sigmas = None
@@ -435,7 +584,7 @@ def _simulate_pcl_estimator(
         logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
         
         # Create maps using GLASS
-        maps = create_maps(power_spectra, nside, lmax)
+        maps = create_maps(theory_cl_list, nside, lmax, field_type)
         
         # Add noise if requested
         if add_noise and noise_sigmas is not None:
@@ -467,7 +616,7 @@ def _simulate_pcl_estimator(
     # Save and return results
     results = _save_and_return_results(
         xi_batch, pcl_batch, angular_bins, 'pcl_estimator', lmax, lmin, 
-        n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors
+        n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors, field_type
     )
     
     return results
@@ -475,7 +624,7 @@ def _simulate_pcl_estimator(
 
 def _save_and_return_results(
     xi_batch, pcl_batch, angular_bins, method, lmax, lmin, 
-    n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors
+    n_batch, job_id, save_path, save_pcl, plot_diagnostics, prefactors, field_type
 ):
     """Save simulation results using existing file format for compatibility."""
     
@@ -488,7 +637,8 @@ def _save_and_return_results(
         lmin=lmin,
         lmax=lmax,
         xip=xi_batch[:, :, 0, :],  
-        xim=xi_batch[:, :, 1, :], 
+        xim=xi_batch[:, :, 1, :],
+        field_type=field_type  # Document field type in saved data
     )
     logger.info(f"Saved results to {save_file}")
     
@@ -520,7 +670,8 @@ def _save_and_return_results(
         'n_batch': n_batch,
         'job_id': job_id,
         'lmax': lmax,
-        'lmin': lmin
+        'lmin': lmin,
+        'field_type': field_type
     }
     
     return results
@@ -554,7 +705,7 @@ def _create_diagnostic_plots(xi_batch, pcl_batch, save_path, job_id):
 
 def _simulate_treecorr(
     theory_cl_list, mask, angular_bins, job_id, n_batch,
-    add_noise, save_path, plot_diagnostics
+    add_noise, save_path, plot_diagnostics, field_type
 ):
     """TreeCorr simulation implementation."""
     if not HAS_TREECORR:
@@ -575,9 +726,6 @@ def _simulate_treecorr(
     # Prepare catalog properties for TreeCorr
     cat_props = prep_cat_treecorr(nside, sim_mask)
     
-    # Extract power spectra for GLASS (TreeCorr mainly for 1D)
-    power_spectra = [theory_cl_list[0].ee.copy()]
-    
     # Setup noise
     noise_sigma = get_noise_sigma(theory_cl_list[0], nside) if add_noise else None
     
@@ -587,8 +735,8 @@ def _simulate_treecorr(
     for i in range(n_batch):
         logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
         
-        # Create maps using GLASS
-        maps = create_maps(power_spectra, nside)
+        # Create maps using GLASS (TreeCorr mainly for 1D)
+        maps = create_maps(theory_cl_list, nside, lmax=None, field_type=field_type)
         
         # Add noise if requested
         if add_noise and noise_sigma is not None:
@@ -607,7 +755,7 @@ def _simulate_treecorr(
     # Save and return results
     results = _save_and_return_results(
         xi_batch, None, theta, "treecorr", None, None,
-        n_batch, job_id, save_path, False, plot_diagnostics, None
+        n_batch, job_id, save_path, False, plot_diagnostics, None, field_type
     )
     
     return results
