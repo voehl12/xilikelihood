@@ -289,7 +289,7 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
 
     return im
 
-def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100):
+def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100):
     """
     Create a corner plot with 2D marginals and 1D histograms for simulations,
     and overlay PDF contours. Additionally, compare 2D histograms to analytic PDFs.
@@ -312,7 +312,6 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
       # Two auto and one cross-correlation
       # Two angular bins
     selected_data = sims[:, redshift_indices, :][:, :, angular_indices].reshape(sims.shape[0], -1)
-    filepath = '/cluster/work/refregier/veoehl'
     # Create a corner plot
     fig, axes = plt.subplots(len(selected_data[0]), len(selected_data[0]), figsize=(10, 10))
     colorbar_ax = fig.add_axes([0.96, 0.2, 0.02, 0.6])  # Add a new axis for the colorbar
@@ -348,7 +347,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                     redshift_idx_j, angular_idx_j = divmod(j+1, len(angular_indices))
                     axis = 0
                 # Load and overlay the 1D marginal from the random pair
-                marginal_data = load_2d_pdf(filepath, redshift_idx_i, angular_idx_i, redshift_idx_j,angular_idx_j,integrate_axis=axis)
+                marginal_data = load_2d_pdf(likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j,angular_idx_j,integrate_axis=axis)
                 
                 if marginal_data is not None:
                     x_marginal, marginal = marginal_data
@@ -363,7 +362,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                     selected_data[:, i], selected_data[:, j],
                     bins=nbins, cmap="Reds", density=True
                 ) """
-                plot_2d_from_cache(ax, filepath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j)
+                plot_2d_from_cache(ax, likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j)
                 
 
                 
@@ -390,7 +389,7 @@ def plot_corner(simspath, njobs, lmax, save_path=None, redshift_indices=[0, 1, 2
                 std_dev = (np.ma.masked_where(density == 0, std_dev))
 
                 # Load analytic PDF
-                pdf_data = load_2d_pdf(filepath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i)
+                pdf_data = load_2d_pdf(likelihoodpath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i)
                 if pdf_data is not None:
                     x_pdf, y_pdf, pdf_grid = pdf_data
 
