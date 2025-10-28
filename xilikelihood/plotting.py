@@ -523,3 +523,237 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
     except Exception as e:
         print(f"Error loading or processing cache file: {e}")
         return None
+
+
+def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label_2="Simulation 2",
+                           njobs=1000, lmax=None, save_path=None, 
+                           redshift_indices=[0, 1, 2], angular_indices=[0, 1],
+                           prefactors=None, theta=None, nbins=50, alpha=0.6):
+    """
+    Create a corner plot comparing two sets of simulations.
+    
+    Parameters
+    ----------
+    simspath_1 : str
+        Path to first simulation set
+    simspath_2 : str
+        Path to second simulation set
+    label_1 : str
+        Label for first simulation set
+    label_2 : str
+        Label for second simulation set
+    njobs : int
+        Number of jobs to load
+    lmax : int
+        Maximum multipole (for file naming)
+    save_path : str, optional
+        Path to save the figure
+    redshift_indices : list
+        Redshift bin pairs to plot
+    angular_indices : list
+        Angular bins to plot
+    prefactors : array_like, optional
+        Prefactors for transformation
+    theta : array_like, optional
+        Angular separations
+    nbins : int
+        Number of bins for histograms
+    alpha : float
+        Transparency for histograms
+        
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object
+    """
+    # Read both simulation sets
+    print(f"Loading {label_1} simulations from {simspath_1}...")
+    sims_1, angles_1 = read_sims_nd(simspath_1, njobs, lmax, prefactors=prefactors, theta=theta)
+    
+    print(f"Loading {label_2} simulations from {simspath_2}...")
+    sims_2, angles_2 = read_sims_nd(simspath_2, njobs, lmax, prefactors=prefactors, theta=theta)
+    
+    print(f"Loaded {len(sims_1)} {label_1} sims, {len(sims_2)} {label_2} sims")
+    
+    # Select data
+    selected_1 = sims_1[:, redshift_indices, :][:, :, angular_indices].reshape(sims_1.shape[0], -1)
+    selected_2 = sims_2[:, redshift_indices, :][:, :, angular_indices].reshape(sims_2.shape[0], -1)
+    
+    n_dims = selected_1.shape[1]
+    
+    # Create corner plot
+    fig, axes = plt.subplots(n_dims, n_dims, figsize=(12, 12))
+    
+    # Define colors
+    color_1 = 'C0'  # Blue
+    color_2 = 'C3'  # Red
+    
+    for i in range(n_dims):
+        for j in range(n_dims):
+            redshift_idx_i, angular_idx_i = divmod(i, len(angular_indices))
+            redshift_idx_j, angular_idx_j = divmod(j, len(angular_indices))
+            ax = axes[j, i] if n_dims > 1 else axes
+            
+            # Set labels
+            if i == 0:
+                ax.set_ylabel(f"corr {redshift_idx_j}, ang {angular_idx_j}")
+            else:
+                ax.set_yticklabels([])
+                
+            if j == n_dims - 1:
+                ax.set_xlabel(f"corr {redshift_idx_i}, ang {angular_idx_i}")
+            else:
+                ax.set_xticklabels([])
+            
+            if i == j:
+                # 1D histogram on diagonal
+                range_min = min(selected_1[:, i].min(), selected_2[:, i].min())
+                range_max = max(selected_1[:, i].max(), selected_2[:, i].max())
+                bins = np.linspace(range_min, range_max, nbins)
+                
+                ax.hist(selected_1[:, i], bins=bins, density=True, alpha=alpha, 
+                       color=color_1, label=label_1, histtype='stepfilled')
+                ax.hist(selected_2[:, i], bins=bins, density=True, alpha=alpha,
+                       color=color_2, label=label_2, histtype='stepfilled')
+                
+                if i == 0:
+                    ax.legend(fontsize=8)
+                
+                # Add mean and std info
+                mean_1, std_1 = selected_1[:, i].mean(), selected_1[:, i].std()
+                mean_2, std_2 = selected_2[:, i].mean(), selected_2[:, i].std()
+                ax.axvline(mean_1, color=color_1, linestyle='--', alpha=0.8, linewidth=1)
+                ax.axvline(mean_2, color=color_2, linestyle='--', alpha=0.8, linewidth=1)
+                
+            elif i < j:
+                # 2D histogram in lower triangle
+                # Determine ranges
+                xmin = min(selected_1[:, i].min(), selected_2[:, i].min())
+                xmax = max(selected_1[:, i].max(), selected_2[:, i].max())
+                ymin = min(selected_1[:, j].min(), selected_2[:, j].min())
+                ymax = max(selected_1[:, j].max(), selected_2[:, j].max())
+                
+                # Plot first simulation set
+                h1, xedges, yedges = np.histogram2d(
+                    selected_1[:, i], selected_1[:, j],
+                    bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
+                )
+                
+                # Plot contours for first set
+                X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2, 
+                                  (yedges[:-1] + yedges[1:]) / 2)
+                levels_1 = np.percentile(h1[h1 > 0], [32, 68, 95])
+                ax.contour(X, Y, h1.T, levels=levels_1, colors=color_1, 
+                          linewidths=1.5, alpha=0.8)
+                
+                # Plot second simulation set
+                h2, _, _ = np.histogram2d(
+                    selected_2[:, i], selected_2[:, j],
+                    bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
+                )
+                levels_2 = np.percentile(h2[h2 > 0], [32, 68, 95])
+                ax.contour(X, Y, h2.T, levels=levels_2, colors=color_2,
+                          linewidths=1.5, alpha=0.8, linestyles='--')
+                
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
+                
+            else:
+                # Upper triangle: plot difference statistics
+                # Calculate 2D histogram difference
+                xmin = min(selected_1[:, j].min(), selected_2[:, j].min())
+                xmax = max(selected_1[:, j].max(), selected_2[:, j].max())
+                ymin = min(selected_1[:, i].min(), selected_2[:, i].min())
+                ymax = max(selected_1[:, i].max(), selected_2[:, i].max())
+                
+                h1, xedges, yedges = np.histogram2d(
+                    selected_1[:, j], selected_1[:, i],
+                    bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
+                )
+                
+                h2, _, _ = np.histogram2d(
+                    selected_2[:, j], selected_2[:, i],
+                    bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
+                )
+                
+                # Plot difference
+                diff = h2 - h1
+                X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2,
+                                  (yedges[:-1] + yedges[1:]) / 2)
+                
+                vmax = np.abs(diff).max()
+                im = ax.pcolormesh(X, Y, diff.T, cmap='RdBu_r', 
+                                  vmin=-vmax, vmax=vmax, shading='auto')
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
+                
+                # Add colorbar to rightmost upper triangle plot
+                if i == n_dims - 1 and j == 0:
+                    cbar = plt.colorbar(im, ax=ax)
+                    cbar.set_label(f'Density diff\n({label_2} - {label_1})', fontsize=8)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+    
+    return fig
+
+
+def print_comparison_statistics(simspath_1, simspath_2, label_1="Simulation 1", label_2="Simulation 2",
+                                njobs=1000, lmax=None, redshift_indices=[0, 1, 2], 
+                                angular_indices=[0, 1], prefactors=None, theta=None):
+    """
+    Print statistical comparison between two simulation sets.
+    
+    Parameters
+    ----------
+    simspath_1, simspath_2 : str
+        Paths to simulation sets
+    label_1, label_2 : str
+        Labels for the sets
+    njobs : int
+        Number of jobs to load
+    lmax : int
+        Maximum multipole
+    redshift_indices : list
+        Redshift pairs to compare
+    angular_indices : list
+        Angular bins to compare
+    prefactors, theta : optional
+        Transformation parameters
+    """
+    # Read simulations
+    sims_1, _ = read_sims_nd(simspath_1, njobs, lmax, prefactors=prefactors, theta=theta)
+    sims_2, _ = read_sims_nd(simspath_2, njobs, lmax, prefactors=prefactors, theta=theta)
+    
+    # Select data
+    selected_1 = sims_1[:, redshift_indices, :][:, :, angular_indices].reshape(sims_1.shape[0], -1)
+    selected_2 = sims_2[:, redshift_indices, :][:, :, angular_indices].reshape(sims_2.shape[0], -1)
+    
+    print("\n" + "="*70)
+    print(f"STATISTICAL COMPARISON: {label_1} vs {label_2}")
+    print("="*70)
+    
+    for i in range(selected_1.shape[1]):
+        redshift_idx, angular_idx = divmod(i, len(angular_indices))
+        
+        mean_1, std_1 = selected_1[:, i].mean(), selected_1[:, i].std()
+        mean_2, std_2 = selected_2[:, i].mean(), selected_2[:, i].std()
+        
+        # Two-sample t-test
+        t_stat, p_value = stats.ttest_ind(selected_1[:, i], selected_2[:, i])
+        
+        # Kolmogorov-Smirnov test
+        ks_stat, ks_p_value = stats.ks_2samp(selected_1[:, i], selected_2[:, i])
+        
+        print(f"\nCorrelation {redshift_idx}, Angular bin {angular_idx}:")
+        print(f"  {label_1:20s}: mean = {mean_1:.6f}, std = {std_1:.6f}")
+        print(f"  {label_2:20s}: mean = {mean_2:.6f}, std = {std_2:.6f}")
+        print(f"  Mean difference:      {abs(mean_2 - mean_1):.6f} ({abs(mean_2-mean_1)/mean_1*100:.2f}%)")
+        print(f"  Std difference:       {abs(std_2 - std_1):.6f} ({abs(std_2-std_1)/std_1*100:.2f}%)")
+        print(f"  T-test p-value:       {p_value:.4e} {'***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else ''}")
+        print(f"  KS-test p-value:      {ks_p_value:.4e} {'***' if ks_p_value < 0.001 else '**' if ks_p_value < 0.01 else '*' if ks_p_value < 0.05 else ''}")
+    
+    print("="*70)
