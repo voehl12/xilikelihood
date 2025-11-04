@@ -568,3 +568,17 @@ def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo):
         for bin_comb, noise_val in zip(redshift_bin_combinations, shot_noise)
     ]
     return theory_cl
+
+
+def n_combs_to_n_bins(n_comb):
+    """
+    Convert number of unique bin combinations to number of redshift bins.
+
+    Parameters:
+    - n_comb: Number of unique bin combinations.
+
+    Returns:
+    - n_bins: Number of redshift bins.
+    """
+    n_bins = int((np.sqrt(8 * n_comb + 1) - 1) / 2)
+    return n_bins
