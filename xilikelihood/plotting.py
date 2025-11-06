@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import logging
 from scipy.stats import norm
 import configparser
 from .cl2xi_transforms import pcls2xis, prep_prefactors, compute_kernel
@@ -10,15 +11,21 @@ import numpy as np
 import scipy.stats as stats
 import seaborn as sns  # Add seaborn for better corner plot aesthetics
 from .file_handling import read_sims_nd
+from .theory_cl import BinCombinationMapper, n_combs_to_n_bins
 import pickle  # Add import for loading cache files
 from itertools import product
 import random
 from .data_statistics import bootstrap, bootstrap_statistic_2d
 from scipy.interpolate import RegularGridInterpolator, griddata
 from matplotlib import rc
-rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-## for Palatino and other serif fonts use:
-#rc('font',**{'family':'serif','serif':['Times']})
+from matplotlib.lines import Line2D
+from scipy.ndimage import gaussian_filter
+import cmasher as cmr
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
+
+rc('font',**{'family':'serif','serif':['Times']})
 rc('text', usetex=True)
 rc('text.latex', preamble=r'\usepackage{amsmath}')
 
@@ -46,6 +53,32 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
         cmap(np.linspace(minval, maxval, n)))
     return new_cmap
 
+def find_contour_levels_pdf(x, y, pdf, levels=[0.32, 0.68, 0.95]):
+    # Compute cell areas
+    dx = np.diff(x)
+    dy = np.diff(y)
+    # For meshgrid, get the area for each cell
+    dx2d, dy2d = np.meshgrid(dx, dy)
+    cell_areas = dx2d * dy2d
+    # Remove last row/col to match pdf shape
+    pdf_cells = pdf[:-1, :-1]
+    cell_areas = cell_areas[:pdf_cells.shape[0], :pdf_cells.shape[1]]
+    # Flatten
+    pdf_flat = pdf_cells.flatten()
+    areas_flat = cell_areas.flatten()
+    # Sort by PDF value descending
+    idx = np.argsort(pdf_flat)[::-1]
+    pdf_sorted = pdf_flat[idx]
+    areas_sorted = areas_flat[idx]
+    # Compute cumulative probability mass
+    cum_mass = np.cumsum(pdf_sorted * areas_sorted)
+    total_mass = cum_mass[-1]
+    cum_mass /= total_mass
+    contour_levels = []
+    for lev in levels:
+        i = np.searchsorted(cum_mass, lev)
+        contour_levels.append(pdf_sorted[i])
+    return np.array(contour_levels)[::-1]
 
 
 def set_xi_axes_2D(ax,angbin,rs_bins,lims,x=True,y=True,binnum=None,islow=False):
@@ -262,7 +295,7 @@ def plot_kernels(prefactors,save_path=None,ang_bins=None):
         plt.show()
 
         
-def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False):
+def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False,colormap=None):
 
     bincenters_x, bincenters_y = bincenters
     X, Y = np.meshgrid(bincenters_x, bincenters_y)
@@ -273,30 +306,48 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
         rel_res = diff_hist
     else:
         diff_hist = (sim_mean - exact_grid)
+        diff_hist = np.ma.masked_where(sim_mean == 0, diff_hist)
         rel_res = diff_hist / sim_std
     print("Mean deviation from simulations: {} std".format(np.mean(np.fabs(rel_res))))
-
+    alpha_values = np.ones_like(rel_res)
+    alpha_values[np.abs(rel_res) < 1.0] = 0.0
+    alpha_values[np.abs(rel_res) >= 1.0] = 0.3
+    alpha_values[np.abs(rel_res) >= 3.0] = 1.0
+    alpha_values[np.ma.getmask(rel_res)] = 0.0
     # Display values per pixel using a heatmap
+    rel_res = diff_hist / np.max(exact_grid)
+    
+    
     im = axes.pcolormesh(bincenters_x, bincenters_y,
         rel_res, 
         shading="auto", 
         #extent=(bincenters_x[0], bincenters_x[-1], bincenters_y[0], bincenters_y[-1]),
-        cmap="coolwarm", 
+        cmap=colormap, 
         vmin=-vmax, 
-        vmax=vmax
+        vmax=vmax,
+        alpha=alpha_values
     )
     #im2 = axes.contour(bincenters_x, bincenters_y,exact_grid,cmap='gray',levels=5)
 
     return im
 
-def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100):
+def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100, use_gaussian=False):
     """
     Create a corner plot with 2D marginals and 1D histograms for simulations,
     and overlay PDF contours. Additionally, compare 2D histograms to analytic PDFs.
     """
     # Read simulations and angles
+    name = 'Gaussian' if use_gaussian else 'Exact'
     sims, angles = read_sims_nd(simspath, njobs, lmax,prefactors=prefactors,theta=theta)
+    n_bins = n_combs_to_n_bins(sims.shape[1])
+    mapper = BinCombinationMapper(n_bins)
+    cmap = cmr.guppy_r 
+    linecolor = cmr.take_cmap_colors(cmap, 3, return_fmt='hex')[1]
     print('loaded sims with shape:',sims.shape)
+    ang_bins = [angles[i] for i in angular_indices]
+    for a, ang_bin in enumerate(ang_bins):
+        logger.info(r'$\theta_{:d} = [{:3.1f}, {:3.1f}] \degree$'.format(a, *ang_bin))
+
     if marginals is not None:
         x,pdf = marginals # shape (n_correlations, n_ang_bins, n_points_per_dim)
         print('loaded marginals with shape:',pdf.shape)
@@ -312,57 +363,80 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
       # Two auto and one cross-correlation
       # Two angular bins
     selected_data = sims[:, redshift_indices, :][:, :, angular_indices].reshape(sims.shape[0], -1)
-    # Create a corner plot
-    fig, axes = plt.subplots(len(selected_data[0]), len(selected_data[0]), figsize=(10, 10))
-    colorbar_ax = fig.add_axes([0.96, 0.2, 0.02, 0.6])  # Add a new axis for the colorbar
+    # Create a corner plot with improved formatting
+    n_dims = selected_data.shape[1]
+    fig, axes = plt.subplots(n_dims, n_dims, figsize=(11, 10))
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+    colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])  # Big colorbar axis
     im = None  # Initialize the colorbar reference
-    for i in range(len(selected_data[0])):
-        for j in range(len(selected_data[0])):
-            redshift_idx_i, angular_idx_i = divmod(i, len(angular_indices))
-            redshift_idx_j, angular_idx_j = divmod(j, len(angular_indices))
+    data_subset = list(product(redshift_indices,angular_indices))
+    n_dims = len(data_subset)
+    
+
+    
+    for i, indices_i in enumerate(data_subset):
+        for j, indices_j in enumerate(data_subset):
+            redshift_idx_i, angular_idx_i = indices_i
+            redshift_idx_j, angular_idx_j = indices_j
             ax = axes[j, i]
-            if i == 0:  # Label first column
-                ax.set_ylabel("corr {:d}, ang {:d}".format(redshift_idx_j, angular_idx_j))
+            # Improved axis labels
+            if i == 0:
+                comb = tuple(x + 1 for x in mapper.get_combination(redshift_idx_j))
+                ax.set_ylabel((r'$\hat{{\xi}}^{{+}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*comb,angular_idx_j+1)))
             else:
                 ax.set_yticklabels([])
-            if j == len(selected_data[0]) - 1:  # Label bottom row
-                ax.set_xlabel("corr {:d}, ang {:d}".format(redshift_idx_i, angular_idx_i))
+            if j == n_dims - 1:
+                comb = tuple(x + 1 for x in mapper.get_combination(redshift_idx_i))
+                ax.set_xlabel((r'$\hat{{\xi}}^{{+}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*comb,angular_idx_i+1)))
+                ax.xaxis.get_offset_text().set_x(1.2)
             else:
                 ax.set_xticklabels([])
             
             
             if i == j:
-                # 1D histogram
-                n, bins, _ = ax.hist(selected_data[:, i], bins=nbins, density=True, alpha=0.6, color='C0')
-                ax.set_xlim(bins[0], bins[-1])  # Set x-axis to histogram range
-                
-                # Generate all possible pairs of indices
-                
-                    
-                
-                if j == len(selected_data[0]) - 1:
-                    redshift_idx_i, angular_idx_i = divmod(i-1, len(angular_indices))
+                # 1D histogram with improved style
+                n, bins, _ = ax.hist(selected_data[:, i], bins=nbins, density=True, alpha=0.5, color=linecolor, histtype='stepfilled', label=r'Simulations')
+                ax.set_xlim(bins[0], bins[-1])
+                # define integration axes for 1d exact marginals (always over the next dimension)
+                if j == n_dims - 1:
+                    # Last diagonal: integrate over previous dimension
+                    redshift_idx_i, angular_idx_i = data_subset[i-1]
                     axis = 1
                 else:
-                    redshift_idx_j, angular_idx_j = divmod(j+1, len(angular_indices))
+                    # Integrate over next dimension
+                    redshift_idx_j, angular_idx_j = data_subset[j+1]
                     axis = 0
-                # Load and overlay the 1D marginal from the random pair
-                marginal_data = load_2d_pdf(likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j,angular_idx_j,integrate_axis=axis)
-                
+                marginal_data = load_2d_pdf(likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j, integrate_axis=axis, use_gaussian=use_gaussian)
                 if marginal_data is not None:
                     x_marginal, marginal = marginal_data
-                    ax.plot(x_marginal, marginal, color='C0', linewidth=2, label="1D Marginal")
-                if marginals is not None:
-                    ax.plot(x[i],pdf[i], color='C3', linewidth=2, label="1D Marginal (Sim)")
-                
+                    ax.plot(x_marginal, marginal, color=linecolor, linewidth=1.5, label=r"{} Marginal".format(name))
+                mean, std = selected_data[:, i].mean(), selected_data[:, i].std()
+                ax.axvline(mean, color=linecolor, linestyle='--', alpha=0.8, linewidth=1)
+                if i == 0:
+                    handles, labels = ax.get_legend_handles_labels()
+                    
             elif i < j:
                 # 2D marginal
                 
-                """ hist = ax.hist2d(
+                
+                plot_2d_from_cache(ax, likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j,color=linecolor,use_gaussian=use_gaussian)
+                h1, xedges, yedges = np.histogram2d(
                     selected_data[:, i], selected_data[:, j],
-                    bins=nbins, cmap="Reds", density=True
-                ) """
-                plot_2d_from_cache(ax, likelihoodpath, redshift_idx_i, angular_idx_i, redshift_idx_j, angular_idx_j)
+                    bins=nbins, density=True
+                )
+                h1_smooth = gaussian_filter(h1, sigma=1.0)
+                
+                # Plot contours for first set
+                X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2, 
+                                  (yedges[:-1] + yedges[1:]) / 2)
+                levels_1 = find_contour_levels_pdf(
+                (xedges[:-1] + xedges[1:]) / 2,  # x bin centers
+                (yedges[:-1] + yedges[1:]) / 2,  # y bin centers  
+                h1.T,  # Transpose to match expected shape
+                levels=[0.32, 0.68, 0.95]
+                )
+                ax.contour(X, Y, h1_smooth.T, levels=levels_1, colors=linecolor, 
+                          linewidths=1.5, alpha=0.5, linestyles='solid')
                 
 
                 
@@ -389,14 +463,14 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
                 std_dev = (np.ma.masked_where(density == 0, std_dev))
 
                 # Load analytic PDF
-                pdf_data = load_2d_pdf(likelihoodpath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i)
+                pdf_data = load_2d_pdf(likelihoodpath, redshift_idx_j, angular_idx_j, redshift_idx_i, angular_idx_i, use_gaussian=use_gaussian)
                 if pdf_data is not None:
-                    x_pdf, y_pdf, pdf_grid = pdf_data
-
+                    x_pdf, y_pdf, exact_pdf, gauss_pdf = pdf_data
                     # Interpolate PDF to match histogram bin centers
+                    pdf_grid = gauss_pdf if use_gaussian else exact_pdf
                     interp_pdf  = RegularGridInterpolator((y_pdf,x_pdf), pdf_grid,method='cubic')
                     # the y,x order is weird, but necessary due to the indexing convention of the interpolator vs the plotting convention used elsewhere!
-                    im = compare_to_sims_2d(ax, (bincenters_x, bincenters_y), sim_mean, std_dev, interp_pdf, vmax=3,log=False)
+                    im = compare_to_sims_2d(ax, (bincenters_x, bincenters_y), sim_mean, std_dev, interp_pdf, vmax=.05,log=False,colormap=cmap)
                     # Compute relative residuals
                 ax.set_xlim(hist[1][0],hist[1][-1])
                 ax.set_ylim(hist[2][0],hist[2][-1])
@@ -404,14 +478,22 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
                 oldax.set_ylim(hist[2][0],hist[2][-1])
                 
                     
-                    
-
+    fig.legend(
+        handles, labels,
+        loc="upper center",
+        ncol=2,
+        bbox_to_anchor=(0.5, 1.02),
+        frameon=False
+    )
+    #fig.subplots_adjust(top=0.9)          
+    
     if im is not None:
-        fig.colorbar(im, cax=colorbar_ax, label="Relative Residuals (std)")  # Add colorbar to the new axis
+        fig.colorbar(im, cax=colorbar_ax, label=r'(Sims - {}) / max({})'.format(name,name))  # Add colorbar to the new axis
 
     # Adjust layout
     #plt.tight_layout(pad=0.5, h_pad=0.5, w_pad=0.5)  # Adjust padding to reduce space
-    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2)
+    plt.subplots_adjust(wspace=0.12, hspace=0.12)
+    #plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2)
 
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
@@ -419,7 +501,7 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     else:
         plt.show()
 
-def plot_2d_from_cache(ax, filepath, i, j, k, l):
+def plot_2d_from_cache(ax, filepath, i, j, k, l, color=None, use_gaussian=False):
     """
     Load a 2D likelihood cache file and plot the PDF.
 
@@ -437,17 +519,22 @@ def plot_2d_from_cache(ax, filepath, i, j, k, l):
     try:
         data = load_2d_pdf(filepath, i, j, k, l)
         if data is not None:
-            x, y, pdf = data
+            x, y, pdf_exact, pdf_gauss = data
+            pdf = pdf_gauss if use_gaussian else pdf_exact
+            levels = find_contour_levels_pdf(x, y, pdf, levels=[0.32, 0.68, 0.95])
+            levels_gauss = find_contour_levels_pdf(x, y, pdf_gauss, levels=[0.32, 0.68, 0.95])
+            logger.info(f"Contour levels for PDF: {levels}")
             X, Y = np.meshgrid(x, y)
-            #c = ax.contour(X, Y, pdf, levels=5, cmap="Blues")
-            c = ax.pcolormesh(X,Y,np.log(pdf), shading="auto",cmap="Blues",vmin=5,vmax=30)
+            c = ax.contour(X, Y, pdf, levels=levels, colors=color, linewidths=1.5)
+            #c2 = ax.contour(X,Y,pdf_gauss,levels=levels_gauss, colors='midnightblue', linestyles='dashed', linewidths=1.5)
+            #c = ax.pcolormesh(X,Y,pdf, shading="auto",cmap="Blues")
     except Exception as e:
         print(f"Error loading or plotting cache file: {e}")
     
 
 
 
-def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
+def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None, use_gaussian=False):
     """
     Load a 2D likelihood PDF from the cache file and optionally integrate it.
 
@@ -487,23 +574,29 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
         xs = data["x"]
         x = xs[0]
         y = xs[1]
-        logpdf = data["likelihood_2d"]
+        if use_gaussian:
+            logpdf = data["gauss_loglikelihood"]
+        else:
+            logpdf = data["likelihood_2d"]
+            
         pdf = np.exp(logpdf)
+        
+        # Also load the other PDF for return (to maintain backward compatibility)
+        if use_gaussian:
+            logpdf_other = data["likelihood_2d"]
+        else:
+            logpdf_other = data["gauss_loglikelihood"]
+        pdf_other = np.exp(logpdf_other)
+
         print(f"Fraction of NaN values in PDF: {np.isnan(logpdf).sum() / logpdf.size:.4f}")
         print(f"Fraction of finite values in PDF: {np.isfinite(logpdf).sum() / logpdf.size:.4f}")
-        pdf = np.where(np.isfinite(pdf), pdf, np.nan)
-        logpdf = np.where(np.isfinite(logpdf), logpdf, np.nan)
-        #X, Y = np.meshgrid(x, y, indexing="ij")
-        #points = np.array([X[~np.isnan(pdf)], Y[~np.isnan(pdf)]]).T  # Valid points
-        #values = pdf[~np.isnan(pdf)]  # Valid values
-
-        # Interpolate missing values
-        #pdf = griddata(points, values, (X, Y), method="cubic")
-
-        pdf = np.nan_to_num(pdf, nan=0.0)
-        logpdf = np.nan_to_num(logpdf, nan=0.0)
+        for p in [pdf, pdf_other]:
+            p = np.where(np.isfinite(p), p, np.nan)
+            p_f = np.nan_to_num(p, nan=0.0)
+            
         
-
+        
+        
         if integrate_axis is not None:
             # Integrate along the specified axis
             if integrate_axis == 0:
@@ -515,7 +608,10 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
             else:
                 raise ValueError("integrate_axis must be 0 (y-axis) or 1 (x-axis).")
         
-        return x, y, pdf
+        if use_gaussian:
+            return x, y, pdf_other, pdf  # pdf_other is exact, pdf is gaussian
+        else:
+            return x, y, pdf, pdf_other 
 
     except FileNotFoundError:
         print(f"Cache file {cache_file} not found.")
@@ -528,7 +624,7 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None):
 def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label_2="Simulation 2",
                            njobs=1000, lmax=None, save_path=None, 
                            redshift_indices=[0, 1, 2], angular_indices=[0, 1],
-                           prefactors=None, theta=None, nbins=50, alpha=0.6):
+                           prefactors=None, theta=None, nbins=50, alpha=0.8):
     """
     Create a corner plot comparing two sets of simulations.
     
@@ -567,27 +663,37 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
         The figure object
     """
     # Read both simulation sets
-    print(f"Loading {label_1} simulations from {simspath_1}...")
+    logger.info(f"Loading {label_1} simulations from {simspath_1}...")
     sims_1, angles_1 = read_sims_nd(simspath_1, njobs, lmax, prefactors=prefactors, theta=theta)
     
-    print(f"Loading {label_2} simulations from {simspath_2}...")
+    logger.info(f"Loading {label_2} simulations from {simspath_2}...")
     sims_2, angles_2 = read_sims_nd(simspath_2, njobs, lmax, prefactors=prefactors, theta=theta)
     
-    print(f"Loaded {len(sims_1)} {label_1} sims, {len(sims_2)} {label_2} sims")
+    n_bins = n_combs_to_n_bins(sims_1.shape[1])
+    mapper = BinCombinationMapper(n_bins)
+    combs = [tuple(x + 1 for x in mapper.get_combination(j)) for j in redshift_indices]
+
+    logger.info(f"Loaded {len(sims_1)} {label_1} sims, {len(sims_2)} {label_2} sims")
     
     # Select data
     selected_1 = sims_1[:, redshift_indices, :][:, :, angular_indices].reshape(sims_1.shape[0], -1)
     selected_2 = sims_2[:, redshift_indices, :][:, :, angular_indices].reshape(sims_2.shape[0], -1)
     
+    ang_bins = [angles_1[i] for i in angular_indices]
+    for a, ang_bin in enumerate(ang_bins):
+        logger.info(r'$\theta_{:d} = [{:3.1f}, {:3.1f}] \degree$'.format(a, *ang_bin))
     n_dims = selected_1.shape[1]
     
     # Create corner plot
-    fig, axes = plt.subplots(n_dims, n_dims, figsize=(12, 12))
+    fig, axes = plt.subplots(n_dims, n_dims, figsize=(11, 10))
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+    colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])
+    im = None
     
     # Define colors
-    color_1 = 'C0'  # Blue
-    color_2 = 'C3'  # Red
-    
+    color_1 = '#4477AA'  # Blue
+    color_2 = '#CC6677'  # Red
+
     for i in range(n_dims):
         for j in range(n_dims):
             redshift_idx_i, angular_idx_i = divmod(i, len(angular_indices))
@@ -596,12 +702,16 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
             
             # Set labels
             if i == 0:
-                ax.set_ylabel(f"corr {redshift_idx_j}, ang {angular_idx_j}")
+                ax.set_ylabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_j],angular_idx_j+1)))
             else:
                 ax.set_yticklabels([])
                 
             if j == n_dims - 1:
-                ax.set_xlabel(f"corr {redshift_idx_i}, ang {angular_idx_i}")
+                ax.set_xlabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_i],angular_idx_i+1)))
+                #ax.xaxis.set_offset_position('top')
+                ax.xaxis.get_offset_text().set_x(1.2)  # Move offset right
+                ax.xaxis.get_offset_text().set_y(10)
+                #ax.xaxis.get_offset_text().set_fontsize(10)
             else:
                 ax.set_xticklabels([])
             
@@ -612,18 +722,20 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
                 bins = np.linspace(range_min, range_max, nbins)
                 
                 ax.hist(selected_1[:, i], bins=bins, density=True, alpha=alpha, 
-                       color=color_1, label=label_1, histtype='stepfilled')
+                       color=color_1, label=label_1, histtype='step')
                 ax.hist(selected_2[:, i], bins=bins, density=True, alpha=alpha,
-                       color=color_2, label=label_2, histtype='stepfilled')
+                       color=color_2, label=label_2, histtype='step')
                 
-                if i == 0:
-                    ax.legend(fontsize=8)
+                #if i == n_dims - 1:
+                #    ax.legend(frameon=False, loc='upper right')
                 
                 # Add mean and std info
                 mean_1, std_1 = selected_1[:, i].mean(), selected_1[:, i].std()
                 mean_2, std_2 = selected_2[:, i].mean(), selected_2[:, i].std()
-                ax.axvline(mean_1, color=color_1, linestyle='--', alpha=0.8, linewidth=1)
-                ax.axvline(mean_2, color=color_2, linestyle='--', alpha=0.8, linewidth=1)
+                ax.axvline(mean_1, color=color_1, linestyle='--', alpha=alpha, linewidth=1)
+                ax.axvline(mean_2, color=color_2, linestyle='--', alpha=alpha, linewidth=1)
+                if i == 0:
+                    handles, labels = ax.get_legend_handles_labels()
                 
             elif i < j:
                 # 2D histogram in lower triangle
@@ -638,34 +750,41 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
                     selected_1[:, i], selected_1[:, j],
                     bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
                 )
+                h1_smooth = gaussian_filter(h1, sigma=1.0)
                 
                 # Plot contours for first set
                 X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2, 
                                   (yedges[:-1] + yedges[1:]) / 2)
                 levels_1 = np.percentile(h1[h1 > 0], [32, 68, 95])
-                ax.contour(X, Y, h1.T, levels=levels_1, colors=color_1, 
-                          linewidths=1.5, alpha=0.8)
+                ax.contour(X, Y, h1_smooth.T, levels=levels_1, colors=color_1, 
+                          linewidths=1.5, alpha=alpha)
                 
                 # Plot second simulation set
                 h2, _, _ = np.histogram2d(
                     selected_2[:, i], selected_2[:, j],
                     bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
                 )
+                h2_smooth = gaussian_filter(h2, sigma=1.0)
                 levels_2 = np.percentile(h2[h2 > 0], [32, 68, 95])
-                ax.contour(X, Y, h2.T, levels=levels_2, colors=color_2,
-                          linewidths=1.5, alpha=0.8, linestyles='--')
+                ax.contour(X, Y, h2_smooth.T, levels=levels_2, colors=color_2,
+                          linewidths=1.5, alpha=alpha)
                 
                 ax.set_xlim(xmin, xmax)
                 ax.set_ylim(ymin, ymax)
+
                 
+            
             else:
-                # Upper triangle: plot difference statistics
-                # Calculate 2D histogram difference
+                # Upper triangle: plot difference normalized by bootstrap uncertainty
+                if j == 0 and i == 1:  # Log once for the first upper triangle plot
+                    logger.info(f"Computing bootstrap uncertainties for upper triangle plots (100 resamples per panel)...")
+                
                 xmin = min(selected_1[:, j].min(), selected_2[:, j].min())
                 xmax = max(selected_1[:, j].max(), selected_2[:, j].max())
                 ymin = min(selected_1[:, i].min(), selected_2[:, i].min())
                 ymax = max(selected_1[:, i].max(), selected_2[:, i].max())
                 
+                # Create histograms for both sets
                 h1, xedges, yedges = np.histogram2d(
                     selected_1[:, j], selected_1[:, i],
                     bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
@@ -676,27 +795,55 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
                     bins=nbins, range=[[xmin, xmax], [ymin, ymax]], density=True
                 )
                 
-                # Plot difference
-                diff = h2 - h1
-                X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2,
-                                  (yedges[:-1] + yedges[1:]) / 2)
+                # Bootstrap the lognormal set to get uncertainty
+                # do bootstrap on differences, not on one set of values?
                 
-                vmax = np.abs(diff).max()
-                im = ax.pcolormesh(X, Y, diff.T, cmap='RdBu_r', 
-                                  vmin=-vmax, vmax=vmax, shading='auto')
+                res = bootstrap(
+                    np.array([selected_2[:, j], selected_2[:, i]]), 
+                    n=100, 
+                    axis=1, 
+                    func=bootstrap_statistic_2d, 
+                    func_kwargs={"binedges": [xedges, yedges]}
+                )
+                
+                # Calculate standard deviation from bootstrap
+                std_dev = np.std(res, axis=0, ddof=1)
+                
+                # Mask bins with no data
+                std_dev = np.ma.masked_where(h1 == 0, std_dev)
+                
+                # Calculate difference normalized by bootstrap uncertainty
+                diff = h2 - h1
+                diff = np.ma.masked_where(h1 == 0, diff)
+                normalized_diff = diff / std_dev
+                
+                # Plot normalized difference
+                X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2,
+                                    (yedges[:-1] + yedges[1:]) / 2)
+
+                vmax = 2  # Show differences up to 4 sigma
+                im = ax.pcolormesh(X, Y, normalized_diff.T, cmap='RdBu_r',
+                                    vmin=-vmax, vmax=vmax, shading='auto',alpha=0.5)
                 ax.set_xlim(xmin, xmax)
                 ax.set_ylim(ymin, ymax)
                 
-                # Add colorbar to rightmost upper triangle plot
-                if i == n_dims - 1 and j == 0:
-                    cbar = plt.colorbar(im, ax=ax)
-                    cbar.set_label(f'Density diff\n({label_2} - {label_1})', fontsize=8)
+    if im is not None:            # Add colorbar to rightmost upper triangle plot 
+                
+        cbar = plt.colorbar(im, cax=colorbar_ax)
+        cbar.set_label(r'({} - {}) / $\sigma_{{\mathrm{{Bootstrap}}}}$'.format(label_2,label_1))
     
-    plt.tight_layout()
+    fig.legend(
+        handles, labels,
+        loc="upper center",
+        ncol=2,
+        bbox_to_anchor=(0.5, 1.02),
+        frameon=False
+    )  
+    plt.subplots_adjust(wspace=0.12, hspace=0.12)
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved: {save_path}")
+        logger.info(f"Saved: {save_path}")
     
     return fig
 
@@ -725,35 +872,49 @@ def print_comparison_statistics(simspath_1, simspath_2, label_1="Simulation 1", 
         Transformation parameters
     """
     # Read simulations
-    sims_1, _ = read_sims_nd(simspath_1, njobs, lmax, prefactors=prefactors, theta=theta)
-    sims_2, _ = read_sims_nd(simspath_2, njobs, lmax, prefactors=prefactors, theta=theta)
+    logger.info(f"Loading {label_1} simulations for statistical comparison...")
+    sims_1, angles_1 = read_sims_nd(simspath_1, njobs, lmax, prefactors=prefactors, theta=theta)
+    logger.info(f"Loading {label_2} simulations for statistical comparison...")
+    sims_2, angles_2 = read_sims_nd(simspath_2, njobs, lmax, prefactors=prefactors, theta=theta)
+    logger.info(f"Loaded simulations, starting statistical tests...")
     
     # Select data
     selected_1 = sims_1[:, redshift_indices, :][:, :, angular_indices].reshape(sims_1.shape[0], -1)
     selected_2 = sims_2[:, redshift_indices, :][:, :, angular_indices].reshape(sims_2.shape[0], -1)
     
-    print("\n" + "="*70)
-    print(f"STATISTICAL COMPARISON: {label_1} vs {label_2}")
-    print("="*70)
+    logger.info("\n" + "="*70)
+    logger.info(f"STATISTICAL COMPARISON: {label_1} vs {label_2}")
+    logger.info("="*70)
     
     for i in range(selected_1.shape[1]):
         redshift_idx, angular_idx = divmod(i, len(angular_indices))
         
-        mean_1, std_1 = selected_1[:, i].mean(), selected_1[:, i].std()
-        mean_2, std_2 = selected_2[:, i].mean(), selected_2[:, i].std()
+        sample_1 = selected_1[:, i]
+        sample_2 = selected_2[:, i]
+        
+        mean_1, std_1 = sample_1.mean(), sample_1.std()
+        mean_2, std_2 = sample_2.mean(), sample_2.std()
         
         # Two-sample t-test
-        t_stat, p_value = stats.ttest_ind(selected_1[:, i], selected_2[:, i])
+        t_stat, p_value = stats.ttest_ind(sample_1, sample_2)
         
         # Kolmogorov-Smirnov test
-        ks_stat, ks_p_value = stats.ks_2samp(selected_1[:, i], selected_2[:, i])
+        ks_stat, ks_p_value = stats.ks_2samp(sample_1, sample_2)
         
-        print(f"\nCorrelation {redshift_idx}, Angular bin {angular_idx}:")
-        print(f"  {label_1:20s}: mean = {mean_1:.6f}, std = {std_1:.6f}")
-        print(f"  {label_2:20s}: mean = {mean_2:.6f}, std = {std_2:.6f}")
-        print(f"  Mean difference:      {abs(mean_2 - mean_1):.6f} ({abs(mean_2-mean_1)/mean_1*100:.2f}%)")
-        print(f"  Std difference:       {abs(std_2 - std_1):.6f} ({abs(std_2-std_1)/std_1*100:.2f}%)")
-        print(f"  T-test p-value:       {p_value:.4e} {'***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else ''}")
-        print(f"  KS-test p-value:      {ks_p_value:.4e} {'***' if ks_p_value < 0.001 else '**' if ks_p_value < 0.01 else '*' if ks_p_value < 0.05 else ''}")
+        logger.info(f"\nCorrelation {redshift_idx}, Angular bin {angular_idx}:")
+        logger.info(f"  {label_1:20s}: mean = {mean_1:.6e}, std = {std_1:.6e}")
+        logger.info(f"  {label_2:20s}: mean = {mean_2:.6e}, std = {std_2:.6e}")
+        if mean_1 != 0:
+            logger.info(f"  Mean difference:      {abs(mean_2 - mean_1):.6e} ({abs(mean_2-mean_1)/mean_1*100:.2f}%)")
+        else:
+            logger.info(f"  Mean difference:      {abs(mean_2 - mean_1):.6e} (N/A - mean_1 is zero)")
+        if std_1 != 0:
+            logger.info(f"  Std difference:       {abs(std_2 - std_1):.6e} ({abs(std_2-std_1)/std_1*100:.2f}%)")
+        else:
+            logger.info(f"  Std difference:       {abs(std_2 - std_1):.6e} (N/A - std_1 is zero)")
+        logger.info(f"  T-test p-value:       {p_value:.4e} {'***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else ''}")
+        logger.info(f"  KS-test p-value:      {ks_p_value:.4e} {'***' if ks_p_value < 0.001 else '**' if ks_p_value < 0.01 else '*' if ks_p_value < 0.05 else ''}")
     
-    print("="*70)
+    logger.info("="*70)
+
+
