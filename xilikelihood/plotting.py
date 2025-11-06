@@ -522,7 +522,6 @@ def plot_2d_from_cache(ax, filepath, i, j, k, l, color=None, use_gaussian=False)
             x, y, pdf_exact, pdf_gauss = data
             pdf = pdf_gauss if use_gaussian else pdf_exact
             levels = find_contour_levels_pdf(x, y, pdf, levels=[0.32, 0.68, 0.95])
-            levels_gauss = find_contour_levels_pdf(x, y, pdf_gauss, levels=[0.32, 0.68, 0.95])
             logger.info(f"Contour levels for PDF: {levels}")
             X, Y = np.meshgrid(x, y)
             c = ax.contour(X, Y, pdf, levels=levels, colors=color, linewidths=1.5)
