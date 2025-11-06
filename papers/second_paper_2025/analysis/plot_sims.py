@@ -13,7 +13,7 @@ from config import (
 )
 import logging
 
-
+EXACT_LMAX=30
 # Set up logging to see xilikelihood package output
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 logging.getLogger('xilikelihood').setLevel(logging.INFO)
@@ -39,12 +39,12 @@ rs_selection = [redshift_bins[i] for i in rs]
 ab_selection = [ang_bins_in_deg[i] for i in ab]
 print(ab_selection)
 likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False,highell=False)
+        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False,highell=True)
 likelihood.setup_likelihood()
-likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=False)
+likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=True)
 #xs,pdfs = likelihood._xs,likelihood._pdfs
 data_subset = list(product(np.arange(3), np.arange(2)))
-
+redshift_combs_indices = [3,10,12]
 
 subset_pairs = list(combinations(data_subset, 2))
 print(subset_pairs)
@@ -66,8 +66,12 @@ gauss_likelihood_results = {}
 x_results = {}
 
 for pair in subset_pairs:
+    full_rs_i = redshift_combs_indices[pair[0][0]]  # Maps calculated 0,1,2 to full dataset 2,4,...
+    full_ang_i = ab[pair[0][1]]
+    full_rs_j = redshift_combs_indices[pair[1][0]]
+    full_ang_j = ab[pair[1][1]]
     print(f"Processing pair: {pair}")
-    cache_file = f"likelihood_2d_cache_{pair[0][0]}_{pair[0][1]}_{pair[1][0]}_{pair[1][1]}.npz"
+    cache_file = f"likelihood_2d_cache_{full_rs_i}_{full_ang_i}_{full_rs_j}_{full_ang_j}.npz"
     cache_file = os.path.join(cache_dir, cache_file)
 
     if os.path.exists(cache_file):
@@ -87,6 +91,7 @@ for pair in subset_pairs:
         np.savez(cache_file, x=x, likelihood_2d=loglikelihood_2d, gauss_loglikelihood=gauss_loglikelihood)
         del loglikelihood_2d, gauss_loglikelihood
         
-filepath = "/cluster/scratch/veoehl/xi_sims/"
-correlations = [3, 10, 12]
-plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=EXACT_LMAX, njobs=1000,save_path="comparison_to_gaussiansims_with_bootstrap.png",redshift_indices=correlations,angular_indices=ab,nbins=256)
+filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
+angular_bins_to_plot = [2,3]
+correlations_to_plot = [10,12]
+plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=767, njobs=1000,save_path="comparison_to_sims_with_bootstrap_subplot_newcolor_gaussian.png",redshift_indices=correlations_to_plot,angular_indices=angular_bins_to_plot,nbins=256,use_gaussian=True)
