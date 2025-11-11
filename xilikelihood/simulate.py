@@ -94,7 +94,154 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def create_maps(theory_cl_list, nside, field_type="gaussian"):
+def _plot_field_distribution_sanity_check(kappa_list, gamma1_list, gamma2_list, field_type, n_fields):
+    """
+    Plot histograms of kappa and shear distributions for sanity checking.
+    
+    Parameters
+    ----------
+    kappa_list : list of arrays
+        List of convergence (kappa) maps
+    gamma1_list : list of arrays
+        List of gamma1 (real shear component) maps
+    gamma2_list : list of arrays
+        List of gamma2 (imaginary shear component) maps
+    field_type : str
+        Type of field ("gaussian" or "lognormal")
+    n_fields : int
+        Number of fields generated
+    """
+    import scipy.stats as stats
+    
+    # Flatten all maps into single arrays
+    kappa_all = kappa_list[0].ravel()
+    gamma1_all = gamma1_list[0].ravel()
+    gamma2_all = gamma2_list[0].ravel()
+    
+    # Create figure with 2 rows, 3 columns
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle(f'Field Distribution Sanity Check: {field_type.upper()} ({n_fields} fields)', 
+                 fontsize=14, fontweight='bold')
+    
+    # Row 1: Histograms
+    # Kappa histogram
+    ax = axes[0, 0]
+    counts, bins, _ = ax.hist(kappa_all, bins=100, density=True, alpha=0.7, 
+                               color='blue', label='Data')
+    ax.set_xlabel('κ (convergence)')
+    ax.set_ylabel('Probability Density')
+    ax.set_title('Kappa Distribution')
+    
+    # Overlay theoretical distribution
+    if field_type.lower() == "gaussian":
+        # Gaussian: should be centered at 0
+        mu, sigma = kappa_all.mean(), kappa_all.std()
+        x = np.linspace(kappa_all.min(), kappa_all.max(), 200)
+        ax.plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2, 
+                label=f'Gaussian(μ={mu:.2e}, σ={sigma:.2e})')
+    else:
+        # Lognormal: plot lognormal fit
+        # Note: GLASS applies shift, so distribution might not be exactly lognormal
+        mu, sigma = kappa_all.mean(), kappa_all.std()
+        ax.axvline(mu, color='r', linestyle='--', linewidth=2, label=f'Mean={mu:.2e}')
+        ax.text(0.05, 0.95, f'Skewness: {stats.skew(kappa_all):.3f}\nKurtosis: {stats.kurtosis(kappa_all):.3f}',
+                transform=ax.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Gamma1 histogram
+    ax = axes[0, 1]
+    ax.hist(gamma1_all, bins=100, density=True, alpha=0.7, color='green', label='Data')
+    ax.set_xlabel('γ₁ (shear component 1)')
+    ax.set_ylabel('Probability Density')
+    ax.set_title('Gamma1 Distribution')
+    mu_g1, sigma_g1 = gamma1_all.mean(), gamma1_all.std()
+    x = np.linspace(gamma1_all.min(), gamma1_all.max(), 200)
+    ax.plot(x, stats.norm.pdf(x, mu_g1, sigma_g1), 'r-', linewidth=2,
+            label=f'Gaussian(μ={mu_g1:.2e}, σ={sigma_g1:.2e})')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Gamma2 histogram
+    ax = axes[0, 2]
+    ax.hist(gamma2_all, bins=100, density=True, alpha=0.7, color='orange', label='Data')
+    ax.set_xlabel('γ₂ (shear component 2)')
+    ax.set_ylabel('Probability Density')
+    ax.set_title('Gamma2 Distribution')
+    mu_g2, sigma_g2 = gamma2_all.mean(), gamma2_all.std()
+    x = np.linspace(gamma2_all.min(), gamma2_all.max(), 200)
+    ax.plot(x, stats.norm.pdf(x, mu_g2, sigma_g2), 'r-', linewidth=2,
+            label=f'Gaussian(μ={mu_g2:.2e}, σ={sigma_g2:.2e})')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Row 2: Q-Q plots
+    # Kappa Q-Q plot
+    ax = axes[1, 0]
+    if field_type.lower() == "gaussian":
+        stats.probplot(kappa_all, dist="norm", plot=ax)
+        ax.set_title('Kappa Q-Q Plot (Gaussian)')
+    else:
+        # For lognormal, show Q-Q against normal (should deviate)
+        stats.probplot(kappa_all, dist="norm", plot=ax)
+        ax.set_title('Kappa Q-Q Plot (vs Gaussian)')
+    ax.grid(True, alpha=0.3)
+    
+    # Gamma1 Q-Q plot
+    ax = axes[1, 1]
+    stats.probplot(gamma1_all, dist="norm", plot=ax)
+    ax.set_title('Gamma1 Q-Q Plot (Gaussian)')
+    ax.grid(True, alpha=0.3)
+    
+    # Gamma2 Q-Q plot
+    ax = axes[1, 2]
+    stats.probplot(gamma2_all, dist="norm", plot=ax)
+    ax.set_title('Gamma2 Q-Q Plot (Gaussian)')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save figure
+    filename = f'field_sanity_check_{field_type.lower()}_{n_fields}fields.png'
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    logger.info(f"Saved sanity check plot: {filename}")
+    
+    # Print statistics
+    logger.info(f"\n{'='*70}")
+    logger.info(f"FIELD DISTRIBUTION STATISTICS: {field_type.upper()}")
+    logger.info(f"{'='*70}")
+    logger.info(f"Kappa (κ):")
+    logger.info(f"  Mean:     {kappa_all.mean():.6e}")
+    logger.info(f"  Std:      {kappa_all.std():.6e}")
+    logger.info(f"  Min/Max:  {kappa_all.min():.6e} / {kappa_all.max():.6e}")
+    logger.info(f"  Skewness: {stats.skew(kappa_all):.6f}")
+    logger.info(f"  Kurtosis: {stats.kurtosis(kappa_all):.6f}")
+    
+    logger.info(f"\nGamma1 (γ₁):")
+    logger.info(f"  Mean:     {gamma1_all.mean():.6e}")
+    logger.info(f"  Std:      {gamma1_all.std():.6e}")
+    logger.info(f"  Min/Max:  {gamma1_all.min():.6e} / {gamma1_all.max():.6e}")
+    logger.info(f"  Skewness: {stats.skew(gamma1_all):.6f}")
+    logger.info(f"  Kurtosis: {stats.kurtosis(gamma1_all):.6f}")
+    
+    logger.info(f"\nGamma2 (γ₂):")
+    logger.info(f"  Mean:     {gamma2_all.mean():.6e}")
+    logger.info(f"  Std:      {gamma2_all.std():.6e}")
+    logger.info(f"  Min/Max:  {gamma2_all.min():.6e} / {gamma2_all.max():.6e}")
+    logger.info(f"  Skewness: {stats.skew(gamma2_all):.6f}")
+    logger.info(f"  Kurtosis: {stats.kurtosis(gamma2_all):.6f}")
+    logger.info(f"{'='*70}\n")
+    
+    if field_type.lower() == "lognormal":
+        logger.info("Note: For lognormal fields, kappa should show positive skewness.")
+        logger.info("      Shear components (γ₁, γ₂) may still appear approximately Gaussian")
+        logger.info("      due to the derivative operation in the shear conversion.")
+    
+    plt.show()
+
+
+def create_maps(theory_cl_list, nside, field_type="gaussian", sanity_check=False):
     """
     Create random maps using GLASS for 1D or nD cases.
     
@@ -110,6 +257,9 @@ def create_maps(theory_cl_list, nside, field_type="gaussian"):
         Type of random field to generate. Options:
         - "gaussian": Gaussian random fields (default)
         - "lognormal": Log-normal random fields
+    sanity_check : bool, optional
+        If True, plot histograms of kappa and shear maps to verify distributions.
+        Default is False.
         
     Returns
     -------
@@ -182,9 +332,16 @@ def create_maps(theory_cl_list, nside, field_type="gaussian"):
     samples = glass.generate(fields, gls, nside)
     
     field_list = []
+    kappa_list = []  # Store kappa maps for sanity checks
+    gamma1_list = []  # Store gamma1 maps for sanity checks
+    gamma2_list = []  # Store gamma2 maps for sanity checks
+    
     while True:
         try:
             kappa_map = next(samples)  # This is the convergence map
+            
+            if sanity_check:
+                kappa_list.append(kappa_map.copy() if hasattr(kappa_map, 'copy') else np.array(kappa_map))
             
             # Convert kappa to shear using GLASS
             # Use lmax if provided, otherwise let GLASS use its default
@@ -201,18 +358,28 @@ def create_maps(theory_cl_list, nside, field_type="gaussian"):
             gamma1 = np.real(gamma)
             gamma2 = np.imag(gamma)
             
+            if sanity_check:
+                gamma1_list.append(gamma1.copy())
+                gamma2_list.append(gamma2.copy())
+            
             # Convert shear components (γ1, γ2) to polarization (Q, U)
-            # GLASS convention requires: Q = -γ₂, U = γ₁
-            # This ensures proper E/B mode separation in masked measurements
+            
+            # This matches healpy.synfast output and ensures proper E/B mode separation
             T_map = np.zeros_like(gamma1)  # No temperature for pure shear
-            Q_map = -gamma2
-            U_map = gamma1
+            Q_map = gamma1
+            U_map = gamma2
             
             # Stack into T,Q,U format expected by the rest of the pipeline
             maps_TQU = np.array([T_map, Q_map, U_map])
             field_list.append(maps_TQU)
         except StopIteration:
             break
+    
+    # Sanity check: plot histograms of kappa and shear maps
+    if sanity_check and len(kappa_list) > 0:
+        _plot_field_distribution_sanity_check(
+            kappa_list, gamma1_list, gamma2_list, field_type, n_fields
+        )
     
     maps_array = np.array(field_list)
     
@@ -250,7 +417,7 @@ def add_noise_to_maps(maps, nside, noise_sigmas=None, lmax=None):
     Parameters
     ----------
     maps : ndarray
-        Maps from create_maps_glass
+        Maps from create_maps
         - 1D case: shape (3, n_pix) 
         - nD case: shape (n_fields, 3, n_pix)
     nside : int
@@ -584,7 +751,7 @@ def _simulate_pcl_estimator(
         logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
         
         # Create maps using GLASS
-        maps = create_maps(theory_cl_list, nside, lmax, field_type)
+        maps = create_maps(theory_cl_list, nside, field_type=field_type)
         
         # Add noise if requested
         if add_noise and noise_sigmas is not None:
@@ -736,7 +903,7 @@ def _simulate_treecorr(
         logger.info(f"Simulating batch {i+1}/{n_batch} ({(i+1)/n_batch*100:.1f}%)")
         
         # Create maps using GLASS (TreeCorr mainly for 1D)
-        maps = create_maps(theory_cl_list, nside, lmax=None, field_type=field_type)
+        maps = create_maps(theory_cl_list, nside, field_type=field_type)
         
         # Add noise if requested
         if add_noise and noise_sigma is not None:
