@@ -72,7 +72,7 @@ def create_mock_data(
     ... )
     """
     # Import here to avoid circular imports
-    from . import simulate_correlation_functions
+    from .simulate import simulate_correlation_functions
     
     # Default fiducial cosmology
     if fiducial_cosmo is None:
