@@ -23,7 +23,7 @@ class LikelihoodConfig:
     """Configuration parameters for likelihood computation."""
     
     # CF computation settings
-    cf_steps: int = 4096
+    cf_steps: int = 2048
     pdf_steps: int = 1024
     ximax_sigma_factor: float = 70.0
     ximin_sigma_factor: float = 70.0
