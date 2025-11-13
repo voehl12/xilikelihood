@@ -12,14 +12,19 @@ PACKAGE_DIR = '/cluster/home/veoehl/xilikelihood/'  # Go up from analysis to pac
 REDSHIFT_BINS_PATH = BASE_DIR.parent.parent.parent / "redshift_bins/KiDS"
 
 # Analysis parameters
-EXACT_LMAX = 20
+EXACT_LMAX = 30
 FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
 
 # Mask configuration
-MASK_CONFIG = {
+MASK_CONFIG_STAGE4 = {
     "spins": [2], 
     "circmaskattr": (10000, 256), 
     "l_smooth": 30
+}
+MASK_CONFIG_STAGE3 = {
+    "spins": [2], 
+    "circmaskattr": (1000, 256), 
+    "l_smooth": 20
 }
 
 # Angular bins
@@ -34,9 +39,13 @@ S8_GRIDS = {
 }
 
 # Parameter grids for 2D analysis
-PARAM_GRIDS = {
+PARAM_GRIDS_NARROW = {
     "omega_m": (0.2, 0.45, 100),
     "s8": (0.7, 0.9, 100)
+}
+PARAM_GRIDS_WIDE = {
+    "omega_m": (0.1, 0.5, 100),
+    "s8": (0.5, 1.1, 100)
 }
 
 # Job configuration
@@ -81,5 +90,9 @@ DATA_FILES = {
         "mock_data": "mock_data_10000sqd_kidsplus.npz",
         "covariance": "gaussian_covariance_10000sqd_kidsplus.npz" # including one extra angular bin, 5-10deg
     },
+    "1000sqd_kidsplus": {
+        "mock_data": "mock_data_1000sqd_kidsplus.npz",
+        "covariance": "gaussian_covariance_1000sqd_kidsplus.npz"
+    }
     
 }

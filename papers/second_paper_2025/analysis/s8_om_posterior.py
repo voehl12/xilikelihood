@@ -7,8 +7,8 @@ from config import (
     EXACT_LMAX,
     FIDUCIAL_COSMO, 
     DATA_DIR,
-    MASK_CONFIG,
-    PARAM_GRIDS,
+    MASK_CONFIG_STAGE3 as MASK_CONFIG,
+    PARAM_GRIDS_WIDE as PARAM_GRIDS,
     N_JOBS_2D,
     DATA_FILES
 )
@@ -61,24 +61,10 @@ except Exception as e:
     logger.error(f"Failed to set up mask or dataspace: {e}")
     sys.exit(1)
 
-mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['mock_data']
-gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus']['covariance']
+mock_data_path = DATA_DIR / DATA_FILES['1000sqd_kidsplus']['mock_data']
+gaussian_covariance_path = DATA_DIR / DATA_FILES['1000sqd_kidsplus']['covariance']
 
 
-# Load data files with error checking
-""" try:
-    if not Path(DATA_FILES["1000sqd"]["mock_data"]).exists():
-        raise FileNotFoundError("fiducial_data_1000sqd.npz not found")
-    if not Path(DATA_FILES["1000sqd"]["covariance"]).exists():
-        raise FileNotFoundError("gaussian_covariance_1000sqd.npz not found")
-
-    mock_data = xlh.load_arrays(DATA_FILES["1000sqd"]["mock_data"])["data"]
-    gaussian_covariance = xlh.load_arrays(DATA_FILES["1000sqd"]["covariance"])["cov"]
-    logger.info(f"Loaded data: shape {mock_data.shape}, covariance: shape {gaussian_covariance.shape}")
-    
-except Exception as e:
-    logger.error(f"Failed to load data files: {e}")
-    sys.exit(1) """
 
 
 # Set up likelihood
@@ -86,13 +72,10 @@ try:
     likelihood = xlh.XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False)
     likelihood.setup_likelihood()
-    try:
-        mock_data = np.load(mock_data_path)["data"]
-        gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
-    except:
-        create_mock_data(likelihood, mock_data_path, gaussian_covariance_path,random=None)
-        mock_data = np.load(mock_data_path)["data"]
-        gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
+
+    create_mock_data(likelihood, mock_data_path, gaussian_covariance_path,random=None)
+    mock_data = np.load(mock_data_path)["data"]
+    gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
     likelihood.gaussian_covariance = gaussian_covariance
     logger.info("Likelihood setup completed")
     
