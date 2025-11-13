@@ -341,8 +341,9 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     sims, angles = read_sims_nd(simspath, njobs, lmax,prefactors=prefactors,theta=theta)
     n_bins = n_combs_to_n_bins(sims.shape[1])
     mapper = BinCombinationMapper(n_bins)
-    cmap = cmr.guppy_r 
-    linecolor = cmr.take_cmap_colors(cmap, 3, return_fmt='hex')[1]
+    cmap = cmr.viola
+    cmap = cmr.get_sub_cmap(cmap, 0.1, 0.9)
+    linecolor = cmr.take_cmap_colors(cmap, 9, return_fmt='hex')[1]
     print('loaded sims with shape:',sims.shape)
     ang_bins = [angles[i] for i in angular_indices]
     for a, ang_bin in enumerate(ang_bins):
@@ -365,9 +366,9 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     selected_data = sims[:, redshift_indices, :][:, :, angular_indices].reshape(sims.shape[0], -1)
     # Create a corner plot with improved formatting
     n_dims = selected_data.shape[1]
-    fig, axes = plt.subplots(n_dims, n_dims, figsize=(11, 10))
-    plt.tight_layout(rect=[0, 0, 0.9, 1])
-    colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])  # Big colorbar axis
+    fig, axes = plt.subplots(n_dims, n_dims, figsize=(6, 5.5)) # (11,10) for paper
+    plt.tight_layout(rect=[0, 0, 0.95, 1]) #0,0,0.9,1 for paper
+    colorbar_ax = fig.add_axes([0.95, 0.1, 0.04, 0.8])  # Big colorbar axis [0.92, 0.2, 0.02, 0.6] for paper
     im = None  # Initialize the colorbar reference
     data_subset = list(product(redshift_indices,angular_indices))
     n_dims = len(data_subset)
@@ -496,7 +497,7 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     #plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2)
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(save_path, dpi=500, bbox_inches="tight")
         print(f"Corner plot saved to {save_path}")
     else:
         plt.show()
@@ -517,7 +518,7 @@ def plot_2d_from_cache(ax, filepath, i, j, k, l, color=None, use_gaussian=False)
         Indices for the second dimension (e.g., redshift_bin, angular_bin).
     """
     try:
-        data = load_2d_pdf(filepath, i, j, k, l)
+        data = load_2d_pdf(filepath, i, j, k, l,use_gaussian=use_gaussian)
         if data is not None:
             x, y, pdf_exact, pdf_gauss = data
             pdf = pdf_gauss if use_gaussian else pdf_exact
@@ -589,9 +590,8 @@ def load_2d_pdf(filepath, i, j, k, l, integrate_axis=None, use_gaussian=False):
 
         print(f"Fraction of NaN values in PDF: {np.isnan(logpdf).sum() / logpdf.size:.4f}")
         print(f"Fraction of finite values in PDF: {np.isfinite(logpdf).sum() / logpdf.size:.4f}")
-        for p in [pdf, pdf_other]:
-            p = np.where(np.isfinite(p), p, np.nan)
-            p_f = np.nan_to_num(p, nan=0.0)
+        pdf = np.nan_to_num(pdf, nan=0.0, posinf=0.0, neginf=0.0)
+        pdf_other = np.nan_to_num(pdf_other, nan=0.0, posinf=0.0, neginf=0.0)
             
         
         
@@ -688,10 +688,12 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])
     im = None
-    
-    # Define colors
-    color_1 = '#4477AA'  # Blue
-    color_2 = '#CC6677'  # Red
+
+    cmap = cmr.guppy_r
+    linecolors = cmr.take_cmap_colors(cmap, 5, return_fmt='hex')
+
+    color_1 = linecolors[1]
+    color_2 = linecolors[-2]
 
     for i in range(n_dims):
         for j in range(n_dims):
@@ -701,12 +703,12 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
             
             # Set labels
             if i == 0:
-                ax.set_ylabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_j],angular_idx_j+1)))
+                ax.set_ylabel((r'$\hat{{\xi}}^{{+}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_j],angular_idx_j+1)))
             else:
                 ax.set_yticklabels([])
                 
             if j == n_dims - 1:
-                ax.set_xlabel((r'$\hat{{\xi}}^{{+, \mathrm{{low}}}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_i],angular_idx_i+1)))
+                ax.set_xlabel((r'$\hat{{\xi}}^{{+}}_{{\mathrm{{S{}-S{}}}}} (\bar{{\theta}}_{:d})$'.format(*combs[redshift_idx_i],angular_idx_i+1)))
                 #ax.xaxis.set_offset_position('top')
                 ax.xaxis.get_offset_text().set_x(1.2)  # Move offset right
                 ax.xaxis.get_offset_text().set_y(10)
@@ -798,7 +800,7 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
                 # do bootstrap on differences, not on one set of values?
                 
                 res = bootstrap(
-                    np.array([selected_2[:, j], selected_2[:, i]]), 
+                    np.array([selected_1[:, j], selected_1[:, i]]), 
                     n=100, 
                     axis=1, 
                     func=bootstrap_statistic_2d, 
@@ -815,21 +817,28 @@ def plot_corner_comparison(simspath_1, simspath_2, label_1="Simulation 1", label
                 diff = h2 - h1
                 diff = np.ma.masked_where(h1 == 0, diff)
                 normalized_diff = diff / std_dev
+                rel_diff = diff / np.max(h1)
+
+                alpha_map = np.ones_like(normalized_diff.T)
+                alpha_map[np.abs(normalized_diff.T) < 1.0] = 0.0  # < 1σ: transparent
+                alpha_map[np.abs(normalized_diff.T) >= 1.0] = 0.3  # 1σ-3σ: semi-transparent
+                alpha_map[np.abs(normalized_diff.T) >= 3.0] = 1.0  # > 3σ: opaque
+                alpha_map[np.ma.getmask(normalized_diff.T)] = 0.0  
                 
                 # Plot normalized difference
                 X, Y = np.meshgrid((xedges[:-1] + xedges[1:]) / 2,
                                     (yedges[:-1] + yedges[1:]) / 2)
 
-                vmax = 2  # Show differences up to 4 sigma
-                im = ax.pcolormesh(X, Y, normalized_diff.T, cmap='RdBu_r',
-                                    vmin=-vmax, vmax=vmax, shading='auto',alpha=0.5)
+                vmax = 0.03
+                im = ax.pcolormesh(X, Y, rel_diff.T, cmap=cmap,
+                                    vmin=-vmax, vmax=vmax, shading='auto',alpha=alpha_map)
                 ax.set_xlim(xmin, xmax)
                 ax.set_ylim(ymin, ymax)
                 
     if im is not None:            # Add colorbar to rightmost upper triangle plot 
                 
         cbar = plt.colorbar(im, cax=colorbar_ax)
-        cbar.set_label(r'({} - {}) / $\sigma_{{\mathrm{{Bootstrap}}}}$'.format(label_2,label_1))
+        cbar.set_label(r'({} - {}) / max({})'.format(label_2,label_1,label_1))
     
     fig.legend(
         handles, labels,

@@ -93,5 +93,5 @@ for pair in subset_pairs:
         
 filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
 angular_bins_to_plot = [2,3]
-correlations_to_plot = [10,12]
-plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=767, njobs=1000,save_path="comparison_to_sims_with_bootstrap_subplot_newcolor_gaussian.png",redshift_indices=correlations_to_plot,angular_indices=angular_bins_to_plot,nbins=256,use_gaussian=True)
+correlations_to_plot = [12]
+plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=767, njobs=1000,save_path="comparison_to_sims_with_bootstrap_subplot_viola_gaussian_pres.png",redshift_indices=correlations_to_plot,angular_indices=angular_bins_to_plot,nbins=256,use_gaussian=True)
