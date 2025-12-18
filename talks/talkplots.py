@@ -1,18 +1,8 @@
-from distributions import pdf_xi_1D, cf_to_pdf_nd,cov_xi_gaussian_nD
-from pseudo_alm_cov import Cov
 import matplotlib.pyplot as plt
 import numpy as np
-import plotting
 import os
-import cl2xi_transforms
-import scipy.stats as scistats
-import file_handling
 import healpy as hp
-from likelihood import XiLikelihood, fiducial_dataspace
-import theory_cl
-from mask_props import SphereMask
-from theory_cl import BinCombinationMapper
-from file_handling import read_sims_nd
+
 from matplotlib import rc
 #rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
 ## for Palatino and other serif fonts use:
@@ -27,24 +17,26 @@ diff_lmax = [50,70,100]
 spins = [2]
 
 def maps():
-    from simulate import TwoPointSimulation
-    from mask_props import SphereMask
-    from theory_cl import TheoryCl
+    import xilikelihood as xlh
+    from xilikelihood.simulate import create_maps
     fig1, ax1 = plt.subplots()
     
-    angles = [(0.5,1.0),(1,2),(2,3),(4,6)]
-    mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
-    clname='3x2pt_kids_33'
-    clpath="Cl_3x2pt_kids33.txt"
-    sigma_e='default'
-    theorycl = TheoryCl(mask.lmax, clpath, sigma_e, clname=clname)
-    sim = TwoPointSimulation(angles,mask,theorycl,ximode='namaster')
-    maps = sim.create_maps()    
+    nside = 256
+    area = 1000
+    mask = xlh.SphereMask(spins=[2], circmaskattr=(area, nside), exact_lmax=30, l_smooth=30)
+    rs_bins = xlh.theory_cl.load_kids_redshift_bins()
+    noise='default'
+    cosmology = {
+        "omega_m": 0.31,  # Matter density parameter
+        "s8": 0.8,  # Amplitude of matter fluctuations
+    }
+    c_ell = xlh.theory_cl.generate_theory_cl(767,[(rs_bins[4],rs_bins[4])],noise,cosmology)
+    maps = create_maps([c_ell[0].ee],nside)    
     fig = hp.mollview(maps[1],cbar=False,cmap='RdBu',title=None,coord='GC',notext=True,rot=[-60,0,0])
-    plt.savefig('map10000_33.png')
-    maps_TQU_masked = sim.mask.smooth_mask*maps[1]
+    plt.savefig('map1000_55.png')
+    maps_TQU_masked = mask.smooth_mask*maps[1]
     hp.mollview(maps_TQU_masked,title=None,fig=fig,cmap='RdBu',cbar=False,coord='GC',notext=True,rot=[-60,0,0])
-    plt.savefig('map_masked10000_33.png')
+    plt.savefig('map_masked1000_55.png')
     
 
 def ell_convergence():
@@ -366,4 +358,4 @@ def all_marginals():
             fig.savefig(f'marginal_corr{corr}_ang{i}.pdf', bbox_inches='tight')
             plt.close(fig)
 
-gausscompare_1d()
+maps()
