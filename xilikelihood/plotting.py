@@ -366,9 +366,12 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     selected_data = sims[:, redshift_indices, :][:, :, angular_indices].reshape(sims.shape[0], -1)
     # Create a corner plot with improved formatting
     n_dims = selected_data.shape[1]
-    fig, axes = plt.subplots(n_dims, n_dims, figsize=(6, 5.5)) # (11,10) for paper
-    plt.tight_layout(rect=[0, 0, 0.95, 1]) #0,0,0.9,1 for paper
-    colorbar_ax = fig.add_axes([0.95, 0.1, 0.04, 0.8])  # Big colorbar axis [0.92, 0.2, 0.02, 0.6] for paper
+    #fig, axes = plt.subplots(n_dims, n_dims, figsize=(6, 5.5)) #talks
+    fig, axes = plt.subplots(n_dims, n_dims, figsize=(11,10)) #paper
+    #plt.tight_layout(rect=[0, 0, 0.95, 1]) #talks
+    plt.tight_layout(rect=[0, 0, 0.9, 1]) #paper
+    #colorbar_ax = fig.add_axes([0.95, 0.1, 0.04, 0.8])  # Big colorbar axis [0.92, 0.2, 0.02, 0.6] for paper
+    colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])  # Big colorbar axis for paper
     im = None  # Initialize the colorbar reference
     data_subset = list(product(redshift_indices,angular_indices))
     n_dims = len(data_subset)
