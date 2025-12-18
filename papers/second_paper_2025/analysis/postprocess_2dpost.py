@@ -5,17 +5,17 @@ from scipy.special import logsumexp
 from matplotlib import rc
 from xilikelihood.plotting import plot_2D, find_contour_levels_pdf
 from config import (N_JOBS_2D,
-                PARAM_GRIDS_NARROW as PARAM_GRIDS)
+                PARAM_GRIDS_MEDIUM as PARAM_GRIDS)
 import cmasher as cmr
 rc('font',**{'family':'serif','serif':['Times']})
 rc('text', usetex=True)
 rc('text.latex', preamble=r'\usepackage{amsmath}')
 
 REGULARIZER = 500
-LARGE_THRESHOLD = 928
+LARGE_THRESHOLD = 1080
 
 def clean_large_entries(posterior, name="posterior"):
-    threshold = np.percentile(posterior[np.isfinite(posterior)], 99.92)
+    threshold = np.percentile(posterior[np.isfinite(posterior)], 99.75)
     print(threshold)
     large_mask = posterior > LARGE_THRESHOLD
     n_large = np.sum(large_mask)
@@ -51,8 +51,9 @@ exact_posteriors_2d = np.full((len(s8_prior), len(omega_m_prior)), -np.inf)
 gauss_posteriors_2d = np.full((len(s8_prior), len(omega_m_prior)), -np.inf)
 missing_files = []
 # Load all posterior files
-FILEPATH = '/cluster/work/refregier/veoehl/posteriors/kidsplus_10000sqd_2d'
-#FILEPATH = '/cluster/scratch/veoehl/posteriors'
+#FILEPATH = '/cluster/work/refregier/veoehl/posteriors/kidsplus_10000sqd_2d'
+FILEPATH = '/cluster/scratch/veoehl/posteriors'
+#FILEPATH = '/cluster/work/refregier/veoehl/posteriors/kidsplus_1000sqd_2d_inclsmall_nside512'
 for jobnumber in range(N_JOBS_2D):
     filepath = f"{FILEPATH}/posterior_{jobnumber}.npy"
     if os.path.exists(filepath):  # Check if the file exists
@@ -159,7 +160,7 @@ ax[1].set_xlabel("Omega_m")
 ax[1].set_ylabel("S8")
 
 plt.tight_layout()
-plt.savefig("2d_corner_plot_10000sqd_angbinplus_newcolors.png")
+plt.savefig("2d_corner_plot_1000sqd_allscales_highres.png")
 
 from matplotlib.ticker import MaxNLocator
 
@@ -215,7 +216,8 @@ def create_marginal_plot(fig, ax, omega_m_prior, s8_prior, posteriors_2d, thresh
     main_ax.set_xlabel(r"$\Omega_m$")
     main_ax.set_ylabel(r"$S_8$")
     main_ax.set_xlim(omega_m_prior.min(), omega_m_prior.max())
-    main_ax.set_ylim(s8_prior.min(), s8_prior.max())
+    #main_ax.set_ylim(s8_prior.min(), s8_prior.max())
+    main_ax.set_ylim(0.7, 0.9)
     
     # Top marginal: Omega_m
     top_ax = ax[0, 0]
@@ -231,7 +233,8 @@ def create_marginal_plot(fig, ax, omega_m_prior, s8_prior, posteriors_2d, thresh
     right_ax.plot(posteriors_2d.sum(axis=1) * dx, s8_prior, color=linecolor)
     right_ax.axhline(mean_s8, color=linecolor, linestyle="solid")
     right_ax.axhline(fiducial_s8, color="black", linestyle="dashed", linewidth=1)
-    right_ax.set_ylim(s8_prior.min(), s8_prior.max())
+    #right_ax.set_ylim(s8_prior.min(), s8_prior.max())
+    right_ax.set_ylim(0.7, 0.9)
     right_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     right_ax.tick_params(axis="y", labelleft=False)
     
@@ -251,7 +254,7 @@ fig_gauss, ax_gauss = create_marginal_plot(fig, ax,
 )
 ax_gauss[1, 0].legend([plt.Line2D([0], [0], color=linecolor_gauss)], 
                       [r"Gaussian Likelihood"], loc="upper right",frameon=False)
-fig_gauss.savefig("gaussian_only_2d_contours_with_marginals_10000sqd.png", dpi=500)
+fig_gauss.savefig("gaussian_only_2d_contours_with_marginals_1000sqd_allscales_highres.png", dpi=500)
 
 
 fig, ax = create_marginal_plot(fig_gauss, ax_gauss,omega_m_prior, s8_prior, exact_posteriors_2d, exact_thresholds, colors_exact,
@@ -266,6 +269,6 @@ ax[1, 0].legend([plt.Line2D([0], [0], color=linecolor_gauss),
 ax[0, 1].axis("off")
 
 plt.tight_layout()
-fig.savefig("combined_2d_contours_with_marginals_10000sqd_angbinplus_pres_nosmallscales.png",dpi=500)
-
+fig.savefig("combined_2d_contours_with_marginals_1000sqd_allscales_highres.png",dpi=500)
+fig.savefig("combined_2d_contours_with_marginals_1000sqd_allscales_highres.pdf",dpi=300,bbox_inches='tight')
 plt.close('all') 
