@@ -25,6 +25,7 @@ Examples
 
 
 import numpy as np
+import healpy as hp
 import re
 import scipy.stats 
 from pathlib import Path
@@ -107,7 +108,9 @@ class RedshiftBin:
             self.nz = np.array(nz)
         else:
             raise ValueError("Must provide either filepath, (z,nz), or (z,zmean,zsig)")
-    
+
+        self.z_min = np.min(self.z)
+        self.z_max = np.max(self.z)
     @property
     def z_eff(self):
         """
@@ -215,6 +218,7 @@ class TheoryCl:
         theory_lmin=2,
         clname="test_cl",
         smooth_signal=None,
+        nside=None,
         cosmo=None,
         z_bins=None,
     ):
@@ -226,6 +230,7 @@ class TheoryCl:
         self.cosmo = cosmo
         self.z_bins = z_bins
         self.smooth_signal = smooth_signal
+        self.nside = nside
         self._sigma_e = sigma_e
         
         # Initialize arrays
@@ -236,6 +241,13 @@ class TheoryCl:
         # Apply smoothing if specified
         if self.smooth_signal is not None:
             self._apply_smoothing()
+        
+        if self.nside is not None:
+            self.ell_window = hp.pixwin(self.nside, lmax=self.lmax)
+            for attr in ['ee', 'nn', 'ne', 'bb']:
+                if hasattr(self, attr):
+                    setattr(self, attr, getattr(self, attr) * self.ell_window)
+    
 
         # Set up noise
         self.set_noise_sigma()
@@ -333,7 +345,7 @@ class TheoryCl:
             self.sigmaname = f"noise{self._sigma_e}"
             
         elif isinstance(self._sigma_e, tuple):
-            self._noise_sigma = noise_utils.get_noise_cl(*self._sigma_e)
+            self._noise_sigma = noise_utils.get_noise_cl(self._sigma_e)
             sigma_str = str(self._sigma_e).replace(".", "")
             self.sigmaname = f"noise{sigma_str}"
             
@@ -450,7 +462,7 @@ def create_cosmo(params):
     omega_b = 0.046
     omega_c = omega_m - omega_b
     sigma8 = s8 * (omega_m / 0.3) ** -0.5
-    
+    ccl.gsl_params.LENSING_KERNEL_SPLINE_INTEGRATION = False
     return ccl.Cosmology(
         Omega_c=omega_c, 
         Omega_b=omega_b, 
@@ -548,7 +560,7 @@ def prepare_theory_cl_inputs(redshift_bins, noise='default'):
 
     return numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, mapper
 
-def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo):
+def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo,nside=None):
     """
     Generate TheoryCl instances for given redshift bins and cosmology.
 
@@ -557,6 +569,7 @@ def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo):
     - redshift_bins: List of redshift bins.
     - noise: List of noise values for each redshift bin combination.
     - cosmo: Cosmology dictionary.
+    - nside: needed when pixel window function is applied.
 
     Returns:
     - List of TheoryCl instances.
@@ -564,7 +577,7 @@ def generate_theory_cl(lmax, redshift_bin_combinations, shot_noise, cosmo):
        
     # Generate TheoryCl instances
     theory_cl = [
-        TheoryCl(lmax, cosmo=cosmo, z_bins=bin_comb, sigma_e=noise_val)
+        TheoryCl(lmax, cosmo=cosmo, z_bins=bin_comb, sigma_e=noise_val,nside=nside)
         for bin_comb, noise_val in zip(redshift_bin_combinations, shot_noise)
     ]
     return theory_cl
