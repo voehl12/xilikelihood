@@ -3,9 +3,9 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --time=15:00:00    
 #SBATCH --cpus-per-task=64
-#SBATCH --mem-per-cpu=2048
-#SBATCH --job-name=2d_post_1000sqd_kidsplus
-#SBATCH --array=76,78,84,93,97,101,118,197
+#SBATCH --mem-per-cpu=4096
+#SBATCH --job-name=2d_post_10000sqd_kidsplus_nonoise
+#SBATCH --array=1-500
 #SBATCH --output=2dpost.out
 #SBATCH --error=2dpost.err
 
