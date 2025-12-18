@@ -147,7 +147,7 @@ class XiLikelihood:
         exact_lmax: Optional[int] = None,
         lmax: Optional[int] = None,
         noise: str = 'default',
-        include_ximinus: bool = True,
+        include_ximinus: bool = False,
         **kwargs
     ):
         # Input validation
@@ -303,7 +303,7 @@ class XiLikelihood:
 
     def initiate_theory_cl(self, cosmo):
         # get the theory Cl for the given cosmology
-        self._theory_cl = generate_theory_cl(self.lmax, self.redshift_bin_combinations, self.shot_noise, cosmo)
+        self._theory_cl = generate_theory_cl(self.lmax, self.redshift_bin_combinations, self.shot_noise, cosmo,self.mask.nside)
     
         return self._theory_cl
 
