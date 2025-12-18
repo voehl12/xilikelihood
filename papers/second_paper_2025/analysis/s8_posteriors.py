@@ -10,6 +10,7 @@ Functions for computing S8 posteriors from various data subsets:
 
 import numpy as np
 import sys
+import logging
 from time import time
 from pathlib import Path
 import xilikelihood as xlh
@@ -19,7 +20,7 @@ from config import (
     FIDUCIAL_COSMO, 
     DATA_DIR, 
     OUTPUT_DIR, 
-    MASK_CONFIG,
+    MASK_CONFIG_STAGE4 as MASK_CONFIG,
     S8_GRIDS,
     REDSHIFT_BINS_PATH,
     DATA_FILES,
@@ -33,9 +34,20 @@ sys.path.insert(0, str(package_root))
 # Ensure output directory exists
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+log_dir = OUTPUT_DIR / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_dir / 's8_posteriors.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
-def setup_likelihood_1d_example(create_data=False):
+def setup_likelihood_1d_example(create_data=True):
     """Set up standard likelihood configuration."""
     ang_bin_in_deg = ANG_BINS
     mask = xlh.SphereMask(
@@ -61,7 +73,7 @@ def setup_likelihood_1d_example(create_data=False):
 
     return likelihood, data_paths
 
-def setup_likelihood_nd_example(create_data=False):
+def setup_likelihood_nd_example(create_data=True,angle_index=None):
     mask = xlh.SphereMask(
         spins=MASK_CONFIG["spins"], 
         circmaskattr=MASK_CONFIG["circmaskattr"], 
@@ -71,7 +83,9 @@ def setup_likelihood_nd_example(create_data=False):
 
 
     redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
-    ang_bins_in_deg = ang_bins_in_deg[:-1]
+    if angle_index is not None:
+        ang_bins_in_deg = [ang_bins_in_deg[angle_index]]
+    
     likelihood = xlh.XiLikelihood(
         mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,noise=None)
 
@@ -79,7 +93,7 @@ def setup_likelihood_nd_example(create_data=False):
     gaussian_covariance_path = DATA_DIR / DATA_FILES["nd_analysis"]["covariance"]
     data_paths = mock_data_path, gaussian_covariance_path
     if create_data:
-        create_mock_data(likelihood, mock_data_path, gaussian_covariance_path, random='frommap')
+        create_mock_data(likelihood, mock_data_path, gaussian_covariance_path, random=None)
     return likelihood, data_paths
 
 
@@ -215,7 +229,7 @@ def posterior_from_1d_croco(jobnumber,likelihood,data,ns8=200):
     post_gauss, mean_gauss = xlh.distributions.exp_norm_mean(s8,gauss_posts,reg=20)
 
     np.savez(
-        OUTPUT_DIR+'/s8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz'.format(jobnumber),
+        OUTPUT_DIR / 's8post_10000sqd_fiducial_nonoise_1dcomb_{:d}_croco.npz'.format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8,
@@ -249,15 +263,16 @@ def posterior_from_subset(jobnumber,likelihood,data,ns8=200):
         gauss_posts.append(gauss_post)
     
     np.savez(
-        OUTPUT_DIR+'/s8post_10000sqd_fiducial_nonoise_largescales_{:d}.npz'.format(jobnumber),
+        OUTPUT_DIR / 's8post_10000sqd_fiducial_nonoise_largescales_{:d}.npz'.format(jobnumber),
         exact=posts,
         gauss=gauss_posts,
         s8=this_s8_prior,)
 
 
-def posterior_from_nd(jobnumber,likelihood,data):
-    s8_prior = np.linspace(0.75,0.85, 200)
-    split_prior = np.array_split(s8_prior, 100)
+def posterior_from_nd(jobnumber,likelihood,data,njobs=100,s8grid='wide',outputfile=None):
+    prior_bound = S8_GRIDS[s8grid]
+    s8_prior = np.linspace(prior_bound[0], prior_bound[1], prior_bound[2])
+    split_prior = np.array_split(s8_prior, njobs)
     this_s8_prior = split_prior[jobnumber]
     cosmology = FIDUCIAL_COSMO.copy()
     likelihood.setup_likelihood()
@@ -265,17 +280,18 @@ def posterior_from_nd(jobnumber,likelihood,data):
     likelihood.gaussian_covariance = gaussian_covariance
     posts, gauss_posts = [], []
     for s8 in this_s8_prior:
-        print(s8)
         cosmology["s8"] = s8
         post, gauss_post = likelihood.loglikelihood(mock_data, cosmology, gausscompare=True)
         posts.append(post)
         gauss_posts.append(gauss_post)
     
     np.savez(
-        OUTPUT_DIR+'/s8post_10000sqd_fiducial_nonoise_nd_{:d}.npz'.format(jobnumber),
+        OUTPUT_DIR / (outputfile + '_{:d}.npz').format(jobnumber),
         exact=posts,
         gauss=gauss_posts,
         s8=this_s8_prior,
+        ang_bins=likelihood.ang_bins_in_deg,
+        rs_combs=likelihood._numerical_redshift_bin_combinations,
     )
 
 
@@ -311,7 +327,7 @@ def posterior_from_1d_firstpaper(jobnumber,likelihood,gaussian_covariance):
 
 
     np.savez(
-        OUTPUT_DIR+'/s8posts/s8post_firstpaper_10000sqd_nonoise_measurement{:d}.npz'.format(jobnumber),
+        OUTPUT_DIR / 's8posts/s8post_firstpaper_10000sqd_nonoise_measurement{:d}.npz'.format(jobnumber),
         exact=post,
         gauss=post_gauss,
         s8=s8
@@ -321,8 +337,12 @@ def posterior_from_1d_firstpaper(jobnumber,likelihood,gaussian_covariance):
 
 if __name__ == "__main__":
     jobnumber = int(sys.argv[1]) - 1
-    likelihood, data_paths = setup_likelihood_1d_example(create_data=False)
+    logger.info(f"Starting S8 posterior computation for job number {jobnumber}")
+    likelihood, data_paths = setup_likelihood_nd_example(create_data=True)
     mock_data_path, gaussian_covariance_path = data_paths
-    #data = xlh.load_arrays(mock_data_path,"data")["data"]
-    covariance = xlh.load_arrays(gaussian_covariance_path,"cov")["cov"]
-    posterior_from_1d_firstpaper(jobnumber, likelihood, covariance)
+    data = np.load(mock_data_path)["data"]
+    covariance = np.load(gaussian_covariance_path)["cov"]
+    logger.info(f"Loading data from {mock_data_path}")
+    logger.info(f"Loading covariance from {gaussian_covariance_path}")
+    posterior_from_nd(jobnumber, likelihood, (data,covariance), njobs=50, outputfile='s8post_10000sqd_fiducial_nonoise_nd_allang')
+    logger.info("Job completed successfully")
