@@ -2,13 +2,14 @@ import numpy as np
 import time, random
 import sys, os
 import logging
+import matplotlib.pyplot as plt
 from pathlib import Path
 from config import (
     EXACT_LMAX,
     FIDUCIAL_COSMO, 
     DATA_DIR,
-    MASK_CONFIG_STAGE3 as MASK_CONFIG,
-    PARAM_GRIDS_WIDE as PARAM_GRIDS,
+    MASK_CONFIG_STAGE4 as MASK_CONFIG,
+    PARAM_GRIDS_NARROW as PARAM_GRIDS,
     N_JOBS_2D,
     DATA_FILES
 )
@@ -54,6 +55,7 @@ try:
     logger.info("Created spherical mask")
     
     redshift_bins, ang_bins_in_deg = xlh.fiducial_dataspace()
+    
     #ang_bins_in_deg = ang_bins_in_deg[:-1]  # Remove last bin
     logger.info(f"Set up {len(redshift_bins)} redshift bins and {len(ang_bins_in_deg)} angular bins")
     
@@ -61,21 +63,22 @@ except Exception as e:
     logger.error(f"Failed to set up mask or dataspace: {e}")
     sys.exit(1)
 
-mock_data_path = DATA_DIR / DATA_FILES['1000sqd_kidsplus']['mock_data']
-gaussian_covariance_path = DATA_DIR / DATA_FILES['1000sqd_kidsplus']['covariance']
+mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus_nonoise']['mock_data']
+gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus_nonoise']['covariance']
 
-
+#noise = (0.26,2)
 
 
 # Set up likelihood
 try:
     likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False)
+        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False,noise=None)
     likelihood.setup_likelihood()
 
     create_mock_data(likelihood, mock_data_path, gaussian_covariance_path,random=None)
     mock_data = np.load(mock_data_path)["data"]
     gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
+    #cov_eigs = np.linalg.eigvalsh(gaussian_covariance)
     likelihood.gaussian_covariance = gaussian_covariance
     logger.info("Likelihood setup completed")
     
@@ -120,6 +123,7 @@ results = np.empty(len(subset_pairs), dtype=results_dtype)
 start_time = time.time()
 
 # Main computation loop with progress tracking and error handling
+# run with slurm/jobarray_s8om
 failed_computations = 0
 for i, (omega_m, s8) in enumerate(subset_pairs):
     try:
@@ -145,7 +149,7 @@ for i, (omega_m, s8) in enumerate(subset_pairs):
         # If too many failures, stop
         if failed_computations > len(subset_pairs) * 0.1:  # More than 10% failures
             logger.error(f"Too many failed computations ({failed_computations}). Stopping.")
-            sys.exit(1)
+            #sys.exit(1)
 
 # Save results
 try:
