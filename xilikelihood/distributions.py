@@ -311,35 +311,71 @@ def get_exact(m, cov, steps=4096):
 # Normalization/Marginalization
 # ============================================================================
 
-def exp_norm_mean(x,posterior,reg=350):
-    
+def exp_norm_mean(x,posterior,reg=None):
+    center_range = len(x) // 8
+    if reg is None:
+        center_index = len(x) // 2
+        reg = np.nanmax(posterior[center_index-center_range:center_index+center_range])
+        print(reg)
     posterior = np.array(posterior)
     posterior = posterior - reg
     posterior = np.exp(posterior)
-    diffs = np.diff(posterior)
-    nonan_diffs = diffs[~np.isnan(diffs)]
-    extended_diffs = np.append(diffs, 0)
+    proper_max = np.nanmax(posterior[center_index-center_range:center_index+center_range])
+    cond = (posterior < 1e-8 * proper_max) | (posterior > 2 * proper_max)
+    posterior[cond] = np.nan
+    valid_mask = ~np.isnan(posterior)
+    if not np.any(valid_mask):
+        raise ValueError("All values in posterior are NaN after thresholding.")
+
     
-    median_diffs = np.median(np.fabs(nonan_diffs))
-    threshold = 500 * median_diffs
-    
-    
-    cond = ~np.isnan(posterior) & (np.fabs(extended_diffs) < threshold)
+    # Find continuous region containing the peak
+    # Label connected components of valid values
+    valid_indices = np.where(valid_mask)[0]
+
+    # Find the continuous segment containing the peak
+    if len(valid_indices) > 1:
+        first_valid = valid_indices[0]
+        last_valid = valid_indices[-1]
+        print(first_valid,last_valid)
+        
+        # Check if there are any gaps to interpolate
+        if last_valid - first_valid + 1 > len(valid_indices):
+            from scipy.interpolate import interp1d
+            
+            x_valid = x[valid_mask]
+            posterior_valid = posterior[valid_mask]
+            
+            log_interpolator = interp1d(x_valid, np.log(posterior_valid), kind='cubic', 
+                            fill_value='extrapolate', bounds_error=False)
+
+
+
+            
+            # Interpolate over the entire range from first to last valid point
+            interior_range = slice(first_valid, last_valid + 1)
+            posterior[interior_range] = np.exp(log_interpolator(x[interior_range]))
+            
+            # Set everything outside to NaN
+            posterior[:first_valid] = np.nan
+            posterior[last_valid+1:] = np.nan
+            cond = ~np.isnan(posterior)
+            
+            
+    cond = ~np.isnan(posterior) #& (np.fabs(extended_diffs) < threshold)
     if np.sum(cond) == 0:
         raise ValueError("No values in posterior satisfy the condition for normalization.")
     integral = np.trapz(posterior[cond], x=x[cond])
     if not np.isfinite(integral) or integral <= 0:
         # Import matplotlib only when needed for debugging
-        try:
-            import matplotlib.pyplot as plt
-            debugfig, ax = plt.subplots()
-            ax.plot(x, posterior)
-            ax.set_yscale("log")
-            ax.set_title("Posterior not finite or integral <= 0")
-            debugfig.savefig("posterior_not_finite.png")
-            plt.close(debugfig)
-        except ImportError:
-            pass  # Skip plotting if matplotlib not available
+        
+        import matplotlib.pyplot as plt
+        debugfig, ax = plt.subplots()
+        ax.plot(x[cond], posterior[cond])
+        #ax.set_yscale("log")
+        ax.set_title("Posterior not finite or integral <= 0")
+        debugfig.savefig("posterior_not_finite.png")
+        plt.close(debugfig)
+        
         raise ValueError("Integral of posterior is not finite or less than or equal to zero.")
     # check convergence
     conditioned_posterior = posterior[cond]
@@ -352,7 +388,10 @@ def exp_norm_mean(x,posterior,reg=350):
     normalized_post = conditioned_posterior / integral
     mean = np.trapz(conditioned_x * normalized_post, x=conditioned_x)
     std = np.sqrt(np.trapz((conditioned_x-mean)**2 * normalized_post, x=conditioned_x))
-    return conditioned_x, normalized_post, mean, std
+    # append zeros to keep original length:
+    normalized_post_full = np.zeros_like(posterior)     
+    normalized_post_full[cond] = normalized_post
+    return x, normalized_post_full, mean, std
 
 
 # ============================================================================
