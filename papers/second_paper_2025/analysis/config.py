@@ -12,7 +12,7 @@ PACKAGE_DIR = '/cluster/home/veoehl/xilikelihood/'  # Go up from analysis to pac
 REDSHIFT_BINS_PATH = BASE_DIR.parent.parent.parent / "redshift_bins/KiDS"
 
 # Analysis parameters
-EXACT_LMAX = 30
+EXACT_LMAX = 20
 FIDUCIAL_COSMO = {"omega_m": 0.31, "s8": 0.8}
 
 # Mask configuration
@@ -24,7 +24,19 @@ MASK_CONFIG_STAGE4 = {
 MASK_CONFIG_STAGE3 = {
     "spins": [2], 
     "circmaskattr": (1000, 256), 
-    "l_smooth": 20
+    "l_smooth": 30
+}
+
+MASK_CONFIG_HIGHRES_STAGE4 = {
+    "spins": [2], 
+    "circmaskattr": (10000, 512), 
+    "l_smooth": 30
+}
+
+MASK_CONFIG_HIGHRES_STAGE3 = {
+    "spins": [2], 
+    "circmaskattr": (1000, 512), 
+    "l_smooth": 30
 }
 
 # Angular bins
@@ -34,13 +46,17 @@ FIDUCIAL_ANG_BINS = "from_fiducial_dataspace"  # Use xlh.fiducial_dataspace()
 # S8 grids for different analyses
 S8_GRIDS = {
     "narrow": (0.7, 0.9, 200),    # (min, max, n_points)
-    "medium": (0.6, 1.0, 200), 
-    "wide": (0.4, 1.2, 200)
+    "medium": (0.6, 1.0, 400), 
+    "wide": (0.4, 1.2, 800)
 }
 
 # Parameter grids for 2D analysis
 PARAM_GRIDS_NARROW = {
     "omega_m": (0.2, 0.45, 100),
+    "s8": (0.7, 0.9, 100)
+}
+PARAM_GRIDS_MEDIUM = {
+    "omega_m": (0.1, 0.5, 100),
     "s8": (0.7, 0.9, 100)
 }
 PARAM_GRIDS_WIDE = {
@@ -93,6 +109,27 @@ DATA_FILES = {
     "1000sqd_kidsplus": {
         "mock_data": "mock_data_1000sqd_kidsplus.npz",
         "covariance": "gaussian_covariance_1000sqd_kidsplus.npz"
+    },
+    "10000sqd_kidsplus_lownoise": {
+        "mock_data": "mock_data_10000sqd_kidsplus_lownoise.npz",
+        "covariance": "gaussian_covariance_10000sqd_kidsplus_lownoise.npz"
+    },
+    "10000sqd_kidsplus_inclsmall": {
+        "mock_data": "mock_data_10000sqd_kidsplus_inclsmall.npz",
+        "covariance": "gaussian_covariance_10000sqd_kidsplus_inclsmall.npz"
+    },
+    "1000sqd_kidsplus_inclsmall": {
+        "mock_data": "mock_data_1000sqd_kidsplus_inclsmall.npz",
+        "covariance": "gaussian_covariance_1000sqd_kidsplus_inclsmall.npz"
+    },
+    "1000sqd_kidsplus_highres": {
+        "mock_data": "mock_data_1000sqd_kidsplus_highres.npz",
+        "covariance": "gaussian_covariance_1000sqd_kidsplus_highres.npz"
+    },
+    "10000sqd_kidsplus_nonoise": {
+        "mock_data": "mock_data_10000sqd_kidsplus_nonoise.npz",
+        "covariance": "gaussian_covariance_10000sqd_kidsplus_nonoise.npz"
     }
+
     
 }
