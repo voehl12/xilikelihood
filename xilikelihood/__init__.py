@@ -36,11 +36,7 @@ __all__ = [
     # Key utilities
     'save_arrays',
     'load_arrays',
-    'generate_filename',
     'pcl2xi',
-    'prep_prefactors',
-    'bootstrap',
-    'compute_simulation_moments',
     
     # Advanced submodules
     'distributions',
