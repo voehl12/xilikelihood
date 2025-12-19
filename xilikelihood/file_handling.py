@@ -546,6 +546,8 @@ def read_posterior_files(pattern: str, regex: Optional[str] = None,
         - 'file_info' (metadata about file structure)
     """
     logger.info(f"Reading posterior files with pattern: {pattern}")
+    if regex is not None:
+        logger.info(f"Applying regex filter: {regex}")
     
     files = glob.glob(pattern)
     if not files:
@@ -559,6 +561,7 @@ def read_posterior_files(pattern: str, regex: Optional[str] = None,
     # Data containers
     gauss_posteriors, exact_posteriors = [], []
     s8_values, means_values, combs_values = [], [], []
+    angles, redshift_combs = [], []
     available = []
     
     # Track what fields are available
@@ -594,6 +597,11 @@ def read_posterior_files(pattern: str, regex: Optional[str] = None,
                         combs_values.append(posts['comb'])
                     elif 'combs' in posts:  # Handle both naming conventions
                         combs_values.append(posts['combs'])
+                    
+                    if 'ang_bins' in posts and not angles:
+                        angles.append(posts['ang_bins'])
+                    if 'rs_combs' in posts and not redshift_combs:
+                        redshift_combs.append(posts['rs_combs'])
                     
                     available.append(True)
                     logger.debug(f"Successfully loaded: {file_path}")
@@ -652,6 +660,11 @@ def read_posterior_files(pattern: str, regex: Optional[str] = None,
             result["combs"] = np.concatenate([c.flatten() for c in combs_values])
         else:
             result["combs"] = np.array(combs_values)
+
+    if angles:
+        result["angles"] = angles
+    if redshift_combs:
+        result["redshift_combs"] = redshift_combs
     
     return result
 
