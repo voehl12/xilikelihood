@@ -3,16 +3,17 @@ import os
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from matplotlib import rc
+from scipy.ndimage import median_filter
 from xilikelihood.plotting import plot_2D, find_contour_levels_pdf
 from config import (N_JOBS_2D,
-                PARAM_GRIDS_MEDIUM as PARAM_GRIDS)
+                PARAM_GRIDS_NARROW as PARAM_GRIDS)
 import cmasher as cmr
 rc('font',**{'family':'serif','serif':['Times']})
 rc('text', usetex=True)
 rc('text.latex', preamble=r'\usepackage{amsmath}')
 
 REGULARIZER = 500
-LARGE_THRESHOLD = 1080
+LARGE_THRESHOLD = 1180
 
 def clean_large_entries(posterior, name="posterior"):
     threshold = np.percentile(posterior[np.isfinite(posterior)], 99.75)
@@ -33,7 +34,8 @@ def clean_large_entries(posterior, name="posterior"):
             print(f"Replaced {n_large} large values in {name} with {min_val}")
         else:
             print(f"Too many large values in {name}, not replacing automatically.")
-    return posterior
+    posterior_filtered = median_filter(posterior, size=3)
+    return posterior_filtered   
 
 # Use configuration values
 omega_m_min, omega_m_max, omega_m_points = PARAM_GRIDS["omega_m"]
@@ -160,7 +162,7 @@ ax[1].set_xlabel("Omega_m")
 ax[1].set_ylabel("S8")
 
 plt.tight_layout()
-plt.savefig("2d_corner_plot_1000sqd_allscales_highres.png")
+plt.savefig("2d_corner_plot_10000sqd_nonoise.png")
 
 from matplotlib.ticker import MaxNLocator
 
@@ -215,16 +217,16 @@ def create_marginal_plot(fig, ax, omega_m_prior, s8_prior, posteriors_2d, thresh
     
     main_ax.set_xlabel(r"$\Omega_m$")
     main_ax.set_ylabel(r"$S_8$")
-    main_ax.set_xlim(omega_m_prior.min(), omega_m_prior.max())
+    main_ax.set_xlim(0.25, 0.35)
     #main_ax.set_ylim(s8_prior.min(), s8_prior.max())
-    main_ax.set_ylim(0.7, 0.9)
+    main_ax.set_ylim(0.75, 0.85)
     
     # Top marginal: Omega_m
     top_ax = ax[0, 0]
     top_ax.plot(omega_m_prior, posteriors_2d.sum(axis=0) * dy, color=linecolor)
     top_ax.axvline(mean_omega_m, color=linecolor, linestyle="solid")
     top_ax.axvline(fiducial_omega_m, color="black", linestyle="dashed", linewidth=1)
-    top_ax.set_xlim(omega_m_prior.min(), omega_m_prior.max())
+    top_ax.set_xlim(0.25, 0.35)
     top_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     top_ax.tick_params(axis="x", labelbottom=False)
     
@@ -234,7 +236,7 @@ def create_marginal_plot(fig, ax, omega_m_prior, s8_prior, posteriors_2d, thresh
     right_ax.axhline(mean_s8, color=linecolor, linestyle="solid")
     right_ax.axhline(fiducial_s8, color="black", linestyle="dashed", linewidth=1)
     #right_ax.set_ylim(s8_prior.min(), s8_prior.max())
-    right_ax.set_ylim(0.7, 0.9)
+    right_ax.set_ylim(0.75, 0.85)
     right_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     right_ax.tick_params(axis="y", labelleft=False)
     
@@ -254,7 +256,7 @@ fig_gauss, ax_gauss = create_marginal_plot(fig, ax,
 )
 ax_gauss[1, 0].legend([plt.Line2D([0], [0], color=linecolor_gauss)], 
                       [r"Gaussian Likelihood"], loc="upper right",frameon=False)
-fig_gauss.savefig("gaussian_only_2d_contours_with_marginals_1000sqd_allscales_highres.png", dpi=500)
+fig_gauss.savefig("gaussian_only_2d_contours_with_marginals_10000sqd_nonoise.png", dpi=500)
 
 
 fig, ax = create_marginal_plot(fig_gauss, ax_gauss,omega_m_prior, s8_prior, exact_posteriors_2d, exact_thresholds, colors_exact,
@@ -269,6 +271,6 @@ ax[1, 0].legend([plt.Line2D([0], [0], color=linecolor_gauss),
 ax[0, 1].axis("off")
 
 plt.tight_layout()
-fig.savefig("combined_2d_contours_with_marginals_1000sqd_allscales_highres.png",dpi=500)
-fig.savefig("combined_2d_contours_with_marginals_1000sqd_allscales_highres.pdf",dpi=300,bbox_inches='tight')
+fig.savefig("combined_2d_contours_with_marginals_10000sqd_nonoise.png",dpi=500)
+fig.savefig("combined_2d_contours_with_marginals_10000sqd_nonoise.pdf",dpi=300,bbox_inches='tight')
 plt.close('all') 
