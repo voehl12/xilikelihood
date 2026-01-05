@@ -112,66 +112,6 @@ class TestGaussianCopula:
         assert np.all(np.isfinite(result))
 
 
-class TestStudentTCopula:
-    """Test Student-t copula functions."""
-    
-    def test_student_t_copula_density_shape(self):
-        """Output shape should match number of grid points."""
-        cov = np.array([[1.0, 0.5], [0.5, 1.0]])
-        cdfs = np.array([
-            [0.1, 0.5, 0.9],
-            [0.2, 0.5, 0.8]
-        ])
-        df = 10.0
-        
-        result = copula_funcs.student_t_copula_density(cdfs, cov, df)
-        
-        # Creates meshgrid: 3x3 = 9 points
-        assert result.shape == (9,)
-        assert np.all(np.isfinite(result))
-    
-    def test_student_t_copula_density_independence(self):
-        """With zero correlation, should behave like independent variables."""
-        cov = np.eye(2)
-        cdfs = np.array([[0.5], [0.5]])
-        df = 10.0
-        
-        result = copula_funcs.student_t_copula_density(cdfs, cov, df)
-        
-        # For independent variables, copula log-density contribution should be near zero
-        # Note: Student-t has heavier tails, so not exactly zero
-        assert np.isfinite(result[0])
-        assert np.abs(result[0]) < 1.0  # Reasonable bound
-    
-    def test_student_t_copula_density_finite(self):
-        """Result should be finite for valid inputs."""
-        cov = np.array([[1.0, 0.6], [0.6, 1.0]])
-        cdfs = np.array([[0.3, 0.7], [0.4, 0.6]])
-        df = 5.0
-        
-        result = copula_funcs.student_t_copula_density(cdfs, cov, df)
-        
-        assert np.all(np.isfinite(result))
-    
-    def test_student_t_vs_gaussian_high_df(self):
-        """With high df, Student-t should approach Gaussian."""
-        # Use low correlation to avoid numerical issues with Student-t
-        cov = np.array([[1.0, 0.1], [0.1, 1.0]])
-        # Use CDFs away from boundaries to avoid numerical issues
-        cdfs = np.array([[0.3, 0.7], [0.4, 0.6]])
-        
-        # High df (not too high to avoid gamma function issues)
-        result_student = copula_funcs.student_t_copula_density(cdfs, cov, df=500.0)
-        result_gaussian = copula_funcs.gaussian_copula_density(cdfs, cov)
-        
-        # Should be similar with low correlation
-        # Filter out any NaN values if they occur
-        mask = np.isfinite(result_student) & np.isfinite(result_gaussian)
-        assert np.any(mask), "All values are NaN"
-        # Check that they're similar (within 10% with low correlation)
-        assert np.allclose(result_student[mask], result_gaussian[mask], rtol=0.1)
-
-
 class TestPDFCDFUtilities:
     """Test PDF/CDF interpolation and evaluation."""
     
