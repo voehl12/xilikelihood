@@ -2,7 +2,7 @@
 Copula-based statistical modeling for multivariate correlation functions.
 
 This module provides:
-- Gaussian and Student-t copula implementations
+- Gaussian copula implementation for modeling dependencies
 - PDF/CDF interpolation and evaluation utilities
 - Joint probability density computation
 - Covariance matrix utilities and conditioning
@@ -10,15 +10,17 @@ This module provides:
 
 Used for modeling dependencies between cosmological observables while
 preserving marginal distributions from theory predictions.
+
+Note: Student-t copula implementation is available on the 'student_t' branch
+for experimental use.
 """
 
 import numpy as np
-from scipy.stats import norm, multivariate_normal, t
+from scipy.stats import norm, multivariate_normal
 from scipy.interpolate import PchipInterpolator, UnivariateSpline, RegularGridInterpolator
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from .diagnostic_tools import plot_pdfs_and_cdfs
 from scipy.linalg import eigh
-from scipy.special import gamma
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,6 @@ DEFAULT_SMALL_NUMBER = 1e-300
 __all__ = [
     # Core copula functions
     'gaussian_copula_density',
-    'student_t_copula_density', 
     'gaussian_copula_point_density',
     'joint_logpdf',
     'joint_pdf_2d',
@@ -54,49 +55,7 @@ __all__ = [
     'cov_subset',
     'data_subset',
     'evaluate',
-    
-    # Statistical functions
-    'multivariate_student_t_logpdf',
 ]
-
-# ============================================================================
-# Probability Density Functions
-# ============================================================================
-
-
-def multivariate_student_t_logpdf(z, df, scale):
-    """
-    Compute the log-PDF of the multivariate Student-t distribution.
-
-    Parameters:
-    - z: ndarray
-        Points at which to evaluate the PDF (shape: (n_points, n_dims)).
-    - df: float
-        Degrees of freedom for the Student-t distribution.
-    - scale: ndarray
-        Scale matrix (correlation matrix scaled by df / (df - 2)) (shape: (n_dims, n_dims)).
-
-    Returns:
-    - log_pdf: ndarray
-        Log-PDF values (shape: (n_points,)).
-    """
-    d = z.shape[1]  # Dimensionality
-    inv_scale = np.linalg.inv(scale)
-    det_scale = np.linalg.det(scale)
-
-    # Mahalanobis distance
-    quad_form = np.sum(z @ inv_scale * z, axis=1)
-
-    # Log-PDF computation
-    log_norm_const = (
-        np.log(gamma((df + d) / 2))
-        - np.log(gamma(df / 2))
-        - 0.5 * d * np.log(df * np.pi)
-        - 0.5 * np.log(det_scale)
-    )
-    log_kernel = -0.5 * (df + d) * np.log(1 + quad_form / df)
-
-    return log_norm_const + log_kernel
 
 # ============================================================================
 # Validation and Quality Control
@@ -359,67 +318,6 @@ def gaussian_copula_density_2d(u, v, covariance_matrix):
     copula_density = bivariate_pdf / (np.prod(pdf_points, axis=1))
     return copula_density
 
-def student_t_copula_density(cdfs, covariance_matrix, df):
-    """
-    Compute the log-density of the Student-t copula.
-
-    Parameters:
-    - cdfs: ndarray
-        CDF values for each dimension (shape: (n_corr,n_ang,n_points_per_dim)).
-    - covariance_matrix: ndarray
-        Covariance matrix for the copula (shape: (n_dims, n_dims)).
-    - df: float
-        Degrees of freedom for the Student-t distribution.
-
-    Returns:
-    - copula_density: ndarray
-        Log-density of the Student-t copula (shape: (n_points,)).
-    """
-    # Convert CDFs to Student-t space with boundary protection
-    cdfs_flat = cdfs.reshape(-1, cdfs.shape[-1])
-    
-    # Check for problematic CDF values that cause infinite quantiles
-    n_zeros = np.sum(cdfs_flat == 0.0)
-    n_ones = np.sum(cdfs_flat == 1.0)
-    if n_zeros > 0 or n_ones > 0:
-        logger.warning(f"Student-t copula: Found {n_zeros} exact zeros and {n_ones} exact ones in CDFs. "
-                      f"This will cause infinite quantiles and copula failure. "
-                      f"Consider using Gaussian copula for realistic cosmological data.")
-    
-    # Clip CDFs to avoid infinite quantiles (essential for realistic marginals)
-    epsilon = 1e-12  # Small but not too small to avoid numerical issues
-    cdfs_clipped = np.clip(cdfs_flat, epsilon, 1 - epsilon)
-    
-    # Warn if clipping was necessary
-    n_clipped = np.sum((cdfs_flat != cdfs_clipped))
-    if n_clipped > 0:
-        logger.warning(f"Student-t copula: Clipped {n_clipped} CDF values to avoid infinite quantiles. "
-                      f"This may affect marginal recovery accuracy.")
-    
-    z = t.ppf(cdfs_clipped, df)  # same shape as cdfs: (n_dims, n_points_per_dim)
-    ppf_points = meshgrid_and_recast(z) # (n_points, n_dims)
-    
-    # Convert covariance matrix to correlation matrix
-    corr_matrix = covariance_to_correlation(covariance_matrix)
-
-    # Scale matrix for the multivariate Student-t distribution
-    # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
-    # This ensures the covariance matrix equals the correlation matrix
-    scale = corr_matrix * (df - 2) / df
-
-    # Compute the multivariate Student-t log PDF
-    mv_t_logpdf = multivariate_student_t_logpdf(ppf_points, df, scale)
-
-    # Compute the marginal Student-t log PDFs
-    marginal_logpdf = t.logpdf(z, df)  # Evaluate Student-t at the inverse CDF points
-    marginal_logpdf_grid = meshgrid_and_recast(marginal_logpdf)  # Stack the PDFs along new axis
-    marginal_logpdf_sum = np.sum(marginal_logpdf_grid, axis=1)
-
-    # Log Copula density
-    copula_density = mv_t_logpdf - marginal_logpdf_sum
-
-    return copula_density
-
 # ============================================================================
 # Matrix Utilities and Conditioning
 # ============================================================================
@@ -492,9 +390,9 @@ def test_correlation_matrix(matrix, iscov=False):
 # ============================================================================
 
 
-def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
+def joint_logpdf(cdfs, pdfs, cov):
     """
-    Compute the joint PDF for the given CDFs, PDFs, and covariance matrix.
+    Compute the joint PDF for the given CDFs, PDFs, and covariance matrix using Gaussian copula.
 
     Parameters
     ----------
@@ -504,61 +402,21 @@ def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
         PDF values for each dimension (shape: (n_correlations, n_angular_bins, n_points_per_dim)).
     cov : ndarray
         Covariance matrix for the Gaussian copula (shape: (n_dims, n_dims)).
-    - copula_type: str
-        Type of copula to use ("gaussian" or "student-t").
-    - df: float, optional
-        Degrees of freedom for the Student-t copula (required if copula_type="student-t").
 
     Returns
     -------
     ndarray
         Joint PDF values reshaped to be ready to plot, shape = (n_points_per_dim,) * n_dim.
     """
-    if copula_type not in ["gaussian", "student-t"]:
-        raise ValueError(f"Unsupported copula type: {copula_type}. Use 'gaussian' or 'student-t'.")
-    
-    if copula_type == "student-t" and df is None:
-        raise ValueError("Degrees of freedom (df) must be provided for Student-t copula.")
-    
-    if copula_type == "student-t":
-        # Enhanced warnings for numerical stability
-        if df <= 2:
-            logger.warning(f"Very low degrees of freedom (df={df} ≤ 2) will cause numerical instability. "
-                          f"Student-t copulas require df > 2. Consider df ≥ 5 for stable results.")
-        elif df < 5:
-            logger.warning(f"Low degrees of freedom (df={df} < 5) may cause numerical issues with high correlations. "
-                          f"Consider df ≥ 5 for more stable results.")
-        
-        # Check for problematic correlation combinations
-        if hasattr(cov, 'shape') and len(cov.shape) == 2:
-            # Convert to correlation matrix to check correlations
-            corr_matrix = covariance_to_correlation(cov)
-            max_corr = np.max(np.abs(corr_matrix[~np.eye(corr_matrix.shape[0], dtype=bool)]))
-            
-            if df < 5 and max_corr > 0.8:
-                logger.warning(f"High correlation (max |ρ|={max_corr:.3f}) with low df={df} "
-                              f"may cause marginal recovery errors >5%. Consider df ≥ 5 or |ρ| ≤ 0.7.")
-            elif df < 10 and max_corr > 0.9:
-                logger.warning(f"Very high correlation (max |ρ|={max_corr:.3f}) with df={df} "
-                              f"may cause numerical issues. Consider df ≥ 10 for |ρ| > 0.9.")
-    
-
     # Flatten the PDFs along the first two axes
-    
     n_points_per_dim = cdfs.shape[-1]
     pdfs_flat = pdfs.reshape(-1, pdfs.shape[-1])  # Shape: (n_dims, n_points_per_dim)
     n_dim = pdfs_flat.shape[0]
 
-    if copula_type == "gaussian":
-        copula_density = gaussian_copula_density(cdfs, cov)  # Shape: (n_total_points,)
-    elif copula_type == "student-t":
-        copula_density = student_t_copula_density(cdfs, cov, df)
-    else:
-        raise ValueError(f"Unsupported copula type: {copula_type}")
+    copula_density = gaussian_copula_density(cdfs, cov)  # Shape: (n_total_points,)
     
     pdf_points = meshgrid_and_recast(pdfs_flat)
     log_pdf_points = np.log(pdf_points)  # Shape: (n_total_points, n_dims)
-  
 
     # Compute joint PDF (in log space, then exponentiate)
     joint_logpdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
