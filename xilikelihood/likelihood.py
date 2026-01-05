@@ -6,29 +6,8 @@ cosmological parameters from shear correlation function measurements using
 characteristic function methods.
 
 Key features:
-- Exact low-ℓ likelihood via characteristic functions    def _compute_variances(self, auto_prods, cross_prods, cross_combs):
-        logger.info("Computing variances...")
-        auto_transposes = np.transpose(auto_prods, (0, 1, 3, 2))
-        
-        # Handle doubled data vector when xi_minus is included
-        n_correlation_types = 2 if self.include_ximinus else 1
-        variances = np.zeros((self._n_redshift_bin_combs, n_correlation_types * len(self.ang_bins_in_deg)))
-
-        # Auto terms
-        variances = variances.at[~self._is_cov_cross].set(
-            2 * np.sum(auto_prods * auto_transposes, axis=(-2, -1))
-        )
-
-        # Cross terms
-        cross_transposes = np.transpose(cross_prods, (0, 1, 3, 2))
-        auto_normal, auto_transposed = cross_combs[:, 0], cross_combs[:, 1]
-        variances[self._is_cov_cross] = np.sum(
-            cross_prods * cross_transposes, axis=(-2, -1)
-        ) + np.sum(
-            auto_prods[auto_normal] * auto_transposes[auto_transposed], axis=(-2, -1)
-        )
-
-        return variancespproximation for computational efficiency  
+- Exact low-ℓ likelihood via characteristic functions    
+- High-ℓ approximation for computational efficiency  
 - Copula-based joint PDF construction
 - Support for tomographic redshift bins
 - JAX-optimized computations for performance
