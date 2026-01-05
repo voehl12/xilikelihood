@@ -147,7 +147,7 @@ class XiLikelihood:
         exact_lmax: Optional[int] = None,
         lmax: Optional[int] = None,
         noise: str = 'default',
-        include_ximinus: bool = False,
+        include_ximinus: bool = False,  # Deprecated: incomplete covariance implementation
         **kwargs
     ):
         # Input validation
@@ -183,6 +183,8 @@ class XiLikelihood:
         self.mask = mask
         self.lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self.noise = noise
+        if include_ximinus:
+            logger.warning("include_ximinus=True is deprecated due to incomplete covariance implementation. Use at your own risk.")
         self.include_ximinus = include_ximinus
         # Set n_correlation_types as an attribute
         self.n_correlation_types = 2 if self.include_ximinus else 1

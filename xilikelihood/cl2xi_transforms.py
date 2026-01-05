@@ -432,7 +432,7 @@ def get_int_lims(bin_in_deg):
     binmin_in_deg, binmax_in_deg = bin_in_deg
     return np.radians(binmin_in_deg), np.radians(binmax_in_deg)
 
-def precompute_wigners_cache(lmin, lmax, angbins_in_deg, include_ximinus=True):
+def precompute_wigners_cache(lmin, lmax, angbins_in_deg, include_ximinus=False):
     """
     Pre-compute all needed Wigner integrals once.
     

@@ -416,7 +416,7 @@ def gaussian_2d(xs,mean,cov):
     gaussian_pdf_reshaped = gaussian_pdf.reshape(shape)
     return gaussian_pdf_reshaped
 
-def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None, include_ximinus=True):
+def cov_xi_gaussian_nD(cl_objects, redshift_bin_combs, angbins_in_deg, eff_area, lmin=0, lmax=None, include_ximinus=False):
     # cov_xi_gaussian(lmin=0, noise_apo=False)
     # Calculates Gaussian  covariance (shot noise and sample variance) of a xi_plus correlation function
     # cl_objects order like in GLASS. assume mask and lmax is the same as for cl_object[0] for all
