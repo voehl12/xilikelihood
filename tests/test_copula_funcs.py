@@ -2,7 +2,7 @@
 Tests for copula_funcs module.
 
 Tests cover:
-- Gaussian and Student-t copula density functions
+- Gaussian density functions
 - PDF/CDF utilities and interpolation
 - Covariance/correlation matrix conversions
 - Joint PDF computation
@@ -184,7 +184,7 @@ class TestJointPDF:
         # Covariance (2x2 for 2 dimensions)
         cov = np.array([[1.0, 0.3], [0.3, 1.0]])
         
-        result = copula_funcs.joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian")
+        result = copula_funcs.joint_logpdf(cdfs, pdfs, cov)
         
         # Should be 50x50 grid
         assert result.shape == (50, 50)
@@ -200,7 +200,7 @@ class TestJointPDF:
         cdfs = np.array([[cdf, cdf]])
         cov = np.eye(2)  # Independent
         
-        result = copula_funcs.joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian")
+        result = copula_funcs.joint_logpdf(cdfs, pdfs, cov)
         
         # For independent Gaussians, joint log PDF at (x_i, x_j) should be 
         # log(pdf(x_i)) + log(pdf(x_j))
@@ -209,21 +209,6 @@ class TestJointPDF:
         
         assert np.allclose(result, expected, rtol=1e-5)
     
-    def test_joint_logpdf_student_t(self):
-        """Test Student-t copula version."""
-        x = np.linspace(-3, 3, 20)
-        pdf = norm.pdf(x, 0, 1)
-        cdf = norm.cdf(x, 0, 1)
-        
-        pdfs = np.array([[pdf, pdf]])
-        cdfs = np.array([[cdf, cdf]])
-        cov = np.array([[1.0, 0.5], [0.5, 1.0]])
-        
-        result = copula_funcs.joint_logpdf(cdfs, pdfs, cov, 
-                                           copula_type="student-t", df=10.0)
-        
-        assert result.shape == (20, 20)
-        assert np.all(np.isfinite(result))
 
 
 class TestMatrixUtilities:
@@ -276,14 +261,7 @@ class TestEdgeCases:
         # Should handle near-singular matrix
         assert np.isfinite(result)
     
-    def test_student_t_low_df(self):
-        """Test Student-t with low degrees of freedom."""
-        cov = np.array([[1.0, 0.3], [0.3, 1.0]])
-        cdfs = np.array([[0.3, 0.7], [0.4, 0.6]])
-        
-        result = copula_funcs.student_t_copula_density(cdfs, cov, df=3.0)
-        
-        assert np.all(np.isfinite(result))
+
     
     def test_cdf_boundary_values(self):
         """Test copula with CDF values near 0 or 1."""
