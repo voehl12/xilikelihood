@@ -479,7 +479,7 @@ def create_cosmo(params):
 
 
 
-def compute_angular_power_spectra(cosmo, ell, z_bins, ia_bias=(0.0, 0.0), z_bias=(0.0, 0.0)):
+def compute_angular_power_spectra(cosmo, ell, z_bins, ia_bias=None, z_bias=(0.0, 0.0)):
     """
     Compute angular power spectra for given cosmology and redshift bins.
     Returns 3x2pt power spectra: (cl_ee, cl_ne, cl_nn).
@@ -507,9 +507,12 @@ def compute_angular_power_spectra(cosmo, ell, z_bins, ia_bias=(0.0, 0.0), z_bias
     nz1 = bin1.nz if z_bias[0] == 0.0 else add_n_of_z_bias(bin1.z, bin1.nz, z_bias[0])
     z2 = bin2.z
     nz2 = bin2.nz if z_bias[1] == 0.0 else add_n_of_z_bias(bin2.z, bin2.nz, z_bias[1])
-    
-    lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1),ia_bias=(z1, np.ones_like(z1) * ia_bias[0]))
-    lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2),ia_bias=(z2, np.ones_like(z2) * ia_bias[1]))
+    if ia_bias is not None:
+        lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1),ia_bias=(z1, np.ones_like(z1) * ia_bias))
+        lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2),ia_bias=(z2, np.ones_like(z2) * ia_bias))
+    else:
+        lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1))
+        lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2))
     
     cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
     cl_ne = cl_nn = np.zeros_like(cl_ee)
@@ -533,16 +536,11 @@ def get_cl(params_dict, z_bins):
         (cl_ee, cl_ne, cl_nn) power spectra
     """
     cosmo = create_cosmo(params_dict)
-    ell = np.arange(2, 2000)
-    ia_all = params_dict.get('A_IA', None)
+    ell = np.arange(2, 4000)
+    ia_bias = params_dict.get('A_IA', None)
     delta_z_all = params_dict.get('delta_z',None)
 
     bin1, bin2 = z_bins
-
-    if ia_all is not None:
-        ia_bias = (ia_all[bin1.nbin - 1], ia_all[bin2.nbin - 1])
-    else:
-        ia_bias = (0.0, 0.0)
 
     if delta_z_all is not None:
         z_bias = (delta_z_all[bin1.nbin - 1], delta_z_all[bin2.nbin - 1])
