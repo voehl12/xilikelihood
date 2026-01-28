@@ -46,6 +46,7 @@ __all__ = [
     
     # Matrix utilities
     'covariance_to_correlation',
+    'correlation_to_covariance',
     'get_well_conditioned_matrix',
     'test_correlation_matrix',
     
@@ -448,6 +449,42 @@ def covariance_to_correlation(cov_matrix):
     np.fill_diagonal(corr_matrix, 1)
     corr_matrix = test_correlation_matrix(corr_matrix)
     return corr_matrix
+
+
+def correlation_to_covariance(corr_matrix, variances=None, std_devs=None):
+    """
+    Converts a correlation matrix to a covariance matrix.
+    
+    The correlation matrix should have correlations as off-diagonal elements
+    and either 1s (pure correlation) or variances (mixed format) on the diagonal.
+    
+    Parameters:
+    - corr_matrix: A 2D numpy array representing the correlation matrix
+    - variances: Optional 1D array of variances. If None, extracted from diagonal of corr_matrix
+    - std_devs: Optional 1D array of standard deviations. If provided, takes precedence over variances
+    
+    Returns:
+    - cov_matrix: A 2D numpy array representing the covariance matrix
+    """
+    if std_devs is not None:
+        # Use provided standard deviations
+        std_devs = np.asarray(std_devs)
+    elif variances is not None:
+        # Compute from provided variances
+        std_devs = np.sqrt(np.asarray(variances))
+    else:
+        # Extract variances from diagonal of correlation matrix
+        variances = np.diag(corr_matrix)
+        std_devs = np.sqrt(variances)
+    
+    # Set diagonal to 1 to get true correlation matrix
+    corr_matrix_normalized = corr_matrix.copy()
+    np.fill_diagonal(corr_matrix_normalized, 1)
+    
+    # Compute covariance matrix: cov[i,j] = corr[i,j] * sigma_i * sigma_j
+    cov_matrix = np.outer(std_devs, std_devs) * corr_matrix_normalized
+    
+    return cov_matrix
 
 
 def meshgrid_and_recast(funcs):
