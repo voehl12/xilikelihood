@@ -13,6 +13,7 @@ _regtest_outputs/
 
 # Documentation build output (exclude built docs, but keep source)
 docs/_build/
+*.md
 
 # Generated plots and outputs
 *.html
@@ -31,6 +32,7 @@ docs/_build/
 *.npz
 *.npy
 *.fits
+*.csv
 
 # Log files
 *.err
