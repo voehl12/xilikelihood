@@ -1,173 +1,468 @@
+# at current setup needs a lot of memory:  srun --pty  --mem-per-cpu=4096 --cpus-per-task=32 --time=4:00:00 bash
+
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import xilikelihood as xili
 import numpy as np
 import sys
 import logging
-from nautilus import Prior, Sampler
+from pathlib import Path
+from scipy.stats import multivariate_normal
+from schwimmbad import MPIPool
 import matplotlib.pyplot as plt
 try:
     import corner
+    HAS_CORNER = True
 except ImportError:
-    corner = None
-    print("Warning: 'corner' package not found. Plots will not be generated.")
+    HAS_CORNER = False
+    print("Warning: 'corner' package not found. Corner plots will not be generated.")
+
 from config import (
     EXACT_LMAX,
-    MASK_CONFIG,
+    MASK_CONFIG_MEDRES_STAGE4 as MASK_CONFIG,
     DATA_FILES,
     DATA_DIR,
     BASE_DIR,
     PACKAGE_DIR,
-    FIDUCIAL_COSMO
+    FIDUCIAL_COSMO,
+    PRIOR_CONFIG
 )
 import tempfile
 
-jobnumber = int(sys.argv[1]) - 1
-# Robust logging setup
+# Output directory
+OUTPUT_DIR = Path("sampler_output_medres")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Sampler configuration
+USE_NESTED = False  # Set to True for Nautilus nested sampling, False for emcee MCMC
+EMCEE_CONFIG = {
+    "n_walkers": 24,  # Matches ntasks 
+    "n_burn": 100,
+    "n_steps": 1000,
+    "thin": 1,
+    "checkpoint_interval": 100  # Save every N steps (set to None to disable)
+}
+NAUTILUS_CONFIG = {
+    "n_live": 16
+}
+
+# Module-level logger (safe for workers)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-file_handler = logging.FileHandler(f'sampler_{jobnumber}.log')
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
-logger.propagate = False  # Prevent double logging
 
-# Enable ALL xilikelihood logging (catch any submodule loggers)
-xili_logger = logging.getLogger('xilikelihood')
-xili_logger.setLevel(logging.DEBUG)
+# Module-level variables (initialized in main, available to workers after spawn)
+mask = None
+xilikelihood = None
+mock_data = None
+gaussian_covariance = None
+params = None
+uniform_priors = None
+mvn_config = None
+mvn_param = None
+mvn_mean = None
+mvn_cov = None
 
-logger.info("Starting sampler setup...")
-logger.info(f"Base directory: {BASE_DIR}")
-logger.info(f"Creating mask with exact_lmax={EXACT_LMAX}")
-logger.info(f"Package directory: {PACKAGE_DIR}")
-mask = xili.SphereMask(
-    spins=MASK_CONFIG['spins'],
-    circmaskattr=MASK_CONFIG['circmaskattr'],
-    exact_lmax=EXACT_LMAX,
-    l_smooth=MASK_CONFIG['l_smooth'],
-    working_dir=PACKAGE_DIR
-)
-
-logger.info("Loading fiducial dataspace...")
-redshift_bins, ang_bins_in_deg = xili.fiducial_dataspace(min_ang_cutoff_in_arcmin=0)
-#redshift_bins = redshift_bins[-2:]
-logger.info(f"Redshift bins: {len(redshift_bins)}, Angular bins: {len(ang_bins_in_deg)}")
-include_ximinus = False
-logger.info(f"Include xi-: {include_ximinus}")
-
-logger.info("Initializing XiLikelihood...")
-xilikelihood = xili.XiLikelihood(
-    mask=mask,
-    redshift_bins=redshift_bins,
-    ang_bins_in_deg=ang_bins_in_deg,
-    include_ximinus=include_ximinus,
-    exact_lmax=EXACT_LMAX,
-    large_angle_threshold=1.0,
-)
-
-logger.info("Creating mock data and covariance on the fly...")
-with tempfile.TemporaryDirectory() as tmpdir:
-    mock_data_path = f"{tmpdir}/mock_data.npz"
-    cov_path = f"{tmpdir}/mock_cov.npz"
-    mock_data, gaussian_covariance = xili.mock_data.create_mock_data(
-        xilikelihood,
-        mock_data_path=mock_data_path,
-        gaussian_covariance_path=cov_path,
-        fiducial_cosmo=FIDUCIAL_COSMO,
-        random=None
-    )
-logger.info(f"Mock data shape: {mock_data.shape}")
-logger.info(f"Covariance shape: {gaussian_covariance.shape}")
-
-logger.info("Setting up likelihood...")
-xilikelihood.setup_likelihood()
-xilikelihood.gaussian_covariance = gaussian_covariance
-logger.info("Gaussian covariance set successfully")
-
-logger.info("Setting up priors...")
-omega_m_prior = np.linspace(0.1, 0.5, 100)
-s8_prior = np.linspace(0.5, 1.1, 100)
-params = ["omega_m", "s8"]
-priors = [(omega_m_prior[0], omega_m_prior[-1]), (s8_prior[0], s8_prior[-1])]
-logger.info(f"Parameters: {params}")
-logger.info(f"Prior ranges: {priors}")
-
-prior = Prior()
-for param, prior_range in zip(params, priors):
-    prior.add_parameter(param, dist=(prior_range[0], prior_range[1]))
-    logger.info(f"Added prior for {param}: [{prior_range[0]:.3f}, {prior_range[1]:.3f}]")
+def setup_logging(jobnumber, rank, pid):
+    """Set up logging for a specific rank and pid."""
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    
+    logfile = OUTPUT_DIR / f'sampler_{jobnumber}_r{rank}_p{pid}.log'
+    file_handler = logging.FileHandler(logfile, mode='a', encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+    logger.propagate = False
+    
+    # Also route xilikelihood logs
+    xili_logger = logging.getLogger('xilikelihood')
+    xili_logger.setLevel(logging.DEBUG)
+    xili_logger.addHandler(file_handler)
+    
+    return logger, file_handler
 
 def likelihood(cosmology):
-    logger.debug(f"Evaluating likelihood for cosmology: {cosmology}")
+    """Evaluate the likelihood (for Nautilus, prior is handled separately)."""
+    # Ensure logging is set up for this process (workers may not have it)
+    if not logger.handlers:
+        jobnumber = int(sys.argv[1]) - 1
+        rank = 0
+        
+        try:
+            rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("PMI_RANK", "0")))
+        except Exception:
+            rank = 0
+        pid = os.getpid()
+        setup_logging(jobnumber, rank, pid)
+    
+    logger.info(f"Evaluating likelihood for cosmology: {cosmology}")
     try:
         logL = xilikelihood.loglikelihood(mock_data, cosmology)
-        logger.debug(f"Likelihood evaluated: logL = {logL}")
+        logger.info(f"Likelihood result: {logL}")
         return logL
     except Exception as e:
-        logger.error(f"Likelihood evaluation failed for {cosmology}: {e}")
-        exit()
+        logger.error(f"Likelihood evaluation failed: {e}")
+        return -np.inf
 
-# --- Sampler selection ---
-USE_NESTED = False  # Set to False to use emcee MCMC instead
+def log_prior_mvn(theta_dict):
+    """Compute log prior for multivariate Gaussian component (used by emcee)."""
+    if mvn_param is None:
+        return 0.0
+    
+    param_value = theta_dict.get(mvn_param)
+    if param_value is None:
+        return 0.0
+    
+    param_array = np.atleast_1d(param_value)
+    log_prior = multivariate_normal.logpdf(param_array, mean=mvn_mean, cov=mvn_cov)
+    return log_prior
+
+def save_corner_plot(samples, labels, filename, weights=None):
+    """Save a corner plot and trace plots if corner package is available.
+    
+    Parameters
+    ----------
+    samples : array
+        Either 2D (n_samples, ndim) or 3D (n_steps, n_walkers, ndim)
+    labels : list
+        Parameter names
+    filename : str
+        Output filename for corner plot
+    weights : array, optional
+        Sample weights (for nested sampling)
+    """
+    if not HAS_CORNER:
+        logger.warning("Corner package not available, skipping plot")
+        return
+    
+    # Handle 3D samples (n_steps, n_walkers, ndim) from emcee
+    if samples.ndim == 3:
+        n_steps, n_walkers, ndim = samples.shape
+        
+        # Save trace plots showing walker chains
+        trace_filename = filename.replace('.png', '_traces.png')
+        fig_traces, axes = plt.subplots(ndim, figsize=(10, 2.5 * ndim), sharex=True)
+        if ndim == 1:
+            axes = [axes]
+        
+        for i in range(ndim):
+            ax = axes[i]
+            for j in range(n_walkers):
+                ax.plot(samples[:, j, i], alpha=0.3, lw=0.5)
+            ax.set_ylabel(labels[i] if i < len(labels) else f"param {i}")
+            ax.set_xlim(0, n_steps)
+        
+        axes[-1].set_xlabel("Step")
+        fig_traces.tight_layout()
+        trace_filepath = OUTPUT_DIR / trace_filename
+        plt.savefig(trace_filepath, dpi=150, bbox_inches='tight')
+        plt.close(fig_traces)
+        logger.info(f"Trace plot saved: {trace_filepath}")
+        
+        # Flatten for corner plot
+        flat_samples = samples.reshape(-1, ndim)
+        logger.info(f"Flattened samples from {samples.shape} to {flat_samples.shape} for corner plot")
+    else:
+        flat_samples = samples
+    
+    # Corner plot
+    fig = corner.corner(
+        flat_samples, 
+        weights=weights,
+        bins=20, 
+        labels=labels,
+        plot_datapoints=False, 
+        range=np.repeat(0.999, len(labels))
+    )
+    filepath = OUTPUT_DIR / filename
+    plt.savefig(filepath, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    logger.info(f"Corner plot saved: {filepath}")
+
+# Module-level log_prob function (must be picklable for multiprocessing)
+def _log_prob_fn(theta, params, mvn_param, mvn_mean, uniform_priors, likelihood_fn, log_prior_mvn_fn):
+    """Log posterior = log prior + log likelihood."""
+    # Build parameter dictionary, handling multi-dimensional parameters
+    param_dict = {}
+    theta_idx = 0
+    for param in params:
+        if param == mvn_param:
+            # Multi-dimensional parameter (e.g., delta_z with 5 values)
+            n_dims = len(mvn_mean)
+            param_dict[param] = theta[theta_idx:theta_idx + n_dims]
+            theta_idx += n_dims
+        else:
+            # Scalar parameter
+            param_dict[param] = theta[theta_idx]
+            theta_idx += 1
+    
+    # Check uniform prior bounds (log prior = 0 if in bounds, -inf if out)
+    for param, value in param_dict.items():
+        if param in uniform_priors:
+            low, high = uniform_priors[param]
+            if not (low <= value <= high):
+                return -np.inf
+    
+    # Add Gaussian prior contribution (if any)
+    log_prior = log_prior_mvn_fn(param_dict)
+    if not np.isfinite(log_prior):
+        return -np.inf
+    
+    # Evaluate likelihood
+    logl = likelihood_fn(param_dict)
+    if np.isnan(logl) or not np.isfinite(logl):
+        return -np.inf
+    
+    # Return log posterior
+    return log_prior + logl
+
+# --- Sampler functions ---
 
 def run_nested_sampler(prior, likelihood, jobnumber):
-    results_path = f'sampler_results_{jobnumber}_l20_kidsplus.h5'
+    """Run Nautilus nested sampler."""
+    results_path = OUTPUT_DIR / f'nautilus_results_{jobnumber}_{RUN_NAME}.h5'
     logger.info("Setting up Nautilus sampler...")
-    sampler = Sampler(prior, likelihood, n_live=16, filepath=results_path)
+    
+    sampler = Sampler(
+        prior, 
+        likelihood, 
+        n_live=NAUTILUS_CONFIG["n_live"],
+        filepath=str(results_path)
+    )
+    
     logger.info("Starting nested sampling...")
     sampler.run(verbose=True)
     logger.info("Nested sampling completed!")
+    
+    # Get posterior samples
     points, log_w, log_l = sampler.posterior()
-    corner.corner(
-        points, weights=np.exp(log_w), bins=20, labels=prior.keys, color='purple',
-        plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
-    plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus_nested.png')
-    logger.info(f"Corner plot saved: corner_plot_{jobnumber}_l20_kidsplus_nested.png")
+    
+    # Save corner plot
+    save_corner_plot(
+        points, 
+        labels=list(prior.keys),
+        filename=f'corner_{jobnumber}_{RUN_NAME}_nested.png',
+        weights=np.exp(log_w)
+    )
+    
     return points, log_w, log_l
 
 
-def run_emcee_sampler(prior, likelihood, jobnumber, n_walkers=4, n_steps=2000):
+def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
+    """Run emcee MCMC sampler."""
     import emcee
+    
+    # Calculate total dimensionality first (accounting for multi-dimensional parameters)
+    ndim = sum(len(mvn_mean) if param == mvn_param else 1 for param in params)
+    
+    # Use config defaults if not specified
+    n_walkers = n_walkers or EMCEE_CONFIG["n_walkers"]
+    n_burn = EMCEE_CONFIG["n_burn"]
+    n_steps = n_steps or EMCEE_CONFIG["n_steps"]
+        
     logger.info("Setting up emcee MCMC sampler...")
-    # Use the priors list of tuples for bounds
-    bounds = priors  # List of (low, high) tuples
-    logger.info(f"Prior bounds: {bounds}")
-    ndim = len(bounds)
-    # Initial positions: random in prior
-    p0 = [np.array([np.random.uniform(low, high) for (low, high) in bounds]) for _ in range(n_walkers)]
-    logger.info(f"Initial positions (p0): {p0}")
-    def log_prob(theta):
-        # Flat prior using bounds
-        for i, (low, high) in enumerate(bounds):
-            if not (low <= theta[i] <= high):
-                return -np.inf
-        param_dict = dict(zip(prior.keys, theta))
-        logl = likelihood(param_dict)
-        if np.isnan(logl):
-            return -np.inf
-        return logl
-    sampler = emcee.EnsembleSampler(n_walkers, ndim, log_prob)
-    logger.info("Running emcee...")
-    state = sampler.run_mcmc(p0, 100)
-    sample_sample = sampler.get_chain(flat=True)
-    corner.corner(
-        sample_sample, bins=20, labels=prior.keys, color='green',
-        plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
-    plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus_all_rs_emcee_test.png')
-    logger.info(f"Corner plot saved: corner_plot_{jobnumber}_l20_kidsplus_all_rs_emcee_test.png")
-    # Reset sampler and run for more steps
-    sampler.reset()
-    sampler.run_mcmc(state, 1000, progress=True)
-    logger.info("emcee sampling completed!")
-    # Flatten chain, discard burn-in
-    flat_samples = sampler.get_chain(discard=n_steps//2, thin=10, flat=True)
-    corner.corner(
-        flat_samples, bins=20, labels=prior.keys, color='green',
-        plot_datapoints=False, range=np.repeat(0.999, len(prior.keys)))
-    plt.savefig(f'corner_plot_{jobnumber}_l20_kidsplus_all_rs_emcee.png')
-    logger.info(f"Corner plot saved: corner_plot_{jobnumber}_l20_kidsplus_all_rs_emcee.png")
-    return flat_samples
+    logger.info(f"Parameters: {len(params)} ({ndim} dimensions), Walkers: {n_walkers}, Burn-in: {n_burn}, Steps: {n_steps}")
+    
+    # Create partial function with all the required variables
+    from functools import partial
+    log_prob = partial(_log_prob_fn, 
+                       params=params, 
+                       mvn_param=mvn_param, 
+                       mvn_mean=mvn_mean,
+                       uniform_priors=uniform_priors, 
+                       likelihood_fn=likelihood, 
+                       log_prior_mvn_fn=log_prior_mvn)
+    
+    # Set up MPI pool
+    with MPIPool() as pool:
+        if not pool.is_master():
+            pool.wait()
+            sys.exit(0)
+        
+        logger.info("MPI pool initialized")
+        file_handler.flush()
+        
+        # Initial positions: sample from priors
+        p0 = []
+        for _ in range(n_walkers):
+            pos = []
+            for param in params:
+                if param in uniform_priors:
+                    low, high = uniform_priors[param]
+                    pos.append(np.random.uniform(low, high))
+                elif mvn_param is not None and param == mvn_param:
+                    # Sample from Gaussian prior (handles multi-dimensional parameters)
+                    pos.extend(np.random.multivariate_normal(mvn_mean, mvn_cov))
+                else:
+                    logger.error(f"No prior defined for parameter {param}")
+                    raise ValueError(f"No prior defined for parameter {param}")
+            p0.append(np.array(pos))
+        
+        logger.info(f"Initialized {n_walkers} walkers")
+        file_handler.flush()
+        
+        # Set up sampler with MPI pool
+        sampler = emcee.EnsembleSampler(n_walkers, ndim, log_prob, pool=pool)
+        
+        # Burn-in
+        logger.info(f"Running burn-in ({n_burn} steps)...")
+        file_handler.flush()
+        state = sampler.run_mcmc(p0, n_burn)
+        
+        # Production run with periodic checkpointing
+        sampler.reset()
+        checkpoint_interval = EMCEE_CONFIG.get("checkpoint_interval", 100)
+        checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
+        
+        logger.info(f"Running production ({n_steps} steps, checkpointing every {checkpoint_interval} steps)...")
+        file_handler.flush()
+        
+        steps_completed = 0
+        while steps_completed < n_steps:
+            # Run for checkpoint_interval steps (or remaining steps)
+            steps_this_batch = min(checkpoint_interval, n_steps - steps_completed)
+            state = sampler.run_mcmc(state, steps_this_batch, progress=False)
+            steps_completed += steps_this_batch
+            
+            # Save checkpoint
+            checkpoint_samples = sampler.get_chain()  # All samples so far
+            np.savez(
+                checkpoint_file,
+                samples=checkpoint_samples,
+                params=params,
+                n_walkers=n_walkers,
+                steps_completed=steps_completed,
+                n_steps_target=n_steps,
+                state_coords=state.coords,
+                state_log_prob=state.log_prob,
+                random_state=state.random_state
+            )
+            logger.info(f"Checkpoint saved at step {steps_completed}/{n_steps}: {checkpoint_file}")
+            file_handler.flush()
+        
+        logger.info("emcee sampling completed!")
+        file_handler.flush()
+    
+    # Get samples
+    samples = sampler.get_chain()  # Shape: (n_steps, n_walkers, ndim)
+    logger.info(f"Final samples shape: {samples.shape}")
+    
+    # Save samples
+    output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+    np.savez(
+        output_file,
+        samples=samples,
+        params=params,
+        n_walkers=n_walkers,
+        n_steps=n_steps
+    )
+    logger.info(f"Samples saved: {output_file}")
+
+    # Save corner plot (handles flattening and trace plots internally)
+    save_corner_plot(
+        samples,
+        labels=params,
+        filename=f'corner_{jobnumber}_{RUN_NAME}_emcee.png'
+    )
+    
+    return samples
 
 if __name__ == "__main__":
-    if USE_NESTED:
-        run_nested_sampler(prior, likelihood, jobnumber)
-    else:
-        run_emcee_sampler(prior, likelihood, jobnumber)
+    # Parse command-line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python sampler.py <job_number>")
+        sys.exit(1)
 
+    jobnumber = int(sys.argv[1]) - 1
+
+    # Configuration for this run
+    RUN_NAME = f"exact_lmax{EXACT_LMAX}_n1024_minang5"
+
+    # Robust logging setup
+    # Determine MPI rank/identity so each MPI task writes to its own log file.
+    rank = 0
+ 
+    try:
+        rank = int(os.environ.get("OMPI_COMM_WORLD_RANK", os.environ.get("PMI_RANK", "0")))
+    except Exception:
+        rank = 0
+
+    pid = os.getpid()
+    
+    logger, file_handler = setup_logging(jobnumber, rank, pid)
+
+    logger.info("Starting sampler setup...")
+    logger.info(f"Base directory: {BASE_DIR}")
+    logger.info(f"Creating mask with exact_lmax={EXACT_LMAX}")
+    logger.info(f"Package directory: {PACKAGE_DIR}")
+    mask = xili.SphereMask(
+        spins=MASK_CONFIG['spins'],
+        circmaskattr=MASK_CONFIG['circmaskattr'],
+        exact_lmax=EXACT_LMAX,
+        l_smooth=MASK_CONFIG['l_smooth'],
+        working_dir=PACKAGE_DIR
+    )
+
+    logger.info("Loading fiducial dataspace...")
+    redshift_bins, ang_bins_in_deg = xili.fiducial_dataspace(min_ang_cutoff_in_arcmin=5.0)
+    logger.info(f"Redshift bins: {len(redshift_bins)}, Angular bins: {len(ang_bins_in_deg)}")
+
+    include_ximinus = False
+    logger.info(f"Include xi-: {include_ximinus}")
+
+    logger.info("Initializing XiLikelihood...")
+    xilikelihood = xili.XiLikelihood(
+        mask=mask,
+        redshift_bins=redshift_bins,
+        ang_bins_in_deg=ang_bins_in_deg,
+        include_ximinus=include_ximinus,
+        exact_lmax=EXACT_LMAX,
+        large_angle_threshold=1/3,
+    )
+
+    logger.info("Creating mock data and covariance on the fly...")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mock_data_path = f"{tmpdir}/mock_data.npz"
+        cov_path = f"{tmpdir}/mock_cov.npz"
+        mock_data, gaussian_covariance = xili.mock_data.create_mock_data(
+            xilikelihood,
+            mock_data_path=mock_data_path,
+            gaussian_covariance_path=cov_path,
+            fiducial_cosmo=FIDUCIAL_COSMO,
+            random=None
+        )
+    logger.info(f"Mock data shape: {mock_data.shape}")
+    logger.info(f"Covariance shape: {gaussian_covariance.shape}")
+
+    logger.info("Setting up likelihood...")
+    xilikelihood.setup_likelihood()
+    xilikelihood.gaussian_covariance = gaussian_covariance
+    logger.info("Gaussian covariance set successfully")
+
+    logger.info("Setting up priors from config...")
+
+    # Extract parameters and priors from config
+    params = PRIOR_CONFIG["parameters"]
+    uniform_priors = PRIOR_CONFIG["uniform"]
+    mvn_config = PRIOR_CONFIG.get("multivariate_gaussian")
+    mvn_param = mvn_config["parameter"]
+    mvn_mean = np.array(mvn_config["mean"])
+    mvn_corr_matrix = np.array(mvn_config["cov"])
+
+    # Convert correlation matrix (with variances on diagonal) to covariance matrix
+    mvn_cov = xili.copula_funcs.correlation_to_covariance(mvn_corr_matrix)
+
+    logger.info(f"Parameters: {params}")
+    logger.info(f"Uniform prior ranges: {uniform_priors}")
+    logger.info(f"Converted correlation matrix to covariance matrix")
+    logger.info(f"Standard deviations: {np.sqrt(np.diag(mvn_cov))}")
+
+    logger.info(f"Starting sampler (USE_NESTED={USE_NESTED})")
+    
+    if USE_NESTED:
+        results = run_nested_sampler(prior, likelihood, jobnumber)
+        logger.info("Nested sampling complete")
+    else:
+        results = run_emcee_sampler(likelihood, jobnumber)
+        logger.info("MCMC sampling complete")
+    
+    logger.info("All done!")
