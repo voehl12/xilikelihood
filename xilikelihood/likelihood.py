@@ -176,6 +176,9 @@ class XiLikelihood:
                 setattr(self, key, value)
                 logger.debug(f"Set legacy parameter {key} = {value}")
         
+        logger.debug(f"CF settings: cf_steps={self.config.cf_steps}, pdf_steps={self.config.pdf_steps}, "
+            f"ximax_sigma_factor={self.config.ximax_sigma_factor}, "
+            f"ximin_sigma_factor={self.config.ximin_sigma_factor}")
         # Set working directory
         self.working_dir = self.config.working_dir or os.getcwd()
 
