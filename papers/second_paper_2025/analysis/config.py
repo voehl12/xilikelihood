@@ -33,6 +33,18 @@ MASK_CONFIG_HIGHRES_STAGE4 = {
     "l_smooth": 30
 }
 
+MASK_CONFIG_MEDRES_STAGE4 = {
+    "spins": [2], 
+    "circmaskattr": (10000, 1024), 
+    "l_smooth": 30
+}
+
+MASK_CONFIG_EXTREMERES_STAGE4 = {
+    "spins": [2], 
+    "circmaskattr": (10000, 2048), 
+    "l_smooth": 30
+}
+
 MASK_CONFIG_HIGHRES_STAGE3 = {
     "spins": [2], 
     "circmaskattr": (1000, 512), 
@@ -132,4 +144,38 @@ DATA_FILES = {
     }
 
     
+}
+
+# Prior configuration
+# https://www.aanda.org/articles/aa/pdf/2021/01/aa39070-20.pdf
+# https://arxiv.org/pdf/2007.01844
+PRIOR_CONFIG = {
+    # List of parameter names in order
+    "parameters": ["s8","w_c","w_b", "h", "n_s", "A_IA", "delta_z"],
+    
+    # Uniform priors: (min, max)
+    "uniform": {
+        "s8": (0.1, 1.3),
+        "w_c": (0.051,0.255),
+        "w_b": (0.019, 0.026),
+        "h": (0.64, 0.82),
+        "n_s": (0.84, 1.1),
+        "A_IA": (-6.0, 6.0),
+            
+    },
+    
+    # Multivariate Gaussian prior: {"mean": [...], "cov": [[...]]}
+    # Set to None if not using
+    "multivariate_gaussian": {
+        "parameter": "delta_z",  # Which parameter has the multivariate Gaussian prior
+        "mean": [0.0,0.002,0.013,0.011,-0.006],  # Mean vector
+        "cov": [[0.0106,0.15,0.10,0.00,0.05],
+                [0.15,0.0113,0.31,-0.17,-0.02],
+                [0.10,0.31,0.0118,-0.10,-0.02],
+                [0.00,-0.17,-0.10,0.0087,0.34],
+                [0.05,-0.02,-0.02,0.34,0.0097]]  # Covariance matrix (1x1 for single param, NxN for N params)
+    }
+    
+    # To disable multivariate Gaussian, set to None:
+    # "multivariate_gaussian": None
 }
