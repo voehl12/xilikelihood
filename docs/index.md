@@ -1,6 +1,6 @@
 # xilikelihood Documentation
 
-Welcome to the documentation for **xilikelihood**, a Python package for two-point correlation function likelihoods in cosmic shear surveys.
+Welcome to the documentation for **xilikelihood**, a Python package for computing two-point correlation function likelihoods on masked spin-2 Gaussian random fields. The primary and currently implemented application are cosmic shear correlation function datavectors.
 
 ```{toctree}
 :maxdepth: 2
@@ -16,10 +16,10 @@ examples/index
 
 xilikelihood provides tools for:
 
-- Simulating two-point correlation functions from power spectra
-- Computing exact and approximate likelihoods for cosmic shear data
-- Handling realistic survey geometries and noise properties
-- Performing cosmological parameter estimation
+- Setting up likelihoods for correlation function datavectors
+- Evaluating likelihoods with customizable levels of approximation
+- Handling any survey geometries as well as basic shot noise
+- Using an MCMC sampler to perform cosmological parameter estimation from a given data vector
 
 ## Indices and tables
 
