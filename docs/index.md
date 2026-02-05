@@ -17,7 +17,8 @@ examples/index
 xilikelihood provides tools for:
 
 - Setting up likelihoods for correlation function datavectors
-- Evaluating likelihoods with customizable levels of approximation
+- Evaluating likelihoods with customizable levels of approximation to the exact shape
+- Parallel evaluation of the corresponding Gaussian likelihood
 - Handling any survey geometries as well as basic shot noise
 - Using an MCMC sampler to perform cosmological parameter estimation from a given data vector
 
