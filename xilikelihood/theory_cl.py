@@ -448,7 +448,8 @@ def create_cosmo(params):
     Parameters:
     -----------
     params : dict
-        Dictionary containing 's8' and 'omega_m' keys
+        Dictionary containing cosmological parameters such as s8, h, ns, w_b, omega_m or w_c.
+        Parameters that are not given will take default values.
         
     Returns:
     --------
@@ -460,8 +461,6 @@ def create_cosmo(params):
     
     
     s8 = params.get("s8", 0.8)
-    #omega_m = params.get("omega_m", 0.3)
-    # need to fix: default to legacy behaviour if omega_m is passed.
     h = params.get("h", 0.7)
     n_s = params.get("ns", 0.97)
     w_b = params.get("w_b", 0.021)
