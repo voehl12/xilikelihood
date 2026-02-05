@@ -31,7 +31,7 @@ from config import (
 import tempfile
 
 # Output directory
-OUTPUT_DIR = Path("sampler_output_medres")
+OUTPUT_DIR = Path("sampler_output_test")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Sampler configuration
@@ -248,8 +248,9 @@ def run_nested_sampler(prior, likelihood, jobnumber):
 
 
 def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
-    """Run emcee MCMC sampler."""
+    """Run emcee MCMC sampler. Continues from previous chain if checkpoint exists."""
     import emcee
+    import glob
     
     # Calculate total dimensionality first (accounting for multi-dimensional parameters)
     ndim = sum(len(mvn_mean) if param == mvn_param else 1 for param in params)
@@ -258,9 +259,32 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
     n_walkers = n_walkers or EMCEE_CONFIG["n_walkers"]
     n_burn = EMCEE_CONFIG["n_burn"]
     n_steps = n_steps or EMCEE_CONFIG["n_steps"]
-        
+    
+    # Check for existing chains to continue from
+    existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}*.npz')))
+    checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
+    
+    continue_from = None
+    chain_num = 0
+    
+    if existing_files:
+        # Find highest chain number
+        for f in existing_files:
+            if '_chain' in f:
+                try:
+                    num = int(f.split('_chain')[-1].replace('.npz', ''))
+                    chain_num = max(chain_num, num + 1)
+                except ValueError:
+                    pass
+            else:
+                chain_num = max(chain_num, 1)
+        continue_from = existing_files[-1]
+    elif checkpoint_file.exists():
+        continue_from = checkpoint_file
+        chain_num = 1
+    
     logger.info("Setting up emcee MCMC sampler...")
-    logger.info(f"Parameters: {len(params)} ({ndim} dimensions), Walkers: {n_walkers}, Burn-in: {n_burn}, Steps: {n_steps}")
+    logger.info(f"Parameters: {len(params)} ({ndim} dimensions), Walkers: {n_walkers}, Steps: {n_steps}")
     
     # Create partial function with all the required variables
     from functools import partial
@@ -281,21 +305,38 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
         logger.info("MPI pool initialized")
         file_handler.flush()
         
-        # Initial positions: sample from priors
-        p0 = []
-        for _ in range(n_walkers):
-            pos = []
-            for param in params:
-                if param in uniform_priors:
-                    low, high = uniform_priors[param]
-                    pos.append(np.random.uniform(low, high))
-                elif mvn_param is not None and param == mvn_param:
-                    # Sample from Gaussian prior (handles multi-dimensional parameters)
-                    pos.extend(np.random.multivariate_normal(mvn_mean, mvn_cov))
-                else:
-                    logger.error(f"No prior defined for parameter {param}")
-                    raise ValueError(f"No prior defined for parameter {param}")
-            p0.append(np.array(pos))
+        # Initial positions: from previous chain or sample from priors
+        if continue_from:
+            logger.info(f"Continuing from previous chain: {continue_from}")
+            prev_data = np.load(continue_from)
+            prev_samples = prev_data['samples']  # (n_steps, n_walkers, ndim)
+            # Select half of walkers with highest variance (not stuck)
+            walker_var = np.var(prev_samples, axis=0).sum(axis=1)  # variance per walker
+            good_walkers = np.argsort(walker_var)[-n_walkers//2:]
+            # Sample 2 positions from last 100 steps of each good walker
+            last_samples = prev_samples[-100:, good_walkers, :]  # (100, n_good, ndim)
+            flat_good = last_samples.reshape(-1, ndim)
+            idx = np.random.choice(len(flat_good), size=n_walkers, replace=False)
+            p0 = flat_good[idx]
+            logger.info(f"Sampled {n_walkers} positions from {len(good_walkers)} best walkers")
+            skip_burnin = True
+        else:
+            logger.info(f"Starting fresh chain with burn-in ({n_burn} steps)")
+            p0 = []
+            for _ in range(n_walkers):
+                pos = []
+                for param in params:
+                    if param in uniform_priors:
+                        low, high = uniform_priors[param]
+                        pos.append(np.random.uniform(low, high))
+                    elif mvn_param is not None and param == mvn_param:
+                        # Sample from Gaussian prior (handles multi-dimensional parameters)
+                        pos.extend(np.random.multivariate_normal(mvn_mean, mvn_cov))
+                    else:
+                        logger.error(f"No prior defined for parameter {param}")
+                        raise ValueError(f"No prior defined for parameter {param}")
+                p0.append(np.array(pos))
+            skip_burnin = False
         
         logger.info(f"Initialized {n_walkers} walkers")
         file_handler.flush()
@@ -303,13 +344,17 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
         # Set up sampler with MPI pool
         sampler = emcee.EnsembleSampler(n_walkers, ndim, log_prob, pool=pool)
         
-        # Burn-in
-        logger.info(f"Running burn-in ({n_burn} steps)...")
-        file_handler.flush()
-        state = sampler.run_mcmc(p0, n_burn)
+        # Burn-in (skip if continuing)
+        if not skip_burnin:
+            logger.info(f"Running burn-in ({n_burn} steps)...")
+            file_handler.flush()
+            state = sampler.run_mcmc(p0, n_burn)
+            sampler.reset()
+        else:
+            state = p0
+            logger.info("Skipping burn-in (continuing from previous chain)")
         
         # Production run with periodic checkpointing
-        sampler.reset()
         checkpoint_interval = EMCEE_CONFIG.get("checkpoint_interval", 100)
         checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
         
@@ -328,13 +373,10 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
             np.savez(
                 checkpoint_file,
                 samples=checkpoint_samples,
-                params=params,
+                params=np.array(params, dtype=str),
                 n_walkers=n_walkers,
                 steps_completed=steps_completed,
                 n_steps_target=n_steps,
-                state_coords=state.coords,
-                state_log_prob=state.log_prob,
-                random_state=state.random_state
             )
             logger.info(f"Checkpoint saved at step {steps_completed}/{n_steps}: {checkpoint_file}")
             file_handler.flush()
@@ -346,12 +388,16 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
     samples = sampler.get_chain()  # Shape: (n_steps, n_walkers, ndim)
     logger.info(f"Final samples shape: {samples.shape}")
     
-    # Save samples
-    output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+    # Save samples (with chain number if continuing)
+    if chain_num > 0:
+        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+    else:
+        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+    
     np.savez(
         output_file,
         samples=samples,
-        params=params,
+        params=np.array(params, dtype=str),
         n_walkers=n_walkers,
         n_steps=n_steps
     )
