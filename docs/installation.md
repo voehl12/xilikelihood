@@ -53,4 +53,22 @@ pip install -e .[dev,docs]
 
 ### From PyPI (not available yet)
 
+## System Requirements
+
+Memory usage depends primarily on `exact_lmax` and the number of data points (redshift bin combinations × angular bins):
+
+| exact_lmax | Data points | Approx. Peak Memory |
+|------------|-------------|---------------------|
+| 20         | 90          | ~64 GB              |
+| 20         | 60          | ~32 GB              |
+
+
+Mask precomputation (`nside`) has a potentially bigger memory footprint depending on nside (for the coupling matrices) but is typically done once.
+
+For sampling runs with MPI parallelization, each worker requires this memory independently.
+
+**Recommendations:**
+- Development/testing: 16+ GB RAM
+- Production analyses: 64+ GB RAM or HPC cluster
+
 
