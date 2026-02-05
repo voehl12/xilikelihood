@@ -4,25 +4,27 @@ import sys, os
 import logging
 import matplotlib.pyplot as plt
 from pathlib import Path
+import tempfile
 from config import (
     EXACT_LMAX,
     FIDUCIAL_COSMO, 
     DATA_DIR,
-    MASK_CONFIG_STAGE4 as MASK_CONFIG,
+    MASK_CONFIG_MEDRES_STAGE4 as MASK_CONFIG,
     PARAM_GRIDS_NARROW as PARAM_GRIDS,
     N_JOBS_2D,
     DATA_FILES
 )
-from mock_data_generation import create_mock_data
+
 
 time.sleep(random.choice([random.uniform(0.1, 0.9), random.randint(1, 5)]))
-
+job_name = os.environ.get("SLURM_JOB_NAME", "unknown")
+    
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'posterior_job_{sys.argv[1] if len(sys.argv) > 1 else "unknown"}.log'),
+        logging.FileHandler(f'posterior_job_{job_name}_{sys.argv[1] if len(sys.argv) > 1 else "unknown"}.log'),
         logging.StreamHandler()
     ]
 )
@@ -63,8 +65,6 @@ except Exception as e:
     logger.error(f"Failed to set up mask or dataspace: {e}")
     sys.exit(1)
 
-mock_data_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus_nonoise']['mock_data']
-gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus_nonoise']['covariance']
 
 #noise = (0.26,2)
 
@@ -72,15 +72,21 @@ gaussian_covariance_path = DATA_DIR / DATA_FILES['10000sqd_kidsplus_nonoise']['c
 # Set up likelihood
 try:
     likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False,noise=None)
+        mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg,include_ximinus=False,noise='default',large_angle_threshold=0.0)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mock_data_path = f"{tmpdir}/mock_data.npz"
+        cov_path = f"{tmpdir}/mock_cov.npz"
+        mock_data, gaussian_covariance = xlh.mock_data.create_mock_data(
+            likelihood,
+            mock_data_path=mock_data_path,
+            gaussian_covariance_path=cov_path,
+            fiducial_cosmo=FIDUCIAL_COSMO,
+            random=None)        
+    
+    logger.info("Setting up likelihood...")
     likelihood.setup_likelihood()
-
-    create_mock_data(likelihood, mock_data_path, gaussian_covariance_path,random=None)
-    mock_data = np.load(mock_data_path)["data"]
-    gaussian_covariance = np.load(gaussian_covariance_path)["cov"]
-    #cov_eigs = np.linalg.eigvalsh(gaussian_covariance)
     likelihood.gaussian_covariance = gaussian_covariance
-    logger.info("Likelihood setup completed")
+    logger.info("Gaussian covariance set successfully")
     
 except Exception as e:
     logger.error(f"Failed to set up likelihood: {e}")
@@ -108,7 +114,7 @@ subset_pairs = split_prior_pairs[jobnumber]
 logger.info(f"Processing {len(subset_pairs)} parameter combinations for job {jobnumber + 1}/{N_JOBS_2D}")
 
 # Set up output directory
-output_dir = Path("/cluster/scratch/veoehl/posteriors")
+output_dir = Path(f"/cluster/scratch/veoehl/posteriors/{job_name}")
 output_dir.mkdir(parents=True, exist_ok=True)
 output_file = output_dir / f"posterior_{jobnumber}.npy"
 
