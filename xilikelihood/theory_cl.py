@@ -458,16 +458,26 @@ def create_cosmo(params):
     if not HAS_CCL:
         raise ImportError("pyccl is required for cosmology calculations. Install with: pip install pyccl")
     
+    
     s8 = params.get("s8", 0.8)
     #omega_m = params.get("omega_m", 0.3)
+    # need to fix: default to legacy behaviour if omega_m is passed.
     h = params.get("h", 0.7)
     n_s = params.get("ns", 0.97)
     w_b = params.get("w_b", 0.021)
-    w_c = params.get("w_c", 0.12)
+    
     omega_b = w_b / (h ** 2)
-    omega_c = w_c / (h ** 2)
-    omega_m = omega_c + omega_b
+    
+    if "omega_m" in params:
+        omega_m = params["omega_m"]
+        omega_c = omega_m - omega_b
+    else:
+        w_c = params.get("w_c", 0.12)
+        omega_c = w_c / (h ** 2)
+        omega_m = omega_c + omega_b
+    
     sigma8 = s8 * (omega_m / 0.3) ** -0.5
+    
     ccl.gsl_params.LENSING_KERNEL_SPLINE_INTEGRATION = False
     return ccl.Cosmology(
         Omega_c=omega_c, 
