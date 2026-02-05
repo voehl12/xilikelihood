@@ -51,6 +51,12 @@ MASK_CONFIG_HIGHRES_STAGE3 = {
     "l_smooth": 30
 }
 
+MASK_CONFIG_MEDRES_STAGE3 = {
+    "spins": [2], 
+    "circmaskattr": (1000, 1024), 
+    "l_smooth": 30
+}
+
 # Angular bins
 ANG_BINS = [(2, 3)]  # Single bin for 1D analysis
 FIDUCIAL_ANG_BINS = "from_fiducial_dataspace"  # Use xlh.fiducial_dataspace()
