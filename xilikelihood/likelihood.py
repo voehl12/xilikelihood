@@ -870,7 +870,7 @@ def fiducial_dataspace(
     ang_min: float = 0.5, 
     ang_max: float = 300,
     n_bins: int = 9, 
-    min_ang_cutoff_in_arcmin: float = 15
+    min_ang_cutoff_in_arcmin: float = 15.0
 ) -> Tuple[List[RedshiftBin], List[Tuple[float, float]]]:
     """
     Generate standard KiDS-like analysis setup.
