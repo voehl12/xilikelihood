@@ -78,7 +78,7 @@ import xilikelihood as xlh
 import numpy as np
 
 # Set up the analysis
-mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
+mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=20)
 
 # Create redshift bins
 z = np.linspace(0.01, 3.0, 100)
@@ -105,6 +105,9 @@ for s8 in s8_values:
 best_s8 = s8_values[np.argmax(log_likelihoods)]
 print(f"Best-fit σ₈: {best_s8}")
 ```
+
+For detailed configuration options including `exact_lmax` and `LikelihoodConfig`, 
+see [Configuration](configuration.md).
 
 ## Next Steps
 
