@@ -20,7 +20,7 @@ except ImportError:
 
 from config import (
     EXACT_LMAX,
-    MASK_CONFIG_MEDRES_STAGE4 as MASK_CONFIG,
+    MASK_CONFIG_MEDRES_STAGE3 as MASK_CONFIG,
     DATA_FILES,
     DATA_DIR,
     BASE_DIR,
@@ -449,7 +449,7 @@ if __name__ == "__main__":
     )
 
     logger.info("Loading fiducial dataspace...")
-    redshift_bins, ang_bins_in_deg = xili.fiducial_dataspace(min_ang_cutoff_in_arcmin=5.0)
+    redshift_bins, ang_bins_in_deg = xili.fiducial_dataspace()
     logger.info(f"Redshift bins: {len(redshift_bins)}, Angular bins: {len(ang_bins_in_deg)}")
 
     include_ximinus = False
