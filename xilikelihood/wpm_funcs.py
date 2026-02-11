@@ -351,36 +351,54 @@ def get_wlm_l(wlm, m, allowed_l):
 
 
 
-def m_llp(wl, lmax, spin0=False):
+def m_llp(wl, lmax, spin0=False, progress_interval=10000):
     # take wl of any length, return mllp arrays to max given lmax
     wl_full = np.zeros(lmax + 1)
     wl_full[: len(wl)] = wl if len(wl) < lmax + 1 else wl[: lmax+1]
 
-    m_3d_pp = np.zeros((lmax+1, lmax+1, lmax + 1))
-    m_3d_mm = np.zeros_like(m_3d_pp)
-    m_3d_zero = np.zeros_like(m_3d_pp)
+    m_pp = np.zeros((lmax+1, lmax+1))
+    m_mm = np.zeros_like(m_pp)
+    m_zero = np.zeros_like(m_pp) if spin0 else None
     l = lp = np.arange(lmax + 1)
     lpp = np.arange(lmax + 1)
 
+    # Calculate total iterations for progress tracking
+    total_iterations = (lmax - 1) * (lmax + 1)  # iterations where i >= 2
+    logger.info(f"Computing m_llp matrix for lmax={lmax} with {total_iterations} iterations...")
+    
+    iteration_count = 0
     for cp, i in enumerate(lp):
+        if i < 2:
+            # skip the first two rows for spin 2
+            continue
+            
         for cpp, j in enumerate(lpp):
-            if i < 2:
-                # skip the first two rows for spin 2
-                continue
-            else:
-                prefac = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] / (4 * np.pi)
-                wigners_l = wigners_2(l, i, j)
-                m_3d = prefac * np.square(wigners_l)
-                m_3d_pp[:, cp, cpp] = m_3d * 0.5 * (1 + (-1) ** (l + i + j))
-                m_3d_mm[:, cp, cpp] = m_3d * 0.5 * (1 - (-1) ** (l + i + j))
-                if spin0:
-                    wigners0_l = wigners_0(l, i, j)
-                    m_3d_zero[:, cp, cpp] = prefac * np.square(wigners0_l)
-                
+            if iteration_count % progress_interval == 0:
+                progress = iteration_count / total_iterations * 100
+                logger.info(f"Progress: {progress:.1f}% ({iteration_count}/{total_iterations})")
+            
+            prefac = (2 * i + 1) * (2 * j + 1) * wl_full[cpp] / (4 * np.pi)
+            wigners_l = wigners_2(l, i, j)
+            m_3d = prefac * np.square(wigners_l)
+            
+            # Use parity for speed: (l+i+j) % 2 gives 0 (even) or 1 (odd)
+            # m_pp gets coefficient 1 when even, 0 when odd
+            # m_mm gets coefficient 0 when even, 1 when odd
+            parity = (l + i + j) % 2
+            m_pp[:, cp] += m_3d * (1 - parity)
+            m_mm[:, cp] += m_3d * parity
+            
+            if spin0:
+                wigners0_l = wigners_0(l, i, j)
+                m_zero[:, cp] += prefac * np.square(wigners0_l)
+            
+            iteration_count += 1
+    
+    logger.info("m_llp computation completed")
     if not spin0:
-        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1) 
+        return m_pp, m_mm 
     else:
-        return np.sum(m_3d_pp, axis=-1), np.sum(m_3d_mm, axis=-1), np.sum(m_3d_zero, axis=-1) 
+        return m_pp, m_mm, m_zero 
 
 
 # ============================================================================

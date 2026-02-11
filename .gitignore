@@ -13,6 +13,7 @@ _regtest_outputs/
 
 # Documentation build output (exclude built docs, but keep source)
 docs/_build/
+*.md
 
 # Generated plots and outputs
 *.html
@@ -31,6 +32,7 @@ docs/_build/
 *.npz
 *.npy
 *.fits
+*.csv
 
 # Log files
 *.err
@@ -44,9 +46,16 @@ docs/_build/
 .venv
 venv/
 env/
+likelihood-env/
+sim-env/
+2ptlikelihood/
+
+# Profiling / performance outputs
+memray/
+**/*memray*.bin
 
 # IDE files
-.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
@@ -55,3 +64,10 @@ env/
 .DS_Store
 Thumbs.db
 TODO.md
+
+# Analysis outputs (paper workdir)
+papers/second_paper_2025/analysis/nu_estimation_results_*/
+papers/second_paper_2025/analysis/copula_analysis_*.pkl
+papers/second_paper_2025/analysis/copula_analysis_*_summary.json
+papers/second_paper_2025/analysis/copula_analysis_*_summary.jso
+papers/second_paper_2025/analysis/sampler_results_*.h5

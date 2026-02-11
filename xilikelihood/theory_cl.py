@@ -30,6 +30,7 @@ import re
 import scipy.stats 
 from pathlib import Path
 import logging
+from scipy.interpolate import interp1d
 
 logger = logging.getLogger(__name__)
 
@@ -447,7 +448,8 @@ def create_cosmo(params):
     Parameters:
     -----------
     params : dict
-        Dictionary containing 's8' and 'omega_m' keys
+        Dictionary containing cosmological parameters such as s8, h, ns, w_b, omega_m or w_c.
+        Parameters that are not given will take default values.
         
     Returns:
     --------
@@ -457,23 +459,36 @@ def create_cosmo(params):
     if not HAS_CCL:
         raise ImportError("pyccl is required for cosmology calculations. Install with: pip install pyccl")
     
-    s8 = params["s8"]
-    omega_m = params["omega_m"]
-    omega_b = 0.046
-    omega_c = omega_m - omega_b
+    
+    s8 = params.get("s8", 0.8)
+    h = params.get("h", 0.7)
+    n_s = params.get("ns", 0.97)
+    w_b = params.get("w_b", 0.021)
+    
+    omega_b = w_b / (h ** 2)
+    
+    if "omega_m" in params:
+        omega_m = params["omega_m"]
+        omega_c = omega_m - omega_b
+    else:
+        w_c = params.get("w_c", 0.12)
+        omega_c = w_c / (h ** 2)
+        omega_m = omega_c + omega_b
+    
     sigma8 = s8 * (omega_m / 0.3) ** -0.5
+    
     ccl.gsl_params.LENSING_KERNEL_SPLINE_INTEGRATION = False
     return ccl.Cosmology(
         Omega_c=omega_c, 
         Omega_b=omega_b, 
-        h=0.7, 
+        h=h, 
         sigma8=sigma8, 
-        n_s=0.97
+        n_s=n_s
     )
 
 
 
-def compute_angular_power_spectra(cosmo, ell, z_bins):
+def compute_angular_power_spectra(cosmo, ell, z_bins, ia_bias=None, z_bias=(0.0, 0.0)):
     """
     Compute angular power spectra for given cosmology and redshift bins.
     Returns 3x2pt power spectra: (cl_ee, cl_ne, cl_nn).
@@ -496,9 +511,17 @@ def compute_angular_power_spectra(cosmo, ell, z_bins):
         raise ImportError("pyccl is required for power spectrum calculations")
     
     bin1, bin2 = z_bins
-    
-    lens1 = ccl.WeakLensingTracer(cosmo, dndz=(bin1.z, bin1.nz))
-    lens2 = ccl.WeakLensingTracer(cosmo, dndz=(bin2.z, bin2.nz))
+
+    z1 = bin1.z
+    nz1 = bin1.nz if z_bias[0] == 0.0 else add_n_of_z_bias(bin1.z, bin1.nz, z_bias[0])
+    z2 = bin2.z
+    nz2 = bin2.nz if z_bias[1] == 0.0 else add_n_of_z_bias(bin2.z, bin2.nz, z_bias[1])
+    if ia_bias is not None:
+        lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1),ia_bias=(z1, np.ones_like(z1) * ia_bias))
+        lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2),ia_bias=(z2, np.ones_like(z2) * ia_bias))
+    else:
+        lens1 = ccl.WeakLensingTracer(cosmo, dndz=(z1, nz1))
+        lens2 = ccl.WeakLensingTracer(cosmo, dndz=(z2, nz2))
     
     cl_ee = ccl.angular_cl(cosmo, lens1, lens2, ell)
     cl_ne = cl_nn = np.zeros_like(cl_ee)
@@ -506,9 +529,34 @@ def compute_angular_power_spectra(cosmo, ell, z_bins):
     return cl_ee, cl_ne, cl_nn
 
 def get_cl(params_dict, z_bins):
+    """
+    Get angular power spectra for given cosmology parameters and redshift bins.
+
+    Parameters:
+    -----------
+    params_dict : dict
+        Dictionary containing cosmology parameters including A_IA and delta_z
+    z_bins : tuple
+        Tuple of RedshiftBin objects
+        
+    Returns:
+    --------
+    tuple
+        (cl_ee, cl_ne, cl_nn) power spectra
+    """
     cosmo = create_cosmo(params_dict)
-    ell = np.arange(2, 2000)
-    cl = compute_angular_power_spectra(cosmo, ell, z_bins)
+    ell = np.arange(2, 4000)
+    ia_bias = params_dict.get('A_IA', None)
+    delta_z_all = params_dict.get('delta_z',None)
+
+    bin1, bin2 = z_bins
+
+    if delta_z_all is not None:
+        z_bias = (delta_z_all[bin1.nbin - 1], delta_z_all[bin2.nbin - 1])
+    else:
+        z_bias = (0.0, 0.0)
+    
+    cl = compute_angular_power_spectra(cosmo, ell, z_bins, ia_bias=ia_bias, z_bias=z_bias)
     return cl
 
 
@@ -595,3 +643,12 @@ def n_combs_to_n_bins(n_comb):
     """
     n_bins = int((np.sqrt(8 * n_comb + 1) - 1) / 2)
     return n_bins
+
+def add_n_of_z_bias(z,nz,bias):
+    f = interp1d(z, nz, fill_value=0.0, bounds_error=False)
+    nz_biased = f(z - bias)
+    
+    
+        
+    nz_biased /= np.trapz(nz_biased, z)
+    return nz_biased
