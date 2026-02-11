@@ -1,3 +1,11 @@
+"""
+Sweep the large-angle threshold to assess Gaussian vs exact likelihood tradeoffs.
+
+Runs a grid of `large_angle_threshold` values, evaluates the log-likelihood at
+the fiducial cosmology, and records runtime for each threshold. Produces a
+summary CSV and plot comparing exact and Gaussian values.
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
