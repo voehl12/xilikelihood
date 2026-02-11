@@ -29,6 +29,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+logging.getLogger('xilikelihood').setLevel(logging.DEBUG)
 
 # Validate command line arguments
 if len(sys.argv) != 2:
@@ -141,27 +144,25 @@ for i, (omega_m, s8) in enumerate(subset_pairs):
         progress_interval = max(1, len(subset_pairs) // 10)
         if (i + 1) % progress_interval == 0:
             elapsed = time.time() - start_time
-            rate = (i + 1) / elapsed
-            eta = (len(subset_pairs) - i - 1) / rate
+            rate = elapsed / (i + 1)
+            eta = (len(subset_pairs) - i - 1) * rate
             logger.info(f"Progress: {i+1}/{len(subset_pairs)} ({100*(i+1)/len(subset_pairs):.1f}%) "
-                       f"- Rate: {rate:.2f} iter/s - ETA: {eta:.0f}s")
+                       f"- Rate: {rate:.2f} s/iter - ETA: {eta:.0f}s")
             
     except Exception as e:
         logger.warning(f"Failed computation at Ωₘ={omega_m:.3f}, S₈={s8:.3f}: {e}")
         # Fill with NaN for failed computations
         results[i] = (np.nan, np.nan, s8, omega_m)
         failed_computations += 1
-        
-        # If too many failures, stop
-        if failed_computations > len(subset_pairs) * 0.1:  # More than 10% failures
-            logger.error(f"Too many failed computations ({failed_computations}). Stopping.")
-            #sys.exit(1)
+   
 
 # Save results
 try:
     np.save(output_file, results)
     total_time = time.time() - start_time
     logger.info(f"Job completed successfully in {total_time:.1f}s")
+    logger.info(f"Number of failed computations ({failed_computations}).")
+  
     logger.info(f"Results saved to {output_file}")
     if failed_computations > 0:
         logger.warning(f"Had {failed_computations} failed computations out of {len(subset_pairs)}")
