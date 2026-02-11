@@ -25,8 +25,8 @@ class LikelihoodConfig:
     # CF computation settings
     cf_steps: int = 2048
     pdf_steps: int = 2048
-    ximax_sigma_factor: float = 500.0
-    ximin_sigma_factor: float = 500.0
+    ximax_sigma_factor: float = 310.0 #70-100 good for 1000 sqd mask, 10000sqd tends to need higher values
+    ximin_sigma_factor: float = 310.0 #small angular bins tend to need lower values because they are narrower.
     
     # Covariance settings
     cov_ell_buffer: int = 10
