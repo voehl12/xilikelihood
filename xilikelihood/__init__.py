@@ -8,7 +8,7 @@ __version__ = "0.1.0"
 # Core user-facing functions
 from .core_utils import ensure_jax_device
 ensure_jax_device()
-from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin
+from .theory_cl import generate_theory_cl, prepare_theory_cl_inputs, RedshiftBin, TheoryCl
 from .likelihood import XiLikelihood, fiducial_dataspace
 from .mask_props import SphereMask
 from .file_handling import save_arrays, load_arrays
@@ -32,6 +32,7 @@ __all__ = [
     'SphereMask',
     'RedshiftBin',
     'XiLikelihood',
+    'TheoryCl'
     
     # Key utilities
     'save_arrays',

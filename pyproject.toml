@@ -80,6 +80,9 @@ line_length = 88
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v -s --color=yes"
+markers = [
+    "slow: marks tests as slow",
+]
 # Coverage options - install with: pip install -e ".[dev]"
 # Comment out addopts line below if pytest-cov is not installed
 # addopts = "--cov=xilikelihood --cov-report=html --cov-report=term-missing"
