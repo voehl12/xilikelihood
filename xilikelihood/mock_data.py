@@ -5,8 +5,11 @@ This module provides functions to generate mock correlation function data
 for testing, validation, and analysis workflows.
 """
 
+import logging
 import numpy as np
 from typing import Optional, Dict, Any, Union, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def create_mock_data(
@@ -150,7 +153,11 @@ def create_mock_data(
         fiducial_cosmo=fiducial_cosmo
     )
     
-    print(f"Mock data and covariance matrix saved to {mock_data_path} and {gaussian_covariance_path}")
+    logger.info(
+        "Mock data and covariance matrix saved to %s and %s",
+        mock_data_path,
+        gaussian_covariance_path,
+    )
     
     return mock_data, gaussian_covariance
 
