@@ -75,14 +75,14 @@ likelihood.setup_likelihood()
 
 ## Key Features
 
-- **Likelihood**: Exact likelihoods for correlation functions (currently only xi^+)
+- **Likelihood**: Exact likelihoods for correlation functions (currently only $\xi^+$)
 - **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
 - **Simulations**: Generate correlation functions from Gaussian random maps
 - **Theory**: Compute power spectra and correlation functions
 - **Masks**: Handle realistic survey geometries
 
 ### Planned Features
-- **ξ⁻ likelihood support**: Extension to include xi_minus correlations
+- **$\xi^-$ likelihood support**: Extension to include xi_minus correlations
 
 
 ## Dependencies
