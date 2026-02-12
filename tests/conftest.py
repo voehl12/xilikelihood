@@ -1,29 +1,55 @@
 # tests/conftest.py
+import os
+
+# Ensure JAX runs on CPU for tests (set before importing xilikelihood/jax)
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.1")
+
 import pytest
 import numpy as np
 import xilikelihood as xlh
 
 
 @pytest.fixture
-def sample_theory_cl():
-    """Provide a sample TheoryCl object for testing."""
-    return xlh.TheoryCl(30, path="Cl_3x2pt_kids55.txt")
+def sample_theory_cl(covariance_test_setup):
+    """Provide a sample TheoryCl object for testing (computed from cosmology)."""
+    setup = covariance_test_setup
+    return xlh.TheoryCl(
+        setup["theory_lmax"],
+        cosmo=setup["cosmo_params"],
+        z_bins=setup["redshift_bins"],
+        clname="test_cl"
+    )
 
 @pytest.fixture
-def sample_mask():
+def sample_cosmo(covariance_test_setup):
+    """Provide a sample cosmology dictionary for testing."""
+    return covariance_test_setup["cosmo_params"]
+
+@pytest.fixture
+def sample_mask(covariance_test_setup):
     """Provide a sample mask for testing."""
-    return xlh.SphereMask([2], circmaskattr=(1000, 256))
+    return covariance_test_setup["mask"]
 
 @pytest.fixture
-def sample_angular_bins():
+def sample_angular_bins(covariance_test_setup):
     """Provide sample angular bins for testing."""
-    return [(4, 6), (7, 10)]
+    return covariance_test_setup["angular_bins_in_deg"]
+
+@pytest.fixture
+def sample_redshift_bins(covariance_test_setup):
+    """Provide sample redshift bins for testing."""
+    return covariance_test_setup["redshift_bins"]
 
 @pytest.fixture
 def covariance_test_setup():
     """Provide a consistent setup for testing covariance functions."""
-    # Use small, deterministic values for reproducible tests
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 32))  # Small lmax for speed
+    # Use small values for reproducible tests
+    exact_lmax = 10
+    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax,l_smooth=30)  # Small nside/lmax for speed
 
     # Create redshift bins with known parameters
     z = np.linspace(0.01, 3.0, 100)
@@ -43,5 +69,6 @@ def covariance_test_setup():
         'redshift_bins': redshift_bins,
         'angular_bins_in_deg': angular_bins_in_deg,
         'cosmo_params': cosmo_params,
-        'theory_lmax': 30  # Small lmax for fast computation
+        'theory_lmax': mask.lmax,
+        'exact_lmax': exact_lmax
     }
