@@ -1,15 +1,8 @@
 # xilikelihood
 
 Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood.
-Spin-0 fields are not fully supported yet.
 
 ## Installation
-
-### Standard Installation
-The package is not published on PyPI yet, but will be.
-```bash
-pip install xilikelihood
-```
 
 ### Development Installation
 
@@ -20,8 +13,6 @@ For development or if you need the custom GLASS version:
 git clone https://github.com/voehl12/xilikelihood.git
 cd xilikelihood
 
-# Install custom GLASS version (required for simulations)
-# Please reach out if you need it.
 
 # Install the package in development mode
 pip install -e .
@@ -37,7 +28,7 @@ pip install -e glass
 ```
 
 
-If you don't have the custom GLASS version, simulation functions will raise an informative error message.
+If you don't have the custom GLASS version, simulation functions will raise an error message.
 
 ## Quick Start
 
@@ -79,18 +70,20 @@ likelihood.setup_likelihood()
 
 # 6. Evaluate likelihood with data
 # log_likelihood = likelihood.loglikelihood(data_vector, cosmology)
+# cosmology is a dictionary with cosmological parameters
 ```
 
 ## Key Features
 
 - **Likelihood**: Exact likelihoods for correlation functions (currently only xi^+)
-- **Simulations**: Generate correlation functions from cosmological models
+- **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
+- **Simulations**: Generate correlation functions from Gaussian random maps
 - **Theory**: Compute power spectra and correlation functions
 - **Masks**: Handle realistic survey geometries
 
 ### Planned Features
 - **ξ⁻ likelihood support**: Extension to include xi_minus correlations
-- **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
+
 
 ## Dependencies
 
@@ -107,15 +100,14 @@ likelihood.setup_likelihood()
   - Without this, simulation functions will raise informative errors
 - **TreeCorr**: For alternative correlation function estimation
 - **pyccl**: For cosmological computations
-- **wigner**: For correlation function calculations (some functions need this)
+- **wigner**: For curved sky correlation function calculations 
 
-The package is designed to work gracefully without optional dependencies, providing informative error messages when they're needed.
+The package is designed to work without optional dependencies, providing informative error messages when they're needed.
 
 ## Scientific Background
 
 This package implements the methods described in:
-- [Your paper citation]
-- [Related work citations]
+- []
 
 ## Documentation
 
