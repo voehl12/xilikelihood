@@ -23,6 +23,7 @@ Examples
 import numpy as np
 import itertools
 import logging
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,17 @@ def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
         Bootstrap samples of statistic func on the data.
     """
 
-    fiducial_output = func(data, axis=axis, **func_kwargs)
+    try:
+        signature = inspect.signature(func)
+        supported_kwargs = {
+            key: value
+            for key, value in func_kwargs.items()
+            if key in signature.parameters
+        }
+    except (TypeError, ValueError):
+        supported_kwargs = func_kwargs
+
+    fiducial_output = func(data, axis=axis, **supported_kwargs)
 
     if isinstance(data, list):
         if axis != 0:
@@ -84,11 +95,13 @@ def bootstrap(data, n, axis=0, func=np.var, func_kwargs={"ddof": 1}):
         
         if isinstance(data, list):
             idx = [np.random.choice(d.shape[0], size=d.shape[0], replace=True) for d in data]
-            samples[i] = func([d[i] for d, i in zip(data, idx)], axis=axis, **func_kwargs)
+            samples[i] = func(
+                [d[i] for d, i in zip(data, idx)], axis=axis, **supported_kwargs
+            )
         else:
             idx = np.random.choice(data.shape[axis], size=data.shape[axis], replace=True)
             idx_tuple = tuple(idx if ax == axis else slice(None) for ax in range(data.ndim))
-            samples[i] = func(data[idx_tuple], axis=axis, **func_kwargs)
+            samples[i] = func(data[idx_tuple], axis=axis, **supported_kwargs)
             
     logger.info("Bootstrap sampling completed")
     return samples

@@ -1,6 +1,4 @@
 import numpy as np
-import pytest
-
 
 def test_cf2pdf():
     import scipy.stats as stats
@@ -56,7 +54,7 @@ def test_cov_xi_gaussian_nD_snapshot_xiplus(covariance_test_setup, snapshot, reg
     )
     
     # Write key properties to regtest
-    regtest.write(f"=== XIPLUS TEST ===\n")
+    
     regtest.write(f"Shape: {cov_matrix.shape}\n")
     regtest.write(f"Is symmetric: {np.allclose(cov_matrix, cov_matrix.T)}\n")
     regtest.write(f"Is positive semidefinite: {np.all(np.linalg.eigvals(cov_matrix) >= -1e-10)}\n")

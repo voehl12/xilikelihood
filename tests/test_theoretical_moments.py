@@ -1,3 +1,8 @@
+import numpy as np
+
+from xilikelihood.theoretical_moments import nth_moment, skewness
+
+
 def test_normal_distribution():
     """Test with standard normal distribution (should give known results)."""
     t = np.linspace(-5, 5, 1000)

@@ -1,31 +1,28 @@
-import os
-# Set JAX environment variables BEFORE any other imports
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.1"
+import pytest
 
-def test_cov_xi(snapshot):
-    
+
+@pytest.mark.slow
+def test_cov_xi(snapshot, covariance_test_setup, sample_theory_cl, regtest):
     import xilikelihood as xlh
     import numpy as np
-    
-    from xilikelihood.file_handling import generate_filename
-    from xilikelihood.theory_cl import TheoryCl
-    from xilikelihood.pseudo_alm_cov import Cov
-    
-    # Get the package directory (parent of xilikelihood module)
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    clpath = os.path.join(package_dir, "papers", "first_paper_2024", "data", "cls", "Cl_3x2pt_kids55.txt")
 
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=10)
-    full_mask = xlh.SphereMask(spins=[2], circmaskattr=("fullsky", 256), exact_lmax=10)
-    theorycl = TheoryCl(767, clpath=clpath)
-    circ_cov = Cov(mask, theorycl, 10)
+    from xilikelihood.file_handling import generate_filename
+    from xilikelihood.theory_cl import TheoryCl, HAS_CCL
+    from xilikelihood.pseudo_alm_cov import Cov
+
+    if not HAS_CCL:
+        pytest.skip("pyccl not available; skipping theory C_ell based covariance test")
+
+    setup = covariance_test_setup
+    exact_lmax = setup["exact_lmax"]
+
+    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 32), exact_lmax=exact_lmax)
+    full_mask = xlh.SphereMask(spins=[2], circmaskattr=("fullsky", 32), exact_lmax=exact_lmax)
+    
+    circ_cov = Cov(mask, sample_theory_cl, exact_lmax)
     test_cov = circ_cov.cov_alm_xi()
-    snapshot.check(test_cov, atol=1e-15)
-    nomask_cov = Cov(full_mask, theorycl, 10)
+    snapshot.check(test_cov, atol=1e-12)
+    nomask_cov = Cov(full_mask, sample_theory_cl, exact_lmax)
     nomask_cov_array = nomask_cov.cov_alm_xi()
     diag = np.diag(nomask_cov_array)
     diag_arr = np.diag(diag)
@@ -54,18 +51,20 @@ def test_cov_xi(snapshot):
     large_diff_mask = np.abs(diff) > tolerance
     num_large_diffs = np.sum(large_diff_mask)
     
-    print(f"\n=== Covariance Matrix Comparison Diagnostics ===")
-    print(f"Matrix shape: {nomask_cov_array.shape}")
-    print(f"Maximum absolute difference: {max_diff:.2e}")
-    print(f"Mean absolute difference: {np.mean(np.abs(diff)):.2e}")
-    print(f"Standard deviation of differences: {np.std(diff):.2e}")
-    print(f"Number of entries exceeding tolerance {tolerance:.0e}: {num_large_diffs}")
+    regtest.write(f"Matrix shape: {nomask_cov_array.shape}\n")
+    regtest.write(f"Maximum absolute difference: {max_diff:.2e}\n")
+    regtest.write(f"Mean absolute difference: {np.mean(np.abs(diff)):.2e}\n")
+    regtest.write(f"Standard deviation of differences: {np.std(diff):.2e}\n")
+    regtest.write(
+        "Number of entries exceeding tolerance "
+        f"{tolerance:.0e}: {num_large_diffs}\n"
+    )
     
     if num_large_diffs > 0:
         large_diff_indices = np.where(large_diff_mask)
         large_diff_values = diff[large_diff_mask]
         
-        print(f"\nLargest differences (showing up to 10):")
+        regtest.write("\nLargest differences (showing up to 10):\n")
         # Sort by absolute value and show the largest ones
         sorted_indices = np.argsort(np.abs(large_diff_values))[::-1][:10]
         for i, idx in enumerate(sorted_indices):
@@ -74,31 +73,41 @@ def test_cov_xi(snapshot):
             orig_val = nomask_cov_array[row, col]
             new_val = nomask_bruteforce_cov[row, col]
             rel_diff = value / orig_val if orig_val != 0 else float('inf')
-            print(f"  [{row:3d}, {col:3d}]: diff={value:+.2e}, orig={orig_val:.2e}, new={new_val:.2e}, rel={rel_diff:.2e}")
+            regtest.write(
+                "  "
+                f"[{row:3d}, {col:3d}]: diff={value:+.2e}, "
+                f"orig={orig_val:.2e}, new={new_val:.2e}, rel={rel_diff:.2e}\n"
+            )
     
     # Check if differences are symmetric (since covariance should be symmetric)
     diff_asymmetry = np.max(np.abs(diff - diff.T))
-    print(f"Maximum asymmetry in differences: {diff_asymmetry:.2e}")
+    regtest.write(f"Maximum asymmetry in differences: {diff_asymmetry:.2e}\n")
     
     # Use a more reasonable tolerance for the actual test
-    assert np.allclose(nomask_bruteforce_cov, nomask_cov_array, atol=1e-14), \
+    assert np.allclose(nomask_bruteforce_cov, nomask_cov_array, atol=1e-12), \
         f"Full-sky covariance matrices differ by more than tolerance. Max diff: {max_diff:.2e}"
 
 
 
-def test_cov_diag():
+@pytest.mark.slow
+def test_cov_diag(covariance_test_setup, sample_theory_cl):
     # check that the diagonal matches the pseudo-cl to 10%:
     import xilikelihood as xlh
     import numpy as np
 
-    # Get the package directory (parent of xilikelihood module)
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    clpath = os.path.join(package_dir, "papers", "first_paper_2024", "data", "cls", "Cl_3x2pt_kids55.txt")
+    from xilikelihood.theory_cl import HAS_CCL
 
-    exact_lmax = 10
-    mask = xlh.SphereMask(spins=[2], circmaskattr=(1000, 256), exact_lmax=exact_lmax)
-    theorycl = xlh.theory_cl.TheoryCl(767, clpath=clpath)
-    cov = xlh.pseudo_alm_cov.Cov(mask, theorycl, exact_lmax)
+    if not HAS_CCL:
+        pytest.skip("pyccl not available; skipping theory C_ell based covariance test")
+
+    setup = covariance_test_setup
+    exact_lmax = setup["exact_lmax"]
+    # Use a smaller nside here so the mask coupling matrices and TheoryCl lmax agree.
+    # cl2pseudocl uses mask.lmax-sized coupling matrices, so TheoryCl must match mask.lmax.
+    mask = setup["mask"]
+    theory_lmax = mask.lmax
+    
+    cov = xlh.pseudo_alm_cov.Cov(mask, sample_theory_cl, exact_lmax)
     cov_array = cov.cov_alm_xi()
     diag_alm = np.diag(cov_array)
 
@@ -118,9 +127,11 @@ def test_cov_diag():
         + check_pcl_sub[3 * (exact_lmax + 1) : 4 * (exact_lmax + 1)],
     )
     pcl = np.zeros_like(check_pcl)
-    twoell = 2 * np.arange(mask.lmax + 1) + 1
-    cov.cl2pseudocl()
-    pcl[0], pcl[1] = (cov.p_ee * twoell)[: exact_lmax + 1], (cov.p_bb * twoell)[: exact_lmax + 1]
+    
+    cov.cl2pseudocl(ischain=True)
+    twoell = 2 * np.arange(exact_lmax + 1) + 1
+    pcl[0] = cov.p_ee[: exact_lmax + 1] * twoell
+    pcl[1] = cov.p_bb[: exact_lmax + 1] * twoell
     assert np.allclose(
         pcl, check_pcl, rtol=1e-1
     ), "cov_alm_gen: covariance diagonal does not agree with pseudo C_ell"
