@@ -8,13 +8,23 @@ Produces paper-quality plots including:
 - Summary statistics
 
 Usage:
-    python postprocess_emcee.py <npz_file> [--burn <burn_in>] [--thin <thin_factor>] [--output <output_dir>]
+    # Single chain
+    python postprocess_emcee.py chain.npz [--burn <burn_in>] [--thin <thin_factor>] [--output <output_dir>]
+    
+    # Multiple chains (explicit paths)
+    python postprocess_emcee.py chain1.npz chain2.npz chain3.npz [--burn <burn_in>]
+    
+    # Multiple chains (auto-discovery from base path)
+    python postprocess_emcee.py --base /path/to/chain [--burn <burn_in>]
+    # This will automatically find chain1.npz, chain2.npz, etc. or chain_1.npz, chain_2.npz, etc.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
+import glob
+import re
 
 try:
     import corner
@@ -147,6 +157,137 @@ def inspect_npz_file(filepath):
     print(f"{'='*60}\n")
 
 
+def discover_chain_files(base_path):
+    """
+    Discover chain files from a base path.
+    
+    Looks for patterns like:
+    - {base}1.npz, {base}2.npz, ...
+    - {base}_1.npz, {base}_2.npz, ...
+    - {base}chain1.npz, {base}chain2.npz, ...
+    - {base}_chain1.npz, {base}_chain2.npz, ...
+    
+    Parameters
+    ----------
+    base_path : str or Path
+        Base path (without the chain number suffix)
+        
+    Returns
+    -------
+    chain_files : list of Path
+        Sorted list of discovered chain files
+    """
+    base_path = Path(base_path)
+    base_dir = base_path.parent
+    base_name = base_path.name
+    
+    # Try various patterns
+    patterns = [
+        f"{base_name}[0-9]*.npz",           # chain1.npz, chain2.npz, ...
+        f"{base_name}_[0-9]*.npz",          # chain_1.npz, chain_2.npz, ...
+        f"{base_name}chain[0-9]*.npz",      # basechainX.npz
+        f"{base_name}_chain[0-9]*.npz",     # base_chainX.npz
+        f"{base_name}_chain_[0-9]*.npz",    # base_chain_X.npz
+    ]
+    
+    found_files = []
+    for pattern in patterns:
+        matches = list(base_dir.glob(pattern))
+        if matches:
+            found_files = matches
+            break
+    
+    if not found_files:
+        # Also check if base_path itself exists with .npz
+        if base_path.with_suffix('.npz').exists():
+            return [base_path.with_suffix('.npz')]
+        raise FileNotFoundError(
+            f"No chain files found matching base path: {base_path}\n"
+            f"Tried patterns: {patterns}"
+        )
+    
+    # Sort by the numeric part
+    def extract_number(path):
+        # Extract trailing numbers from stem
+        match = re.search(r'(\d+)$', path.stem)
+        return int(match.group(1)) if match else 0
+    
+    found_files.sort(key=extract_number)
+    
+    return found_files
+
+
+def load_multiple_chains(filepaths, verbose=True):
+    """
+    Load and concatenate multiple emcee chain files.
+    
+    Parameters
+    ----------
+    filepaths : list of str or Path
+        List of paths to .npz files
+    verbose : bool
+        Print information about each chain
+        
+    Returns
+    -------
+    combined_samples : ndarray
+        Concatenated samples, shape (total_steps, n_walkers, ndim)
+    params : list
+        Parameter names
+    metadata : dict
+        Combined metadata
+    """
+    all_samples = []
+    params = None
+    combined_metadata = {
+        'n_chains': len(filepaths),
+        'filepaths': [str(p) for p in filepaths],
+        'n_steps_per_chain': [],
+        'n_walkers': None,
+    }
+    
+    for i, filepath in enumerate(filepaths):
+        filepath = Path(filepath)
+        if verbose:
+            print(f"Loading chain {i+1}/{len(filepaths)}: {filepath.name}")
+        
+        samples, chain_params, metadata = load_emcee_samples(filepath)
+        
+        # Validate consistency across chains
+        if params is None:
+            params = chain_params
+            combined_metadata['n_walkers'] = metadata['n_walkers']
+        else:
+            if chain_params != params:
+                raise ValueError(
+                    f"Parameter mismatch in chain {filepath}:\n"
+                    f"  Expected: {params}\n"
+                    f"  Got: {chain_params}"
+                )
+            if metadata['n_walkers'] != combined_metadata['n_walkers']:
+                raise ValueError(
+                    f"Walker count mismatch in chain {filepath}:\n"
+                    f"  Expected: {combined_metadata['n_walkers']}\n"
+                    f"  Got: {metadata['n_walkers']}"
+                )
+        
+        all_samples.append(samples)
+        combined_metadata['n_steps_per_chain'].append(samples.shape[0])
+    
+    # Concatenate along the steps axis
+    combined_samples = np.concatenate(all_samples, axis=0)
+    combined_metadata['n_steps'] = combined_samples.shape[0]
+    
+    if verbose:
+        print(f"\nCombined {len(filepaths)} chains:")
+        print(f"  Total steps: {combined_metadata['n_steps']}")
+        print(f"  Steps per chain: {combined_metadata['n_steps_per_chain']}")
+        print(f"  Walkers: {combined_metadata['n_walkers']}")
+        print(f"  Parameters: {params}")
+    
+    return combined_samples, params, combined_metadata
+
+
 def compute_autocorrelation_time(samples, quiet=False):
     """
     Estimate integrated autocorrelation time for each parameter.
@@ -223,8 +364,60 @@ def plot_traces(samples, params, output_path, burn_in=0):
     print(f"Trace plot saved: {output_path}")
 
 
+def select_parameters(samples, params, selected_params, truths=None):
+    """
+    Select a subset of parameters from samples (marginalizing over others).
+    
+    Parameters
+    ----------
+    samples : ndarray
+        Shape (n_steps, n_walkers, ndim) or (n_samples, ndim)
+    params : list
+        All parameter names
+    selected_params : list
+        Parameter names to keep
+    truths : list, optional
+        Truth values for all parameters
+        
+    Returns
+    -------
+    selected_samples : ndarray
+        Samples with only selected parameters
+    selected_params : list
+        Selected parameter names
+    selected_truths : list or None
+        Truth values for selected parameters
+    """
+    # Find indices of selected parameters
+    indices = []
+    valid_params = []
+    for p in selected_params:
+        if p in params:
+            indices.append(params.index(p))
+            valid_params.append(p)
+        else:
+            print(f"Warning: Parameter '{p}' not found in chain. Available: {params}")
+    
+    if not indices:
+        raise ValueError(f"No valid parameters found. Available: {params}")
+    
+    # Select columns
+    if samples.ndim == 3:
+        selected_samples = samples[:, :, indices]
+    else:
+        selected_samples = samples[:, indices]
+    
+    # Select truths if provided
+    selected_truths = None
+    if truths is not None:
+        selected_truths = [truths[i] for i in indices]
+    
+    return selected_samples, valid_params, selected_truths
+
+
 def plot_corner(samples, params, output_path, burn_in=0, thin=1, 
-                truths=None, title=None, quantiles=[0.16, 0.5, 0.84]):
+                truths=None, title=None, quantiles=[0.16, 0.5, 0.84],
+                selected_params=None):
     """
     Create corner plot with posterior distributions.
     
@@ -246,6 +439,8 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
         Plot title
     quantiles : list
         Quantiles to show in corner plot
+    selected_params : list, optional
+        Subset of parameters to plot (others are marginalized over)
     """
     if not HAS_CORNER:
         print("Corner package not available, skipping corner plot")
@@ -254,17 +449,26 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
     # Apply burn-in and thinning
     flat_samples = samples[burn_in::thin, :, :].reshape(-1, samples.shape[-1])
     
+    # Select subset of parameters if specified
+    plot_params = params
+    plot_truths = truths
+    if selected_params is not None:
+        flat_samples, plot_params, plot_truths = select_parameters(
+            flat_samples, params, selected_params, truths
+        )
+        print(f"Plotting {len(plot_params)} parameters (marginalized over others): {plot_params}")
+    
     print(f"Corner plot: using {flat_samples.shape[0]} samples "
           f"(burn-in={burn_in}, thin={thin})")
     
     # Create corner plot
     fig = corner.corner(
         flat_samples,
-        labels=params,
+        labels=plot_params,
         quantiles=quantiles,
         show_titles=True,
         title_kwargs={"fontsize": 12},
-        truths=truths,
+        truths=plot_truths,
         truth_color='red',
         bins=30,
         smooth=1.0,
@@ -274,7 +478,7 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
         fill_contours=True,
         levels=(0.68, 0.95),
         color='C0',
-        range=np.repeat(0.999, len(params)),
+        range=np.repeat(0.999, len(plot_params)),
     )
     
     if title:
@@ -406,8 +610,10 @@ def main():
         description='Postprocess emcee MCMC chains from sampler.py',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('filepath', type=str, 
-                        help='Path to the .npz file with emcee samples')
+    parser.add_argument('filepaths', type=str, nargs='*',
+                        help='Path(s) to the .npz file(s) with emcee samples')
+    parser.add_argument('--base', type=str, default=None,
+                        help='Base path for auto-discovering chains (e.g., /path/to/chain finds chain1.npz, chain2.npz, etc.)')
     parser.add_argument('--burn', type=int, default=0,
                         help='Number of burn-in steps to discard')
     parser.add_argument('--thin', type=int, default=1,
@@ -420,42 +626,75 @@ def main():
                         help='True parameter values for corner plot')
     parser.add_argument('--title', type=str, default=None,
                         help='Title for corner plot')
+    parser.add_argument('--params', type=str, nargs='+', default=None,
+                        help='Subset of parameters to plot (others marginalized). E.g., --params s8 w_c h')
     
     args = parser.parse_args()
     
-    filepath = Path(args.filepath)
-    
-    if not filepath.exists():
-        print(f"Error: File not found: {filepath}")
+    # Determine which files to process
+    if args.base:
+        # Auto-discover chains from base path
+        try:
+            filepaths = discover_chain_files(args.base)
+            print(f"Discovered {len(filepaths)} chain files from base '{args.base}':")
+            for fp in filepaths:
+                print(f"  - {fp}")
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            return 1
+    elif args.filepaths:
+        filepaths = [Path(fp) for fp in args.filepaths]
+    else:
+        print("Error: Must provide either file path(s) or --base argument")
+        parser.print_help()
         return 1
+    
+    # Validate all files exist
+    for fp in filepaths:
+        if not fp.exists():
+            print(f"Error: File not found: {fp}")
+            return 1
     
     # Set output directory
     if args.output:
         output_dir = Path(args.output)
     else:
-        output_dir = filepath.parent
+        output_dir = filepaths[0].parent
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate base name for output files
-    base_name = filepath.stem
+    if len(filepaths) == 1:
+        base_name = filepaths[0].stem
+    else:
+        # Use common prefix or first file's stem + "_combined"
+        base_name = filepaths[0].stem.rstrip('0123456789').rstrip('_') + "_combined"
     
-    # Inspect file
-    if filepath.suffix == '.npz':
-        inspect_npz_file(filepath)
+    if args.params:
+        base_name += "_" + "_".join(args.params)
     
+    # Inspect files
     if args.inspect:
+        for fp in filepaths:
+            if fp.suffix == '.npz':
+                inspect_npz_file(fp)
         return 0
     
-    # Load samples
-    samples, params, metadata = load_emcee_samples(filepath)
+    # Load samples (single or multiple chains)
+    if len(filepaths) == 1:
+        filepath = filepaths[0]
+        if filepath.suffix == '.npz':
+            inspect_npz_file(filepath)
+        samples, params, metadata = load_emcee_samples(filepath)
+    else:
+        # Inspect first file
+        if filepaths[0].suffix == '.npz':
+            inspect_npz_file(filepaths[0])
+        samples, params, metadata = load_multiple_chains(filepaths)
+    
     n_steps, n_walkers, ndim = samples.shape
     
     # Auto-estimate burn-in if not specified
     burn_in = args.burn
-    if burn_in == 0:
-        # Use first 10% as burn-in by default
-        burn_in = max(1, n_steps // 10)
-        print(f"Auto burn-in: {burn_in} steps (10% of chain)")
     
     # Compute summary statistics
     stats = compute_summary_statistics(samples, params, burn_in=burn_in, thin=args.thin)
@@ -478,7 +717,8 @@ def main():
     corner_path = output_dir / f'{base_name}_corner.png'
     plot_corner(samples, params, corner_path, 
                 burn_in=burn_in, thin=args.thin,
-                truths=truths, title=args.title)
+                truths=truths, title=args.title,
+                selected_params=args.params)
     
     # Scatter plot (for 2D case)
     if ndim >= 2:

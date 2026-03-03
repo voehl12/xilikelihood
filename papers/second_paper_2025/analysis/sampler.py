@@ -35,11 +35,12 @@ OUTPUT_DIR = Path("sampler_output_test")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Sampler configuration
-USE_NESTED = False  # Set to True for Nautilus nested sampling, False for emcee MCMC
+USE_NESTED = False       # Set to True for Nautilus nested sampling, False for emcee MCMC
+FROM_CHECKPOINT = True  # None=auto-detect, True=force resume, False=force fresh start
 EMCEE_CONFIG = {
     "n_walkers": 24,  # Matches ntasks 
     "n_burn": 100,
-    "n_steps": 1000,
+    "n_steps": 2000,
     "thin": 1,
     "checkpoint_interval": 100  # Save every N steps (set to None to disable)
 }
@@ -247,43 +248,97 @@ def run_nested_sampler(prior, likelihood, jobnumber):
     return points, log_w, log_l
 
 
-def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
-    """Run emcee MCMC sampler. Continues from previous chain if checkpoint exists."""
+def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
+                      from_checkpoint=None):
+    """Run emcee MCMC sampler.
+
+    Parameters
+    ----------
+    from_checkpoint : bool or None
+        None  → auto-detect: checkpoint file → Mode 1; completed chain → Mode 2; else Mode 3.
+        True  → force Mode 1 (true resume); raises FileNotFoundError if no checkpoint found.
+        False → force Mode 3 (fresh start), ignoring any checkpoint or previous chain.
+    """
     import emcee
     import glob
-    
-    # Calculate total dimensionality first (accounting for multi-dimensional parameters)
+
     ndim = sum(len(mvn_mean) if param == mvn_param else 1 for param in params)
-    
-    # Use config defaults if not specified
+
     n_walkers = n_walkers or EMCEE_CONFIG["n_walkers"]
     n_burn = EMCEE_CONFIG["n_burn"]
     n_steps = n_steps or EMCEE_CONFIG["n_steps"]
-    
-    # Check for existing chains to continue from
-    existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}*.npz')))
+
+    steps_completed_so_far = 0
+    prev_chain = None
+
     checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
-    
-    continue_from = None
+    existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}*.npz')))
+
     chain_num = 0
-    
-    if existing_files:
-        # Find highest chain number
-        for f in existing_files:
-            if '_chain' in f:
-                try:
-                    num = int(f.split('_chain')[-1].replace('.npz', ''))
-                    chain_num = max(chain_num, num + 1)
-                except ValueError:
-                    pass
-            else:
-                chain_num = max(chain_num, 1)
-        continue_from = existing_files[-1]
-    elif checkpoint_file.exists():
-        continue_from = checkpoint_file
-        chain_num = 1
-    
-    logger.info("Setting up emcee MCMC sampler...")
+    for f in existing_files:
+        if '_chain' in f:
+            try:
+                num = int(f.split('_chain')[-1].replace('.npz', ''))
+                chain_num = max(chain_num, num + 1)
+            except ValueError:
+                pass
+        else:
+            chain_num = max(chain_num, 1)
+
+    if from_checkpoint is True:
+        if not checkpoint_file.exists():
+            raise FileNotFoundError(
+                f"from_checkpoint=True but no checkpoint found: {checkpoint_file}"
+            )
+        mode = "from_checkpoint"
+    elif from_checkpoint is False:
+        mode = "fresh_start"
+    else:
+        if checkpoint_file.exists():
+            mode = "from_checkpoint"
+        elif existing_files:
+            mode = "from_previous_chain"
+        else:
+            mode = "fresh_start"
+
+    logger.info(f"Sampler mode: {mode}")
+
+    if mode == "from_checkpoint":
+        prev_data = np.load(checkpoint_file)
+        prev_chain = prev_data['samples']
+        steps_completed_so_far = int(prev_data['steps_completed'])
+        steps_remaining = n_steps - steps_completed_so_far
+
+        if prev_chain.shape[1] != n_walkers or prev_chain.shape[2] != ndim:
+            raise ValueError(
+                f"Checkpoint shape {prev_chain.shape} incompatible with "
+                f"n_walkers={n_walkers}, ndim={ndim}"
+            )
+
+        logger.info(
+            f"Resuming from checkpoint: {steps_completed_so_far}/{n_steps} steps done, "
+            f"{steps_remaining} remaining"
+        )
+
+        if steps_remaining <= 0:
+            logger.warning(
+                f"Checkpoint indicates chain is already complete "
+                f"({steps_completed_so_far} >= {n_steps}). "
+                "Saving checkpoint chain as final output and exiting."
+            )
+            output_file = (
+                OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+                if len(existing_files) == 0
+                else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+            )
+            np.savez(output_file, samples=prev_chain,
+                     params=np.array(params, dtype=str),
+                     n_walkers=n_walkers, n_steps=n_steps)
+            logger.info(f"Saved complete chain: {output_file}")
+            save_corner_plot(prev_chain, labels=params,
+                             filename=f'corner_{jobnumber}_{RUN_NAME}_emcee.png')
+            return prev_chain
+
     logger.info(f"Parameters: {len(params)} ({ndim} dimensions), Walkers: {n_walkers}, Steps: {n_steps}")
     
     # Create partial function with all the required variables
@@ -305,23 +360,27 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
         logger.info("MPI pool initialized")
         file_handler.flush()
         
-        # Initial positions: from previous chain or sample from priors
-        if continue_from:
-            logger.info(f"Continuing from previous chain: {continue_from}")
-            prev_data = np.load(continue_from)
-            prev_samples = prev_data['samples']  # (n_steps, n_walkers, ndim)
-            # Select half of walkers with highest variance (not stuck)
-            walker_var = np.var(prev_samples, axis=0).sum(axis=1)  # variance per walker
-            good_walkers = np.argsort(walker_var)[-n_walkers//2:]
-            # Sample 2 positions from last 100 steps of each good walker
-            last_samples = prev_samples[-100:, good_walkers, :]  # (100, n_good, ndim)
+        if mode == "from_checkpoint":
+            p0 = prev_chain[-1, :, :]
+            skip_burnin = True
+            logger.info("Mode 1: all walkers resume from last checkpoint position")
+
+        elif mode == "from_previous_chain":
+            logger.info(f"Mode 2: warm start from previous chain {existing_files[-1]}")
+            prev_data = np.load(existing_files[-1])
+            prev_samples = prev_data['samples']
+            walker_var = np.var(prev_samples, axis=0).sum(axis=1)
+            good_walkers = np.argsort(walker_var)[-n_walkers // 2:]
+            last_samples = prev_samples[-100:, good_walkers, :]
             flat_good = last_samples.reshape(-1, ndim)
-            idx = np.random.choice(len(flat_good), size=n_walkers, replace=False)
+            replace = len(flat_good) < n_walkers
+            idx = np.random.choice(len(flat_good), size=n_walkers, replace=replace)
             p0 = flat_good[idx]
             logger.info(f"Sampled {n_walkers} positions from {len(good_walkers)} best walkers")
             skip_burnin = True
+
         else:
-            logger.info(f"Starting fresh chain with burn-in ({n_burn} steps)")
+            logger.info(f"Mode 3: fresh start with burn-in ({n_burn} steps)")
             p0 = []
             for _ in range(n_walkers):
                 pos = []
@@ -330,7 +389,6 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
                         low, high = uniform_priors[param]
                         pos.append(np.random.uniform(low, high))
                     elif mvn_param is not None and param == mvn_param:
-                        # Sample from Gaussian prior (handles multi-dimensional parameters)
                         pos.extend(np.random.multivariate_normal(mvn_mean, mvn_cov))
                     else:
                         logger.error(f"No prior defined for parameter {param}")
@@ -354,46 +412,63 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
             state = p0
             logger.info("Skipping burn-in (continuing from previous chain)")
         
-        # Production run with periodic checkpointing
         checkpoint_interval = EMCEE_CONFIG.get("checkpoint_interval", 100)
-        checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
-        
-        logger.info(f"Running production ({n_steps} steps, checkpointing every {checkpoint_interval} steps)...")
+        steps_offset = steps_completed_so_far if mode == "from_checkpoint" else 0
+        steps_to_run = n_steps - steps_offset
+
+        logger.info(
+            f"Running production ({steps_to_run} steps, checkpointing every "
+            f"{checkpoint_interval} steps, offset={steps_offset})..."
+        )
         file_handler.flush()
-        
+
         steps_completed = 0
-        while steps_completed < n_steps:
-            # Run for checkpoint_interval steps (or remaining steps)
-            steps_this_batch = min(checkpoint_interval, n_steps - steps_completed)
+        while steps_completed < steps_to_run:
+            steps_this_batch = min(checkpoint_interval, steps_to_run - steps_completed)
             state = sampler.run_mcmc(state, steps_this_batch, progress=False)
             steps_completed += steps_this_batch
-            
-            # Save checkpoint
-            checkpoint_samples = sampler.get_chain()  # All samples so far
+
             np.savez(
                 checkpoint_file,
-                samples=checkpoint_samples,
+                samples=sampler.get_chain(),
                 params=np.array(params, dtype=str),
                 n_walkers=n_walkers,
-                steps_completed=steps_completed,
+                steps_completed=steps_offset + steps_completed,
                 n_steps_target=n_steps,
             )
-            logger.info(f"Checkpoint saved at step {steps_completed}/{n_steps}: {checkpoint_file}")
+            logger.info(
+                f"Checkpoint saved at step {steps_offset + steps_completed}/{n_steps}: "
+                f"{checkpoint_file}"
+            )
             file_handler.flush()
         
         logger.info("emcee sampling completed!")
         file_handler.flush()
     
-    # Get samples
-    samples = sampler.get_chain()  # Shape: (n_steps, n_walkers, ndim)
+    new_chain = sampler.get_chain()
+
+    if mode == "from_checkpoint" and prev_chain is not None:
+        samples = np.concatenate([prev_chain, new_chain], axis=0)
+        logger.info(
+            f"Concatenated checkpoint chain {prev_chain.shape} + "
+            f"new chain {new_chain.shape} → {samples.shape}"
+        )
+    else:
+        samples = new_chain
+
     logger.info(f"Final samples shape: {samples.shape}")
-    
-    # Save samples (with chain number if continuing)
-    if chain_num > 0:
+
+    if mode == "from_checkpoint":
+        output_file = (
+            OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+            if len(existing_files) == 0
+            else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+        )
+    elif mode == "from_previous_chain":
         output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
     else:
         output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
-    
+
     np.savez(
         output_file,
         samples=samples,
@@ -403,13 +478,17 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None):
     )
     logger.info(f"Samples saved: {output_file}")
 
-    # Save corner plot (handles flattening and trace plots internally)
+    if checkpoint_file.exists():
+        done_file = checkpoint_file.parent / (checkpoint_file.stem + '_done.npz')
+        checkpoint_file.rename(done_file)
+        logger.info(f"Checkpoint marked complete: {done_file}")
+
     save_corner_plot(
         samples,
         labels=params,
         filename=f'corner_{jobnumber}_{RUN_NAME}_emcee.png'
     )
-    
+
     return samples
 
 if __name__ == "__main__":
@@ -508,7 +587,7 @@ if __name__ == "__main__":
         results = run_nested_sampler(prior, likelihood, jobnumber)
         logger.info("Nested sampling complete")
     else:
-        results = run_emcee_sampler(likelihood, jobnumber)
+        results = run_emcee_sampler(likelihood, jobnumber, from_checkpoint=FROM_CHECKPOINT)
         logger.info("MCMC sampling complete")
     
     logger.info("All done!")
