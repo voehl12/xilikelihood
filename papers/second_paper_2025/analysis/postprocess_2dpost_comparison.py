@@ -68,7 +68,7 @@ COMPARISON_CONFIGS = {
         },
         "right": {
             "filepath": "/cluster/work/refregier/veoehl/posteriors/2d_post_1000sqd_kidsplus_nosmall_n1024",
-            "label": r"$> 15'$",
+            "label": r"$> 30'$",
             "n_jobs": N_JOBS_2D,
             "cleaning_threshold_exact": 864,
             "cleaning_threshold_gauss": 865,
@@ -91,7 +91,7 @@ COMPARISON_CONFIGS = {
         },
         "right": {
             "filepath": "/cluster/work/refregier/veoehl/posteriors/2d_post_10000sqd_kidsplus_nosmall_n1024",
-            "label": r"$> 15'$",
+            "label": r"$> 30'$",
             "n_jobs": N_JOBS_2D,
             "cleaning_threshold_exact": 2000,
             "cleaning_threshold_gauss": 2000,
@@ -104,7 +104,7 @@ COMPARISON_CONFIGS = {
 }
 
 # Select which comparison to run
-ACTIVE_COMPARISON = "scale_cut_comparison_10000sqd"
+ACTIVE_COMPARISON = "mask_comparison"  # Options: "mask_comparison", "scale_cut_comparison", "scale_cut_comparison_10000sqd"
 
 
 # =============================================================================
@@ -130,12 +130,20 @@ def load_and_process_dataset(config):
     
     mean_exact = compute_posterior_mean(omega_m_prior, s8_prior, exact_2d, dx, dy)
     mean_gauss = compute_posterior_mean(omega_m_prior, s8_prior, gauss_2d, dx, dy)
+
+    # Mode = coordinates at maximum posterior value
+    exact_mode_idx = np.unravel_index(np.argmax(exact_2d), exact_2d.shape)
+    gauss_mode_idx = np.unravel_index(np.argmax(gauss_2d), gauss_2d.shape)
+    mode_exact = (omega_m_prior[exact_mode_idx[1]], s8_prior[exact_mode_idx[0]])
+    mode_gauss = (omega_m_prior[gauss_mode_idx[1]], s8_prior[gauss_mode_idx[0]])
     
     return {
         "exact_2d": exact_2d,
         "gauss_2d": gauss_2d,
         "mean_exact": mean_exact,
         "mean_gauss": mean_gauss,
+        "mode_exact": mode_exact,
+        "mode_gauss": mode_gauss,
         "label": config["label"],
         "omega_m_lim": config.get("omega_m_lim", (0.2, 0.45)),
         "s8_lim": config.get("s8_lim", (0.7, 0.9)),
@@ -194,25 +202,25 @@ def create_comparison_figure(data_left, data_right,
     # Plot left panel - Gaussian (filled)
     create_marginal_plot(ax_main_left, ax_top_left, ax_right_left,
         omega_m_prior_left, s8_prior_left, data_left["gauss_2d"], thresholds_left_gauss,
-        colors_gauss, data_left["mean_gauss"][0], data_left["mean_gauss"][1],
+        colors_gauss, data_left["mode_gauss"][0], data_left["mode_gauss"][1],
         linecolor_gauss, dx_left, dy_left, alpha=0.5, show_ylabel=True)
     
     # Plot left panel - Exact (lines)
     create_marginal_plot(ax_main_left, ax_top_left, ax_right_left,
         omega_m_prior_left, s8_prior_left, data_left["exact_2d"], thresholds_left_exact,
-        colors_exact, data_left["mean_exact"][0], data_left["mean_exact"][1],
+        colors_exact, data_left["mode_exact"][0], data_left["mode_exact"][1],
         linecolor_exact, dx_left, dy_left, alpha=1.0, show_ylabel=True)
     
     # Plot right panel - Gaussian (filled)
     create_marginal_plot(ax_main_right, ax_top_right, ax_right_right,
         omega_m_prior_right, s8_prior_right, data_right["gauss_2d"], thresholds_right_gauss,
-        colors_gauss, data_right["mean_gauss"][0], data_right["mean_gauss"][1],
+        colors_gauss, data_right["mode_gauss"][0], data_right["mode_gauss"][1],
         linecolor_gauss, dx_right, dy_right, alpha=0.5, show_ylabel=False)
     
     # Plot right panel - Exact (lines)
     create_marginal_plot(ax_main_right, ax_top_right, ax_right_right,
         omega_m_prior_right, s8_prior_right, data_right["exact_2d"], thresholds_right_exact,
-        colors_exact, data_right["mean_exact"][0], data_right["mean_exact"][1],
+        colors_exact, data_right["mode_exact"][0], data_right["mode_exact"][1],
         linecolor_exact, dx_right, dy_right, alpha=1.0, show_ylabel=False)
     
     # Set axis limits for each panel

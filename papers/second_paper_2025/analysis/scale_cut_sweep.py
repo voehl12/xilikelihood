@@ -25,7 +25,7 @@ import xilikelihood as xlh
 from config import (
     FIDUCIAL_COSMO,
     EXACT_LMAX,
-    MASK_CONFIG_MEDRES_STAGE3 as MASK_CONFIG,
+    MASK_CONFIG_MEDRES_STAGE4 as MASK_CONFIG,
     DATA_FILES,
     PACKAGE_DIR
 )
@@ -40,41 +40,35 @@ def make_plot(df, png_path, pdf_path=None):
     colors = cmr.take_cmap_colors(pdf_cm, 2, cmap_range=(0.3, 0.5), return_fmt='hex')
     likelihood_color = colors[0]
     time_color = colors[1]
-    
-    fig, ax1 = plt.subplots(figsize=(5, 4))
 
-    # Plot likelihood
-    ax1.plot(df["scale_cut_arcmin"], df["loglike"], marker='o', linestyle='-', 
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4), sharex=True)
+
+    # Left panel: likelihood values
+    ax1.plot(df["scale_cut_arcmin"], df["loglike"], marker='o', linestyle='-',
              color=likelihood_color, label=r'Copula Likelihood', markersize=5)
-    
+
     # Add Gaussian likelihood as black dashed horizontal line
     # Use the first gausslike value (should be constant across all scale cuts)
     gauss_value = df["gausslike"].iloc[0]
-    ax1.axhline(gauss_value, color='black', linestyle='--', linewidth=1.5, 
+    ax1.axhline(gauss_value, color='black', linestyle='--', linewidth=1.5,
                 label=r'Gaussian Likelihood')
-    
+
     ax1.set_xlabel(r"Threshold for Gaussian marginals (arcmin)")
     ax1.set_ylabel(r"Log-Likelihood")
     ax1.set_xscale('log')
-    
+
     # Fix y-axis labels to avoid scientific notation offset
     ax1.yaxis.set_major_formatter(ticker.ScalarFormatter(useOffset=False))
     ax1.ticklabel_format(style='plain', axis='y')
-    
-    # Create second axis for time (colored line, black axis labels)
-    ax2 = ax1.twinx()
-    ax2.plot(df["scale_cut_arcmin"], df["time_sec"], marker='s', linestyle='-', 
-             color=time_color, label=r'Computation time', markersize=4, alpha=0.8)
-    ax2.set_ylabel(r'Time (seconds)')
+    ax1.legend(loc='lower right', frameon=False)
 
-    # Combine legends
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', frameon=False)
-    
-    # Adjust y-axis limits to make space above for legend
-    ymin, ymax = ax1.get_ylim()
-    ax1.set_ylim(ymin, ymax + 0.25 * (ymax - ymin))
+    # Right panel: runtime
+    ax2.plot(df["scale_cut_arcmin"], df["time_sec"], marker='s', linestyle='-',
+             color=time_color, label=r'Computation time', markersize=4, alpha=0.8)
+    ax2.set_xlabel(r"Threshold for Gaussian marginals (arcmin)")
+    ax2.set_ylabel(r"Time (seconds)")
+    ax2.set_xscale('log')
+    ax2.legend(loc='lower left', frameon=False)
 
     plt.tight_layout()
     
