@@ -39,7 +39,7 @@ def generate_covariance(datavector, correlation, noise_scale=0.5):
     ndim = len(datavector)
     
     # Data-dependent base covariance
-    base_cov = noise_scale * np.outer(datavector / (np.arange(1, ndim+1) + 1), datavector) 
+    base_cov = noise_scale * np.outer(datavector / (np.arange(1, ndim+1) + 1), datavector / (np.arange(1, ndim+1) + 1)) 
     
     # Full correlation matrix
     corr_matrix = np.eye(ndim) * (1 - correlation) + correlation
