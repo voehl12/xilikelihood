@@ -605,26 +605,62 @@ class XiLikelihood:
 
         return self._xs, self._pdfs
 
-    def gauss_compare(self, data, data_subset=None):
-        # should always use a fixed covariance, produce on initialization?
-        mean = self._mean
+    def _gaussian_loglikelihood_from_prepared(self, data, data_subset=None):
         if self.gaussian_covariance is None:
-            logger.warning("Using cosmology-dependent covariance for Gaussian likelihood!")
-            cov = self._cov
-        else:
-            cov = self.gaussian_covariance
+            raise RuntimeError(
+                "Gaussian likelihood requires self.gaussian_covariance to be set."
+            )
+
+        mean = self._mean
+        cov = self.gaussian_covariance
+
         if data_subset is not None:
             data = cop.data_subset(data, data_subset)
-            cov = cop.cov_subset(cov, data_subset, self._n_ang_bins)  # Use _n_ang_bins
+            cov = cop.cov_subset(cov, data_subset, self._n_ang_bins)
             mean = cop.data_subset(mean, data_subset)
 
-        mean = mean.flatten()
-        mvn = multivariate_normal(mean=mean, cov=cov)
-        data_flat = data.flatten()
-        return mvn.logpdf(data_flat)
+        data_flat = np.asarray(data).flatten()
+        mean_flat = np.asarray(mean).flatten()
+        cov = np.asarray(cov)
+
+        if data_flat.shape != mean_flat.shape:
+            raise ValueError(
+                "Mismatch in dimensions: flattened data and mean must have identical shape. "
+                f"Got {data_flat.shape} and {mean_flat.shape}."
+            )
+
+        expected_cov_shape = (mean_flat.size, mean_flat.size)
+        if cov.shape != expected_cov_shape:
+            raise ValueError(
+                "Mismatch in dimensions: covariance shape must match flattened mean size. "
+                f"Expected {expected_cov_shape}, got {cov.shape}."
+            )
+
+        return multivariate_normal.logpdf(data_flat, mean=mean_flat, cov=cov)
+
+    def loglikelihood_gaussian(self, data, cosmology, highell=True, data_subset=None):
+        self._prepare_likelihood_components(cosmology, highell, prepare_copula=False)
+        return self._gaussian_loglikelihood_from_prepared(data, data_subset=data_subset)
+
+    def gauss_compare(self, data, data_subset=None):
+        import warnings
+
+        warnings.warn(
+            "'gauss_compare' is deprecated and will be removed in a future release. "
+            "Use loglikelihood(..., likelihood_type='gaussian') or "
+            "loglikelihood(..., likelihood_type='both', allow_diagnostic=True) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._gaussian_loglikelihood_from_prepared(data, data_subset=data_subset)
     
-    def _prepare_likelihood_components(self, cosmology, highell: bool = True):
-        """Prepare all components needed for likelihood computation."""
+    def _prepare_likelihood_components(self, cosmology, highell: bool = True, prepare_copula: bool = True):
+        """Prepare components needed for likelihood computation.
+
+        This method always prepares cosmology-dependent mean components using
+        the matrix-products path. Copula-specific covariance/grids are prepared
+        only when ``prepare_copula=True``.
+        """
         if cosmology is None:
             raise ValueError("cosmology cannot be None")
     
@@ -640,28 +676,42 @@ class XiLikelihood:
         self.initiate_theory_cl(cosmology)
         self._prepare_matrix_products()
 
-        self._cov = self.get_covariance_matrix_lowell()
         self._mean = self._means_lowell
-
         if self._highell:
-            self.get_covariance_matrix_highell()
             self._get_means_highell()
-            self._cov = self._cov_lowell + self._cov_highell
             self._mean = self._means_lowell + self._means_highell
-        logger.info("Covariance matrix and means prepared.")
-        logger.info("Mean samples: %s", self._mean[:5, :5])
-        
-        self._xs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
-        self._pdfs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
-        self.marginals_exact()
-        self.marginals_gaussian()
-        self._cdfs, self._pdfs, self._xs = cop.pdf_to_cdf(self._xs, self._pdfs,num_points=self.config.pdf_steps)  # Interpolated xs and pdfs
-        self.check_pdfs()
+
+        if prepare_copula:
+            self._cov = self.get_covariance_matrix_lowell()
+            if self._highell:
+                self.get_covariance_matrix_highell()
+                self._cov = self._cov_lowell + self._cov_highell
+
+            logger.info("Covariance matrix and means prepared.")
+            logger.info("Mean samples: %s", self._mean[:5, :5])
+
+            self._xs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+            self._pdfs = np.zeros(self.data_shape_full + (self.config.cf_steps-1,))
+            self.marginals_exact()
+            self.marginals_gaussian()
+            self._cdfs, self._pdfs, self._xs = cop.pdf_to_cdf(self._xs, self._pdfs, num_points=self.config.pdf_steps)
+            self.check_pdfs()
+        else:
+            logger.info("Gaussian components prepared.")
 
         del self._products
 
 
-    def loglikelihood(self, data, cosmology, highell=True, gausscompare=False, data_subset=None):
+    def loglikelihood(
+        self,
+        data,
+        cosmology,
+        highell=True,
+        gausscompare=False,
+        data_subset=None,
+        likelihood_type: str = "copula",
+        allow_diagnostic: bool = False,
+    ):
         """
         Compute the log-likelihood for a given cosmology and data point.
 
@@ -677,28 +727,84 @@ class XiLikelihood:
             Whether to compare with Gaussian likelihood, by default False.
         data_subset : list, optional
             Subset of data to evaluate, by default None.
+        likelihood_type : str, optional
+            Likelihood computation type. Supported values are:
+            - "copula": return copula log-likelihood only
+            - "gaussian": return Gaussian-only log-likelihood
+            - "both": return a tuple of (copula, gaussian)
+            By default "copula".
+        allow_diagnostic : bool, optional
+            Explicit opt-in for diagnostic return types. Must be True to use
+            ``likelihood_type="both"``. By default False.
 
         Returns
         -------
         float or tuple
-            Log-likelihood value, optionally with Gaussian comparison.
+            Log-likelihood value for ``copula`` or ``gaussian``.
+            For ``both``, returns ``(logL_copula, logL_gaussian)``.
         """
-        
+        import warnings
+
+        valid_likelihood_types = {"copula", "gaussian", "both"}
+        if likelihood_type not in valid_likelihood_types:
+            raise ValueError(
+                f"Unknown likelihood_type '{likelihood_type}'. "
+                f"Expected one of {sorted(valid_likelihood_types)}."
+            )
+
+        if gausscompare:
+            warnings.warn(
+                "'gausscompare' is deprecated and will be removed in a future release. "
+                "Use likelihood_type='both' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Backward compatibility: gausscompare implies diagnostic intent.
+            allow_diagnostic = True
+            if likelihood_type == "copula":
+                likelihood_type = "both"
+            elif likelihood_type != "both":
+                raise ValueError(
+                    "Conflicting settings: gausscompare=True implies likelihood_type='both'. "
+                    f"Got likelihood_type='{likelihood_type}'."
+                )
+
+        if likelihood_type == "both" and not allow_diagnostic:
+            raise ValueError(
+                "likelihood_type='both' is diagnostic-only and requires "
+                "allow_diagnostic=True."
+            )
+
+        if likelihood_type in {"gaussian", "both"} and self.gaussian_covariance is None:
+            raise RuntimeError(
+                "likelihood_type='gaussian' and likelihood_type='both' require "
+                "self.gaussian_covariance to be set."
+            )
+
         with computation_phase("Log-likelihood evaluation", log_memory=self.config.log_memory_usage):
-            self._prepare_likelihood_components(cosmology, highell)
+            if likelihood_type == "gaussian":
+                return self.loglikelihood_gaussian(
+                    data,
+                    cosmology,
+                    highell=highell,
+                    data_subset=data_subset,
+                )
+
+            self._prepare_likelihood_components(cosmology, highell, prepare_copula=True)
 
             # Quick check to ensure data and self._xs have matching first two dimensions
             if data.shape[:2] != self._xs.shape[:2]:
                 raise ValueError("Mismatch in dimensions: data and self._xs must have the same first two dimensions. But got: {} and {}".format(data.shape, self._xs.shape))
 
             # Ensure all arrays passed to copula-based likelihood evaluation are NumPy arrays
-            likelihood = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
+            logL_copula = cop.evaluate(np.asarray(data), np.asarray(self._xs), np.asarray(self._pdfs), np.asarray(self._cdfs), np.asarray(self._cov), subset=data_subset)
 
-        if gausscompare:
-            return likelihood, self.gauss_compare(data, data_subset=data_subset)
+        if likelihood_type == "both":
+            logL_gaussian = self._gaussian_loglikelihood_from_prepared(data, data_subset=data_subset)
+            return logL_copula, logL_gaussian
         else:
-            return likelihood
-    
+            return logL_copula
+
     def likelihood_function(self, cosmology, highell=True):
         """
         Return the likelihood as a joint PDF for the entire data space.
