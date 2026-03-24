@@ -9,13 +9,13 @@ Produces paper-quality plots including:
 
 Usage:
     # Single chain
-    python postprocess_emcee.py chain.npz [--burn <burn_in>] [--thin <thin_factor>] [--output <output_dir>]
+    python postprocess_emcee.py chain.npz [--output <output_dir>] [--config <config_file>]
     
     # Multiple chains (explicit paths)
-    python postprocess_emcee.py chain1.npz chain2.npz chain3.npz [--burn <burn_in>]
+    python postprocess_emcee.py chain1.npz chain2.npz chain3.npz [--config <config_file>]
     
     # Multiple chains (auto-discovery from base path)
-    python postprocess_emcee.py --base /path/to/chain [--burn <burn_in>]
+    python postprocess_emcee.py --base /path/to/chain [--output <output_dir>] [--config <config_file>]
     # This will automatically find chain1.npz, chain2.npz, etc. or chain_1.npz, chain_2.npz, etc.
 """
 
@@ -23,15 +23,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
-import glob
 import re
 
+from plot_utils_style import configure_paper_plot_style, get_single_chain_color
+import postprocess_utils as putils
+
 try:
-    import corner
-    HAS_CORNER = True
+    import getdist
+    from getdist import plots as gplots
+    from getdist.plots import GetDistPlotSettings
+    HAS_GETDIST = True
 except ImportError:
-    HAS_CORNER = False
-    print("Warning: 'corner' package not found. Corner plots will not be generated.")
+    HAS_GETDIST = False
+    print("Warning: 'getdist' package not found. Corner plots will not be generated.")
 
 # Fiducial values from theory_cl.py defaults (used for mock data generation)
 # When omega_m=0.31 is given: w_c = (omega_m - w_b/h^2) * h^2
@@ -49,21 +53,75 @@ FIDUCIALS = {
     "delta_z_2": 0.0,
     "delta_z_3": 0.0,
     "delta_z_4": 0.0,
+    # Omega parameters (Ω = w/h^2, calculated from fiducial values)
+    # Ω_c = 0.1309 / (0.7^2) = 0.26714, Ω_b = 0.021 / (0.7^2) = 0.04286
+    # Ω_m = Ω_c + Ω_b = 0.31
+    "omega_c": 0.26714,
+    "omega_b": 0.04286,
+    "omega_m": 0.31,
 }
 
-# Paper-quality plot settings
-plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelsize': 14,
-    'axes.titlesize': 14,
-    'xtick.labelsize': 11,
-    'ytick.labelsize': 11,
-    'legend.fontsize': 11,
-    'figure.figsize': (8, 6),
-    'figure.dpi': 150,
-    'savefig.dpi': 300,
-    'savefig.bbox': 'tight',
-})
+DEFAULT_CONFIG = {
+    'analysis': {
+        'inspect': False,
+        'burn': 0,
+        'thin': 1,
+        'truths': None,
+        'title': None,
+        'params': None,
+        'param_labels': None,
+        'omega_transform': False,  # Transform w params to omega = w/h^2
+        'smooth_scale_1D': 1.5,  # Smoothing for 1D marginals (lower = sharper)
+        'smooth_scale_2D': 1.5,  # Smoothing for 2D contours (lower = sharper)
+        'corner_fig_size': None,  # GetDist corner plot figure size (e.g., 8 for 8 inches, or (8, 8) for (width, height))
+    },
+    'stuck_filter': {
+        'enabled': False,
+        'atol': 0.0,
+        'rtol': 1e-12,
+        'min_run': 5,
+        'pre_padding': 1,
+        'post_padding': 0,
+        'remove_all_zero_steps': True,
+        'zero_tol': 0.0,
+        'remove_isolated_global_drops': True,
+        'global_drop_rel': 0.02,
+        'params': None,
+    },
+}
+
+# Default LaTeX plotting labels (override via [analysis].param_labels in TOML)
+DEFAULT_PARAM_LABELS = {
+    's8': r'$S_8$',
+    'w_c': r'$\omega_c$',
+    'w_b': r'$\omega_b$',
+    'h': r'$h$',
+    'n_s': r'$n_s$',
+    'A_IA': r'$A_{\mathrm{IA}}$',
+    'omega_c': r'$\Omega_c$',
+    'omega_b': r'$\Omega_b$',
+    'omega_m': r'$\Omega_m$',
+}
+
+# Paper-quality plot settings (shared across analysis scripts)
+configure_paper_plot_style()
+
+
+def get_plot_labels(params, param_labels=None):
+    """Return plotting labels (LaTeX if available) for a parameter list."""
+    labels = dict(DEFAULT_PARAM_LABELS)
+    if isinstance(param_labels, dict):
+        labels.update(param_labels)
+    return [labels.get(p, p) for p in params]
+
+
+def load_postprocess_config(config_path):
+    """Load TOML config file and merge with defaults."""
+    return putils.load_postprocess_config(
+        config_path,
+        DEFAULT_CONFIG,
+        relative_to=Path(__file__).resolve().parent,
+    )
 
 
 def load_emcee_samples(filepath):
@@ -102,6 +160,20 @@ def load_emcee_samples(filepath):
             metadata['steps_completed'] = int(data['steps_completed'])
         if 'n_steps_target' in data:
             metadata['n_steps_target'] = int(data['n_steps_target'])
+
+        # Safety: if this file contains checkpoint metadata, honor the number
+        # of completed steps to avoid including any preallocated/invalid tail rows.
+        if 'steps_completed' in metadata:
+            completed = metadata['steps_completed']
+            if completed < 0:
+                raise ValueError(f"Invalid steps_completed={completed} in {filepath}")
+            if completed < samples.shape[0]:
+                print(
+                    f"Trimming chain to steps_completed={completed} "
+                    f"from raw shape {samples.shape}"
+                )
+                samples = samples[:completed]
+                metadata['n_steps'] = completed
             
     elif filepath.suffix == '.h5':
         # Fallback for HDF5 files (legacy support)
@@ -288,138 +360,12 @@ def load_multiple_chains(filepaths, verbose=True):
     return combined_samples, params, combined_metadata
 
 
-def compute_autocorrelation_time(samples, quiet=False):
-    """
-    Estimate integrated autocorrelation time for each parameter.
-    
-    Parameters
-    ----------
-    samples : ndarray
-        Shape (n_steps, n_walkers, ndim)
-    quiet : bool
-        Suppress warnings
-        
-    Returns
-    -------
-    tau : ndarray
-        Autocorrelation time for each parameter
-    """
-    try:
-        import emcee
-        # Flatten across walkers for autocorrelation estimation
-        tau = emcee.autocorr.integrated_time(samples, quiet=quiet)
-        return tau
-    except Exception as e:
-        if not quiet:
-            print(f"Warning: Could not compute autocorrelation time: {e}")
-        return None
-
-
-def plot_traces(samples, params, output_path, burn_in=0):
-    """
-    Create trace plots showing walker chains.
-    
-    Parameters
-    ----------
-    samples : ndarray
-        Shape (n_steps, n_walkers, ndim)
-    params : list
-        Parameter names
-    output_path : Path
-        Output file path
-    burn_in : int
-        Burn-in period to mark with vertical line
-    """
-    n_steps, n_walkers, ndim = samples.shape
-    
-    fig, axes = plt.subplots(ndim, 1, figsize=(12, 2.5 * ndim), sharex=True)
-    if ndim == 1:
-        axes = [axes]
-    
-    for i, ax in enumerate(axes):
-        for j in range(n_walkers):
-            ax.plot(samples[:, j, i], alpha=0.4, lw=0.5)
-        
-        ax.set_ylabel(params[i] if i < len(params) else f"param {i}")
-        ax.set_xlim(0, n_steps)
-        
-        # Mark burn-in period
-        if burn_in > 0:
-            ax.axvline(burn_in, color='red', linestyle='--', alpha=0.7, label='burn-in')
-        
-        # Add median line after burn-in
-        if burn_in < n_steps:
-            median_val = np.median(samples[burn_in:, :, i])
-            ax.axhline(median_val, color='black', linestyle='-', alpha=0.5, lw=1)
-    
-    axes[-1].set_xlabel("Step")
-    axes[0].set_title(f"MCMC Traces ({n_walkers} walkers, {n_steps} steps)")
-    
-    if burn_in > 0:
-        axes[0].legend(loc='upper right')
-    
-    fig.tight_layout()
-    plt.savefig(output_path)
-    plt.close(fig)
-    print(f"Trace plot saved: {output_path}")
-
-
-def select_parameters(samples, params, selected_params, truths=None):
-    """
-    Select a subset of parameters from samples (marginalizing over others).
-    
-    Parameters
-    ----------
-    samples : ndarray
-        Shape (n_steps, n_walkers, ndim) or (n_samples, ndim)
-    params : list
-        All parameter names
-    selected_params : list
-        Parameter names to keep
-    truths : list, optional
-        Truth values for all parameters
-        
-    Returns
-    -------
-    selected_samples : ndarray
-        Samples with only selected parameters
-    selected_params : list
-        Selected parameter names
-    selected_truths : list or None
-        Truth values for selected parameters
-    """
-    # Find indices of selected parameters
-    indices = []
-    valid_params = []
-    for p in selected_params:
-        if p in params:
-            indices.append(params.index(p))
-            valid_params.append(p)
-        else:
-            print(f"Warning: Parameter '{p}' not found in chain. Available: {params}")
-    
-    if not indices:
-        raise ValueError(f"No valid parameters found. Available: {params}")
-    
-    # Select columns
-    if samples.ndim == 3:
-        selected_samples = samples[:, :, indices]
-    else:
-        selected_samples = samples[:, indices]
-    
-    # Select truths if provided
-    selected_truths = None
-    if truths is not None:
-        selected_truths = [truths[i] for i in indices]
-    
-    return selected_samples, valid_params, selected_truths
-
-
-def plot_corner(samples, params, output_path, burn_in=0, thin=1, 
+def plot_corner(samples, params, output_path, burn_in=0, thin=1,
                 truths=None, title=None, quantiles=[0.16, 0.5, 0.84],
-                selected_params=None):
+                selected_params=None, param_labels=None,
+                smooth_scale_1D=0.6, smooth_scale_2D=0.6, corner_fig_size=None):
     """
-    Create corner plot with posterior distributions.
+    Create corner plot with posterior distributions using GetDist.
     
     Parameters
     ----------
@@ -441,9 +387,15 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
         Quantiles to show in corner plot
     selected_params : list, optional
         Subset of parameters to plot (others are marginalized over)
+    smooth_scale_1D : float
+        Smoothing scale for 1D marginal distributions (default 0.6; lower = sharper)
+    smooth_scale_2D : float
+        Smoothing scale for 2D contours (default 0.6; lower = sharper)
+    corner_fig_size : float or tuple, optional
+        Figure size in inches (e.g., 8 for square, or (8, 10) for (width, height))
     """
-    if not HAS_CORNER:
-        print("Corner package not available, skipping corner plot")
+    if not HAS_GETDIST:
+        print("GetDist package not available, skipping corner plot")
         return
     
     # Apply burn-in and thinning
@@ -453,156 +405,88 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
     plot_params = params
     plot_truths = truths
     if selected_params is not None:
-        flat_samples, plot_params, plot_truths = select_parameters(
+        flat_samples, plot_params, plot_truths = putils.select_parameters(
             flat_samples, params, selected_params, truths
         )
         print(f"Plotting {len(plot_params)} parameters (marginalized over others): {plot_params}")
     
     print(f"Corner plot: using {flat_samples.shape[0]} samples "
           f"(burn-in={burn_in}, thin={thin})")
-    
-    # Create corner plot
-    fig = corner.corner(
-        flat_samples,
-        labels=plot_params,
-        quantiles=quantiles,
-        show_titles=True,
-        title_kwargs={"fontsize": 12},
-        truths=plot_truths,
-        truth_color='red',
-        bins=30,
-        smooth=1.0,
-        smooth1d=1.0,
-        plot_datapoints=False,
-        plot_density=True,
-        fill_contours=True,
-        levels=(0.68, 0.95),
-        color='C0',
-        range=np.repeat(0.999, len(plot_params)),
+
+    # GetDist smoothing is controlled via MCSamples settings.
+    # Values <= 0 trigger automatic bandwidth estimation.
+    smoothing_settings = {
+        'smooth_scale_1D': float(smooth_scale_1D),
+        'smooth_scale_2D': float(smooth_scale_2D),
+    }
+    print(
+        "GetDist smoothing settings: "
+        f"smooth_scale_1D={smoothing_settings['smooth_scale_1D']}, "
+        f"smooth_scale_2D={smoothing_settings['smooth_scale_2D']}"
     )
     
+    # Create MCSamples object for GetDist
+    plot_labels = get_plot_labels(plot_params, param_labels)
+    samples_obj = getdist.MCSamples(
+        samples=flat_samples,
+        names=plot_params,
+        labels=plot_labels,
+        settings=smoothing_settings,
+    )
+    
+    # Configure color scheme
+    color = get_single_chain_color()
+    
+ 
+    # Create triangle plot (corner plot equivalent in GetDist)
+    g = gplots.get_subplot_plotter(width_inch = corner_fig_size)
+    g.triangle_plot(
+        [samples_obj],
+        filled=True,
+        contour_colors=[color],
+        line_args=[{'color': color, 'lw': 1.0}],
+    )
+    
+    # Add truth values if provided
+    if plot_truths is not None:
+        valid_truths = [t for t in plot_truths if t is not None]
+        if valid_truths:
+            # Mark truths on diagonal (1D) and lower triangle (2D) panels.
+            n_plot = len(plot_params)
+            for row in range(n_plot):
+                for col in range(n_plot):
+                    ax = g.subplots[row, col]
+                    if ax is None:
+                        continue
+
+                    # Diagonal: 1D marginal for parameter ``row``.
+                    if row == col:
+                        if row < len(plot_truths) and plot_truths[row] is not None:
+                            ax.axvline(plot_truths[row], color='black', linestyle='--', alpha=0.7)
+
+                    # Lower triangle: 2D panel for y=row, x=col.
+                    elif row > col:
+                        x_truth = plot_truths[col] if col < len(plot_truths) else None
+                        y_truth = plot_truths[row] if row < len(plot_truths) else None
+                        if x_truth is not None:
+                            ax.axvline(x_truth, color='black', linestyle='--', alpha=0.7)
+                        if y_truth is not None:
+                            ax.axhline(y_truth, color='black', linestyle='--', alpha=0.7)
+    
+    # Add title if provided
     if title:
-        fig.suptitle(title, fontsize=14, y=1.02)
+        g.fig.suptitle(title, fontsize=14, y=0.995)
     
-    plt.savefig(output_path)
-    plt.close(fig)
+    g.fig.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    
+    # Also save as PDF
+    pdf_path = output_path.with_suffix('.pdf')
+    plt.savefig(pdf_path, bbox_inches='tight',dpi=300)
+    
+    plt.close(g.fig)
     print(f"Corner plot saved: {output_path}")
-
-
-def plot_posterior_scatter(samples, params, output_path, burn_in=0, thin=1):
-    """
-    Create 2D scatter plot of posterior samples (for 2-parameter case).
-    
-    Parameters
-    ----------
-    samples : ndarray
-        Shape (n_steps, n_walkers, ndim)
-    params : list
-        Parameter names
-    output_path : Path
-        Output file path
-    burn_in : int
-        Burn-in steps to discard
-    thin : int
-        Thinning factor
-    """
-    flat_samples = samples[burn_in::thin, :, :].reshape(-1, samples.shape[-1])
-    
-    if flat_samples.shape[1] < 2:
-        print("Scatter plot requires at least 2 parameters, skipping")
-        return
-    
-    fig, ax = plt.subplots(figsize=(8, 6))
-    
-    # Plot samples with transparency
-    ax.scatter(flat_samples[:, 0], flat_samples[:, 1], 
-               s=2, alpha=0.3, c='C0', rasterized=True)
-    
-    ax.set_xlabel(params[0])
-    ax.set_ylabel(params[1])
-    ax.set_title(f'Posterior Samples (N={flat_samples.shape[0]})')
-    
-    # Add contours
-    try:
-        from scipy import stats
-        xmin, xmax = ax.get_xlim()
-        ymin, ymax = ax.get_ylim()
-        
-        # Create KDE
-        xx, yy = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
-        positions = np.vstack([xx.ravel(), yy.ravel()])
-        kernel = stats.gaussian_kde(flat_samples[:, :2].T)
-        f = np.reshape(kernel(positions).T, xx.shape)
-        
-        # Plot contours
-        ax.contour(xx, yy, f, levels=4, colors='k', alpha=0.5, linewidths=0.5)
-    except Exception as e:
-        print(f"Could not add contours: {e}")
-    
-    fig.tight_layout()
-    plt.savefig(output_path)
-    plt.close(fig)
-    print(f"Scatter plot saved: {output_path}")
-
-
-def compute_summary_statistics(samples, params, burn_in=0, thin=1):
-    """
-    Compute and print summary statistics for the chain.
-    
-    Parameters
-    ----------
-    samples : ndarray
-        Shape (n_steps, n_walkers, ndim)
-    params : list
-        Parameter names
-    burn_in : int
-        Burn-in steps to discard
-    thin : int
-        Thinning factor
-        
-    Returns
-    -------
-    stats : dict
-        Dictionary of summary statistics
-    """
-    flat_samples = samples[burn_in::thin, :, :].reshape(-1, samples.shape[-1])
-    n_eff = flat_samples.shape[0]
-    
-    print(f"\n{'='*60}")
-    print(f"Summary Statistics (burn-in={burn_in}, thin={thin}, N_eff={n_eff})")
-    print(f"{'='*60}")
-    
-    stats = {}
-    for i, param in enumerate(params):
-        median = np.median(flat_samples[:, i])
-        mean = np.mean(flat_samples[:, i])
-        std = np.std(flat_samples[:, i])
-        q16, q84 = np.percentile(flat_samples[:, i], [16, 84])
-        
-        stats[param] = {
-            'median': median,
-            'mean': mean,
-            'std': std,
-            'q16': q16,
-            'q84': q84,
-        }
-        
-        print(f"  {param}:")
-        print(f"    median = {median:.6f}")
-        print(f"    mean   = {mean:.6f} ± {std:.6f}")
-        print(f"    68% CI = [{q16:.6f}, {q84:.6f}]")
-    
-    # Compute autocorrelation time if possible
-    tau = compute_autocorrelation_time(samples[burn_in:], quiet=True)
-    if tau is not None:
-        print(f"\n  Autocorrelation times:")
-        for i, param in enumerate(params):
-            print(f"    {param}: τ = {tau[i]:.1f}")
-        print(f"  Effective samples: {n_eff / np.max(tau):.0f}")
-    
-    print(f"{'='*60}\n")
-    
-    return stats
+    print(f"Corner plot (PDF) saved: {pdf_path}")
 
 
 def main():
@@ -614,22 +498,77 @@ def main():
                         help='Path(s) to the .npz file(s) with emcee samples')
     parser.add_argument('--base', type=str, default=None,
                         help='Base path for auto-discovering chains (e.g., /path/to/chain finds chain1.npz, chain2.npz, etc.)')
-    parser.add_argument('--burn', type=int, default=0,
-                        help='Number of burn-in steps to discard')
-    parser.add_argument('--thin', type=int, default=1,
-                        help='Thinning factor')
     parser.add_argument('--output', type=str, default=None,
                         help='Output directory (default: same as input file)')
-    parser.add_argument('--inspect', action='store_true',
-                        help='Only inspect file structure, do not plot')
-    parser.add_argument('--truths', type=float, nargs='+', default=None,
-                        help='True parameter values for corner plot')
-    parser.add_argument('--title', type=str, default=None,
-                        help='Title for corner plot')
-    parser.add_argument('--params', type=str, nargs='+', default=None,
-                        help='Subset of parameters to plot (others marginalized). E.g., --params s8 w_c h')
+    parser.add_argument('--config', type=str, default='postprocess_emcee.toml',
+                        help='TOML config file with analysis/plot/filter settings')
     
     args = parser.parse_args()
+
+    config = load_postprocess_config(args.config)
+    analysis_cfg = config['analysis']
+    stuck_cfg = config['stuck_filter']
+
+    burn_in = int(analysis_cfg['burn'])
+    thin = int(analysis_cfg['thin'])
+    if burn_in < 0:
+        print(f"Error: burn must be >= 0, got {burn_in}")
+        return 1
+    if thin < 1:
+        print(f"Error: thin must be >= 1, got {thin}")
+        return 1
+
+    params_to_plot = analysis_cfg['params']
+    if params_to_plot is not None and not isinstance(params_to_plot, list):
+        print("Error: [analysis].params in config must be a list of parameter names")
+        return 1
+
+    param_labels = analysis_cfg.get('param_labels')
+    if param_labels is not None and not isinstance(param_labels, dict):
+        print("Error: [analysis].param_labels in config must be a key/value table")
+        return 1
+
+    truths_from_config = analysis_cfg['truths']
+    if truths_from_config is not None and not isinstance(truths_from_config, list):
+        print("Error: [analysis].truths in config must be a list of numbers")
+        return 1
+
+    smooth_scale_1D = float(analysis_cfg.get('smooth_scale_1D', 0.6))
+    smooth_scale_2D = float(analysis_cfg.get('smooth_scale_2D', 0.6))
+    if smooth_scale_1D <= 0:
+        print("Error: [analysis].smooth_scale_1D must be > 0 to disable auto bandwidth")
+        return 1
+    if smooth_scale_2D <= 0:
+        print("Error: [analysis].smooth_scale_2D must be > 0 to disable auto bandwidth")
+        return 1
+
+    corner_fig_size = analysis_cfg.get('corner_fig_size')
+    if corner_fig_size is not None:
+        # Accept both scalar (for square) and tuple (width, height)
+        if isinstance(corner_fig_size, (list, tuple)) and len(corner_fig_size) == 2:
+            corner_fig_size = tuple(corner_fig_size)
+        else:
+            try:
+                corner_fig_size = float(corner_fig_size)
+            except (ValueError, TypeError):
+                print(f"Warning: corner_fig_size '{corner_fig_size}' could not be parsed, using default")
+                corner_fig_size = None
+
+    if stuck_cfg['min_run'] < 1:
+        print(f"Error: [stuck_filter].min_run must be >= 1, got {stuck_cfg['min_run']}")
+        return 1
+    if stuck_cfg['pre_padding'] < 0:
+        print(f"Error: [stuck_filter].pre_padding must be >= 0, got {stuck_cfg['pre_padding']}")
+        return 1
+    if stuck_cfg['post_padding'] < 0:
+        print(f"Error: [stuck_filter].post_padding must be >= 0, got {stuck_cfg['post_padding']}")
+        return 1
+    if stuck_cfg['zero_tol'] < 0:
+        print(f"Error: [stuck_filter].zero_tol must be >= 0, got {stuck_cfg['zero_tol']}")
+        return 1
+   
+
+    print(f"Using config: {args.config}")
     
     # Determine which files to process
     if args.base:
@@ -669,11 +608,16 @@ def main():
         # Use common prefix or first file's stem + "_combined"
         base_name = filepaths[0].stem.rstrip('0123456789').rstrip('_') + "_combined"
     
-    if args.params:
-        base_name += "_" + "_".join(args.params)
+    if params_to_plot:
+        base_name += "_" + "_".join(params_to_plot)
+    
+    # Add omega suffix if omega transformation will be applied
+    omega_requested = bool(params_to_plot and any(p.startswith('omega') for p in params_to_plot))
+    if bool(analysis_cfg.get('omega_transform', False)) or omega_requested:
+        base_name += "_omega"
     
     # Inspect files
-    if args.inspect:
+    if analysis_cfg['inspect']:
         for fp in filepaths:
             if fp.suffix == '.npz':
                 inspect_npz_file(fp)
@@ -692,39 +636,124 @@ def main():
         samples, params, metadata = load_multiple_chains(filepaths)
     
     n_steps, n_walkers, ndim = samples.shape
+    trace_step_indices = None
+
+    # Optionally remove pathological stuck segments from the middle of the chain.
+    if stuck_cfg['enabled']:
+        samples, kept_mask, removed_runs, detection_params, trace_step_indices, n_zero_removed, n_global_drop_removed = putils.remove_stuck_steps(
+            samples,
+            params,
+            atol=float(stuck_cfg['atol']),
+            rtol=float(stuck_cfg['rtol']),
+            min_run=int(stuck_cfg['min_run']),
+            pre_padding=int(stuck_cfg['pre_padding']),
+            post_padding=int(stuck_cfg['post_padding']),
+            remove_all_zero_steps=bool(stuck_cfg['remove_all_zero_steps']),
+            zero_tol=float(stuck_cfg['zero_tol']),
+            remove_isolated_global_drops=bool(stuck_cfg['remove_isolated_global_drops']),
+            global_drop_rel=float(stuck_cfg['global_drop_rel']),
+            selected_params=stuck_cfg['params'],
+        )
+
+        n_removed = np.count_nonzero(~kept_mask)
+        print(f"\nStuck-step filtering enabled:")
+        print(f"  Detection params: {detection_params}")
+        print(f"  Tolerance: atol={stuck_cfg['atol']}, rtol={stuck_cfg['rtol']}")
+        print(f"  Minimum run length: {stuck_cfg['min_run']}")
+        print(f"  Pre-padding: {stuck_cfg['pre_padding']}")
+        print(f"  Post-padding: {stuck_cfg['post_padding']}")
+        print(f"  Remove all-zero steps: {stuck_cfg['remove_all_zero_steps']} (tol={stuck_cfg['zero_tol']})")
+        print(f"  Zero-steps removed: {n_zero_removed}")
+        print(f"  Remove isolated global drops: {stuck_cfg['remove_isolated_global_drops']} (rel={stuck_cfg['global_drop_rel']})")
+        print(f"  Isolated global-drop steps removed: {n_global_drop_removed}")
+        print(f"  Removed steps: {n_removed} / {len(kept_mask)}")
+
+        if removed_runs:
+            print("  Removed step ranges (original indexing):")
+            for start, end in removed_runs:
+                print(f"    [{start}, {end}] (len={end - start + 1})")
+        else:
+            print("  No stuck runs meeting the minimum run length were found.")
+
+        if samples.shape[0] == 0:
+            print("Error: Stuck-step filtering removed all samples. Adjust tolerances or min run length.")
+            return 1
+
+        n_steps, n_walkers, ndim = samples.shape
     
-    # Auto-estimate burn-in if not specified
-    burn_in = args.burn
+    if burn_in >= n_steps:
+        print(f"Error: burn-in ({burn_in}) must be smaller than available steps ({n_steps})")
+        return 1
     
-    # Compute summary statistics
-    stats = compute_summary_statistics(samples, params, burn_in=burn_in, thin=args.thin)
+    # Determine if omega transformation is needed
+    omega_transform = bool(analysis_cfg.get('omega_transform', False))
+    # Also auto-enable if any omega parameters are requested to plot
+    if params_to_plot:
+        omega_params_requested = any(p.startswith('omega') for p in params_to_plot)
+        omega_transform = omega_transform or omega_params_requested
+        if omega_params_requested:
+            print(f"Omega parameters requested in plot. Auto-enabling omega transformation.")
+    
+    # Apply omega transformation if needed
+    if omega_transform:
+        samples, params, truths_omega = putils.apply_omega_transform(
+            samples,
+            params,
+            [FIDUCIALS.get(p, None) for p in params],
+        )
+        # Update truths if omega transform was applied
+        if truths_from_config is None:
+            truths_from_config = truths_omega
+    
+    
     
     # Build truths array from FIDUCIALS dict based on parameter names
-    if args.truths:
-        truths = args.truths
+    if truths_from_config:
+        truths = truths_from_config
     else:
         truths = [FIDUCIALS.get(p, None) for p in params]
-        print(f"Fiducial values: {dict(zip(params, truths))}")
+        if omega_transform:
+            print(f"Updated fiducial values for transformed parameters: {dict(zip(params, truths))}")
+        else:
+            print(f"Fiducial values: {dict(zip(params, truths))}")
     
     # Create plots
     print("\nGenerating plots...")
     
     # Trace plot
     trace_path = output_dir / f'{base_name}_traces.png'
-    plot_traces(samples, params, trace_path, burn_in=burn_in)
+    putils.plot_traces(
+        samples,
+        params,
+        trace_path,
+        burn_in=burn_in,
+        get_plot_labels_fn=get_plot_labels,
+        param_labels=param_labels,
+    )
     
     # Corner plot
     corner_path = output_dir / f'{base_name}_corner.png'
     plot_corner(samples, params, corner_path, 
-                burn_in=burn_in, thin=args.thin,
-                truths=truths, title=args.title,
-                selected_params=args.params)
+                burn_in=burn_in, thin=thin,
+                truths=truths, title=analysis_cfg['title'],
+                selected_params=params_to_plot,
+                param_labels=param_labels,
+                smooth_scale_1D=smooth_scale_1D,
+                smooth_scale_2D=smooth_scale_2D,
+                corner_fig_size=corner_fig_size)
     
     # Scatter plot (for 2D case)
     if ndim >= 2:
         scatter_path = output_dir / f'{base_name}_scatter.png'
-        plot_posterior_scatter(samples, params, scatter_path,
-                               burn_in=burn_in, thin=args.thin)
+        putils.plot_posterior_scatter(
+            samples,
+            params,
+            scatter_path,
+            burn_in=burn_in,
+            thin=thin,
+            get_plot_labels_fn=get_plot_labels,
+            param_labels=param_labels,
+        )
     
     print(f"\nAll plots saved to: {output_dir}")
     return 0

@@ -3,12 +3,15 @@ Create side-by-side 2D posterior comparison plots for different masks or scale c
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import rc
 from matplotlib.ticker import MaxNLocator, FormatStrFormatter
-import cmasher as cmr
 
 from xilikelihood.plotting import find_contour_levels_pdf
 from config import N_JOBS_2D, PARAM_GRIDS_NARROW, PARAM_GRIDS_MEDIUM, PARAM_GRIDS_WIDE
+from plot_utils_style import (
+    configure_paper_plot_style,
+    get_default_figsize,
+    get_exact_gaussian_colors,
+)
 from postprocess_2dpost import (
     load_posteriors, 
     normalize_posterior, 
@@ -20,10 +23,8 @@ from postprocess_2dpost import (
     S8_LIM
 )
 
-# LaTeX rendering
-rc('font', **{'family': 'serif', 'serif': ['Times']})
-rc('text', usetex=True)
-rc('text.latex', preamble=r'\usepackage{amsmath}')
+# Shared plotting style
+configure_paper_plot_style()
 
 
 # =============================================================================
@@ -168,14 +169,15 @@ def create_comparison_figure(data_left, data_right,
     dx_right, dy_right = data_right["dx"], data_right["dy"]
     
     # Colors
-    pdf_cm = cmr.torch
-    colors_exact = cmr.take_cmap_colors(pdf_cm, len(sigma_levels), cmap_range=(0.3, 0.4), return_fmt='hex')
-    colors_gauss = cmr.take_cmap_colors(pdf_cm, len(sigma_levels), cmap_range=(0.65, 0.9), return_fmt='hex')
-    linecolor_exact, linecolor_gauss = colors_exact[0], colors_gauss[0]
+    color_scheme = get_exact_gaussian_colors(sigma_levels=sigma_levels)
+    colors_exact = color_scheme["colors_exact"]
+    colors_gauss = color_scheme["colors_gauss"]
+    linecolor_exact = color_scheme["linecolor_exact"]
+    linecolor_gauss = color_scheme["linecolor_gauss"]
     
     # Create figure with GridSpec for two panels with marginals
     # Layout: [top_left, gap, top_right] / [main_left, right_marg_left, main_right, right_marg_right]
-    fig = plt.figure(figsize=(10, 5))
+    fig = plt.figure(figsize=get_default_figsize("double"))
     
     # GridSpec: 2 rows (top marginal + main), 5 cols (main1, right1, gap, main2, right2)
     gs = fig.add_gridspec(2, 5, 
