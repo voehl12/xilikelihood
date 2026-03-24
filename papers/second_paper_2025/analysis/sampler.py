@@ -31,16 +31,17 @@ from config import (
 import tempfile
 
 # Output directory
-OUTPUT_DIR = Path("sampler_output_test")
+OUTPUT_DIR = Path("sampler_output_gaussian")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Sampler configuration
 USE_NESTED = False       # Set to True for Nautilus nested sampling, False for emcee MCMC
-FROM_CHECKPOINT = True  # None=auto-detect, True=force resume, False=force fresh start
+FROM_CHECKPOINT = False  # None=auto-detect, True=force resume, False=force fresh start
+LIKELIHOOD_TYPE = "gaussian"  # Switch between "copula" (default) and "gaussian"
 EMCEE_CONFIG = {
     "n_walkers": 24,  # Matches ntasks 
-    "n_burn": 100,
-    "n_steps": 2000,
+    "n_burn": 10,
+    "n_steps": 100,
     "thin": 1,
     "checkpoint_interval": 100  # Save every N steps (set to None to disable)
 }
@@ -97,7 +98,12 @@ def likelihood(cosmology):
     
     logger.info(f"Evaluating likelihood for cosmology: {cosmology}")
     try:
-        logL = xilikelihood.loglikelihood(mock_data, cosmology)
+        logL = xilikelihood.loglikelihood(
+            mock_data, 
+            cosmology, 
+            likelihood_type=LIKELIHOOD_TYPE,
+            allow_diagnostic=False
+        )
         logger.info(f"Likelihood result: {logL}")
         return logL
     except Exception as e:
@@ -220,7 +226,7 @@ def _log_prob_fn(theta, params, mvn_param, mvn_mean, uniform_priors, likelihood_
 
 def run_nested_sampler(prior, likelihood, jobnumber):
     """Run Nautilus nested sampler."""
-    results_path = OUTPUT_DIR / f'nautilus_results_{jobnumber}_{RUN_NAME}.h5'
+    results_path = OUTPUT_DIR / f'nautilus_results_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.h5'
     logger.info("Setting up Nautilus sampler...")
     
     sampler = Sampler(
@@ -241,7 +247,7 @@ def run_nested_sampler(prior, likelihood, jobnumber):
     save_corner_plot(
         points, 
         labels=list(prior.keys),
-        filename=f'corner_{jobnumber}_{RUN_NAME}_nested.png',
+        filename=f'corner_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_nested.png',
         weights=np.exp(log_w)
     )
     
@@ -271,8 +277,8 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
     steps_completed_so_far = 0
     prev_chain = None
 
-    checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}.npz'
-    existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}*.npz')))
+    checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz'
+    existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}*.npz')))
 
     chain_num = 0
     for f in existing_files:
@@ -328,16 +334,16 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
                     "Saving checkpoint chain as final output and exiting."
                 )
                 output_file = (
-                    OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+                    OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz'
                     if len(existing_files) == 0
-                    else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+                    else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_chain{chain_num}.npz'
                 )
                 np.savez(output_file, samples=prev_chain,
                          params=np.array(params, dtype=str),
                          n_walkers=n_walkers, n_steps=n_steps)
                 logger.info(f"Saved complete chain: {output_file}")
                 save_corner_plot(prev_chain, labels=params,
-                                 filename=f'corner_{jobnumber}_{RUN_NAME}_emcee.png')
+                                 filename=f'corner_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_emcee.png')
                 return prev_chain
 
         except ValueError:
@@ -512,14 +518,14 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
 
     if mode == "from_checkpoint":
         output_file = (
-            OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+            OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz'
             if len(existing_files) == 0
-            else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+            else OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_chain{chain_num}.npz'
         )
     elif mode == "from_previous_chain":
-        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_chain{chain_num}.npz'
+        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_chain{chain_num}.npz'
     else:
-        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}.npz'
+        output_file = OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz'
 
     np.savez(
         output_file,
@@ -538,7 +544,7 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
     save_corner_plot(
         samples,
         labels=params,
-        filename=f'corner_{jobnumber}_{RUN_NAME}_emcee.png'
+        filename=f'corner_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}_emcee.png'
     )
 
     return samples
