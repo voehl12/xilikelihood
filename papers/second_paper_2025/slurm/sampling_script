@@ -1,15 +1,22 @@
 #!/bin/bash
            
-#SBATCH --ntasks=24  
+#SBATCH --ntasks=13  
 #SBATCH --cpus-per-task=8     
 #SBATCH --mem-per-cpu=4G      
-#SBATCH --time=10:00:00
+#SBATCH --time=100:00:00
 #SBATCH --output=gaussian_sampler.out
 #SBATCH --error=gaussian_sampler.err
 #SBATCH --mail-type=END,FAIL
 
 source load
 module load openmpi/4.1.1
+
+# Keep all thread pools aligned with Slurm CPU allocation.
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+
 export JAX_PLATFORMS=cpu
 source /cluster/home/veoehl/xilikelihood/likelihood-env/bin/activate
 export PYTHONPATH=/cluster/home/veoehl/xilikelihood-sampler:$PYTHONPATH
