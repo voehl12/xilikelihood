@@ -1,12 +1,13 @@
 # at current setup needs a lot of memory:  srun --pty  --mem-per-cpu=4096 --cpus-per-task=32 --time=4:00:00 bash
 
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import xilikelihood as xili
 import numpy as np
 import sys
 import logging
+import time
 from pathlib import Path
 from scipy.stats import multivariate_normal
 from schwimmbad import MPIPool
@@ -28,20 +29,42 @@ from config import (
     FIDUCIAL_COSMO,
     PRIOR_CONFIG
 )
-import tempfile
 
 # Output directory
 OUTPUT_DIR = Path("sampler_output_gaussian")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+
+def _resolve_log_dir():
+    """Choose a writable log directory, preferring scratch over home."""
+    # Optional explicit override for batch scripts.
+    override = os.environ.get("XILI_LOG_DIR")
+    if override:
+        log_dir = Path(override)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+
+    # Prefer scratch to avoid home quota pressure from verbose per-rank logs.
+    scratch_user = Path("/cluster/scratch") / os.environ.get("USER", "unknown")
+    scratch_log_dir = scratch_user / "xilikelihood" / "sampler_logs_gaussian"
+    try:
+        scratch_log_dir.mkdir(parents=True, exist_ok=True)
+        return scratch_log_dir
+    except Exception:
+        # Fall back to the existing output directory if scratch is unavailable.
+        return OUTPUT_DIR
+
+
+LOG_DIR = _resolve_log_dir()
+
 # Sampler configuration
 USE_NESTED = False       # Set to True for Nautilus nested sampling, False for emcee MCMC
-FROM_CHECKPOINT = False  # None=auto-detect, True=force resume, False=force fresh start
+FROM_CHECKPOINT = True  # None=auto-detect, True=force resume, False=force fresh start
 LIKELIHOOD_TYPE = "gaussian"  # Switch between "copula" (default) and "gaussian"
 EMCEE_CONFIG = {
     "n_walkers": 24,  # Matches ntasks 
-    "n_burn": 10,
-    "n_steps": 100,
+    "n_burn": 100,
+    "n_steps": 4000,
     "thin": 1,
     "checkpoint_interval": 100  # Save every N steps (set to None to disable)
 }
@@ -69,7 +92,7 @@ def setup_logging(jobnumber, rank, pid):
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
     
-    logfile = OUTPUT_DIR / f'sampler_{jobnumber}_r{rank}_p{pid}.log'
+    logfile = LOG_DIR / f'sampler_{jobnumber}_r{rank}_p{pid}.log'
     file_handler = logging.FileHandler(logfile, mode='a', encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
@@ -278,6 +301,14 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
     prev_chain = None
 
     checkpoint_file = OUTPUT_DIR / f'emcee_checkpoint_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz'
+    checkpoint_done_file = checkpoint_file.parent / (checkpoint_file.stem + '_done.npz')
+    resume_checkpoint_file = None
+
+    if checkpoint_file.exists():
+        resume_checkpoint_file = checkpoint_file
+    elif checkpoint_done_file.exists():
+        resume_checkpoint_file = checkpoint_done_file
+
     existing_files = sorted(glob.glob(str(OUTPUT_DIR / f'emcee_samples_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}*.npz')))
 
     chain_num = 0
@@ -292,15 +323,16 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
             chain_num = max(chain_num, 1)
 
     if from_checkpoint is True:
-        if not checkpoint_file.exists():
+        if resume_checkpoint_file is None:
             raise FileNotFoundError(
-                f"from_checkpoint=True but no checkpoint found: {checkpoint_file}"
+                "from_checkpoint=True but no checkpoint found. "
+                f"Checked: {checkpoint_file} and {checkpoint_done_file}"
             )
         mode = "from_checkpoint"
     elif from_checkpoint is False:
         mode = "fresh_start"
     else:
-        if checkpoint_file.exists():
+        if resume_checkpoint_file is not None:
             mode = "from_checkpoint"
         elif existing_files:
             mode = "from_previous_chain"
@@ -311,7 +343,8 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
 
     if mode == "from_checkpoint":
         try:
-            prev_data = np.load(checkpoint_file)
+            logger.info(f"Resuming from checkpoint file: {resume_checkpoint_file}")
+            prev_data = np.load(resume_checkpoint_file)
             prev_chain = prev_data['samples']
             steps_completed_so_far = int(prev_data['steps_completed'])
 
@@ -353,8 +386,8 @@ def run_emcee_sampler(likelihood, jobnumber, n_walkers=None, n_steps=None,
                 f"Checkpoint file is corrupt and will be ignored ({e}). "
                 "Falling back to fresh_start."
             )
-            corrupt_path = checkpoint_file.parent / (checkpoint_file.stem + '_corrupt.npz')
-            checkpoint_file.rename(corrupt_path)
+            corrupt_path = resume_checkpoint_file.parent / (resume_checkpoint_file.stem + '_corrupt.npz')
+            resume_checkpoint_file.rename(corrupt_path)
             mode = "fresh_start"
             prev_chain = None
             steps_completed_so_far = 0
@@ -602,17 +635,45 @@ if __name__ == "__main__":
         large_angle_threshold=1/3,
     )
 
-    logger.info("Creating mock data and covariance on the fly...")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        mock_data_path = f"{tmpdir}/mock_data.npz"
-        cov_path = f"{tmpdir}/mock_cov.npz"
+    logger.info("Preparing shared mock data and covariance (master creates, workers load)...")
+    shared_mock_data_path = OUTPUT_DIR / f"mock_data_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz"
+    shared_cov_path = OUTPUT_DIR / f"mock_cov_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.npz"
+    shared_ready_path = OUTPUT_DIR / f"mock_ready_{jobnumber}_{RUN_NAME}_{LIKELIHOOD_TYPE}.flag"
+
+    if rank == 0:
+        tmp_mock_path = shared_mock_data_path.with_suffix('.tmp.npz')
+        tmp_cov_path = shared_cov_path.with_suffix('.tmp.npz')
+
         mock_data, gaussian_covariance = xili.mock_data.create_mock_data(
             xilikelihood,
-            mock_data_path=mock_data_path,
-            gaussian_covariance_path=cov_path,
+            mock_data_path=str(tmp_mock_path),
+            gaussian_covariance_path=str(tmp_cov_path),
             fiducial_cosmo=FIDUCIAL_COSMO,
             random=None
         )
+
+        # Publish only fully written files to avoid partial reads by workers.
+        tmp_mock_path.replace(shared_mock_data_path)
+        tmp_cov_path.replace(shared_cov_path)
+        shared_ready_path.write_text("ready\n", encoding="utf-8")
+    else:
+        wait_s = 0
+        max_wait_s = 3600
+        while not shared_ready_path.exists() and wait_s < max_wait_s:
+            time.sleep(2)
+            wait_s += 2
+        if (
+            not shared_ready_path.exists()
+            or not shared_mock_data_path.exists()
+            or not shared_cov_path.exists()
+        ):
+            raise RuntimeError(
+                "Timed out waiting for master-generated mock files: "
+                f"{shared_mock_data_path}, {shared_cov_path}"
+            )
+        mock_data, _ = xili.mock_data.load_mock_data(str(shared_mock_data_path))
+        gaussian_covariance, _ = xili.mock_data.load_gaussian_covariance(str(shared_cov_path))
+
     logger.info(f"Mock data shape: {mock_data.shape}")
     logger.info(f"Covariance shape: {gaussian_covariance.shape}")
 
