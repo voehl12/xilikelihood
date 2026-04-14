@@ -39,16 +39,22 @@ DEFAULT_PARAM_LABELS = {
     "omega_c": r"$\Omega_c$",
     "omega_b": r"$\Omega_b$",
     "omega_m": r"$\Omega_m$",
+    "delta_z_0": r"$\delta_{z1}$",
+    "delta_z_1": r"$\delta_{z2}$",
+    "delta_z_2": r"$\delta_{z3}$",
+    "delta_z_3": r"$\delta_{z4}$",
+    "delta_z_4": r"$\delta_{z5}$",
 }
 
 DEFAULT_CONFIG = {
     "analysis": {
-        "burn": 0,
+        "burn": 100,
         "thin": 1,
         "truths": None,
         "title": None,
         "params": None,
         "param_labels": None,
+        "prior_ranges": None,
         "omega_transform": False,
         "smooth_scale_1D": 1.5,
         "smooth_scale_2D": 1.5,
@@ -69,6 +75,8 @@ DEFAULT_CONFIG = {
     },
     "comparison": {
         "base_dir": ".",
+        "copula_base_dir": None,
+        "gaussian_base_dir": None,
         "run_name": None,
         "jobnumber": None,
         "copula_likelihood_type": "copula",
@@ -146,19 +154,52 @@ def main():
     stuck_cfg = config["stuck_filter"]
     cmp_cfg = config["comparison"]
 
+    prior_ranges = analysis_cfg.get("prior_ranges")
+    if prior_ranges is not None:
+        if not isinstance(prior_ranges, dict):
+            raise ValueError("[analysis].prior_ranges in config must be a table of parameter -> [min, max]")
+        for p, bounds in prior_ranges.items():
+            if not isinstance(bounds, list) or len(bounds) != 2:
+                raise ValueError(
+                    f"[analysis].prior_ranges.{p} must be [min, max] (use null for open bounds)"
+                )
+            lo, hi = bounds
+            if lo is not None and not isinstance(lo, (int, float)):
+                raise ValueError(
+                    f"Lower bound for [analysis].prior_ranges.{p} must be a number or null"
+                )
+            if hi is not None and not isinstance(hi, (int, float)):
+                raise ValueError(
+                    f"Upper bound for [analysis].prior_ranges.{p} must be a number or null"
+                )
+            if lo is not None and hi is not None and float(lo) >= float(hi):
+                raise ValueError(
+                    f"[analysis].prior_ranges.{p} has invalid bounds [{lo}, {hi}] (need min < max)"
+                )
+
     base_dir = Path(cmp_cfg["base_dir"]).expanduser().resolve()
+    copula_base_dir = cmp_cfg.get("copula_base_dir")
+    gaussian_base_dir = cmp_cfg.get("gaussian_base_dir")
+    if copula_base_dir is None:
+        copula_base_dir = base_dir
+    else:
+        copula_base_dir = Path(copula_base_dir).expanduser().resolve()
+    if gaussian_base_dir is None:
+        gaussian_base_dir = base_dir
+    else:
+        gaussian_base_dir = Path(gaussian_base_dir).expanduser().resolve()
     run_name = cmp_cfg.get("run_name")
     jobnumber = cmp_cfg.get("jobnumber")
 
     copula_files = cio.discover_chain_files(
-        base_dir,
+        copula_base_dir,
         run_name=run_name,
         likelihood_type=cmp_cfg.get("copula_likelihood_type", "copula"),
         jobnumber=jobnumber,
         include_checkpoint=False,
     )
     gaussian_files = cio.discover_chain_files(
-        base_dir,
+        gaussian_base_dir,
         run_name=run_name,
         likelihood_type=cmp_cfg.get("gaussian_likelihood_type", "gaussian"),
         jobnumber=jobnumber,
@@ -242,6 +283,7 @@ def main():
         corner_fig_size=analysis_cfg.get("corner_fig_size"),
         filled_gaussian=True,
         filled_copula=True,
+        prior_ranges=prior_ranges,
     )
 
     print(f"\nComparison outputs saved in: {output_dir}")
