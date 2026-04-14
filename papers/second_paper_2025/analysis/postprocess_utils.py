@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-from plot_utils_style import get_exact_gaussian_colors
+from plot_utils_style import get_exact_gaussian_colors, get_default_figsize
 
 try:
     import tomllib  # Python 3.11+
@@ -427,6 +427,7 @@ def plot_corner_overlay(
     corner_fig_size=None,
     filled_gaussian=True,
     filled_copula=True,
+    prior_ranges=None,
 ):
     """Create Gaussian vs Copula overlay corner plot using GetDist."""
     try:
@@ -456,29 +457,43 @@ def plot_corner_overlay(
         "smooth_scale_2D": float(smooth_scale_2D),
     }
 
+    ranges_for_plot = None
+    if isinstance(prior_ranges, dict):
+        ranges_for_plot = {p: prior_ranges[p] for p in plot_params if p in prior_ranges}
+        if not ranges_for_plot:
+            ranges_for_plot = None
+
     copula_obj = getdist.MCSamples(
         samples=flat_copula,
         names=plot_params,
         labels=plot_labels,
         settings=settings,
+        ranges=ranges_for_plot,
     )
     gaussian_obj = getdist.MCSamples(
         samples=flat_gaussian,
         names=plot_params,
         labels=plot_labels,
         settings=settings,
+        ranges=ranges_for_plot,
     )
 
     colors = get_exact_gaussian_colors()
     line_gauss = colors["linecolor_gauss"]
     line_exact = colors["linecolor_exact"]
 
-    g = gplots.get_subplot_plotter(width_inch=corner_fig_size)
+    plot_width = corner_fig_size if corner_fig_size is not None else get_default_figsize("single")[0]
+    g = gplots.get_subplot_plotter(width_inch=plot_width, scaling=False)
+    g.settings.legend_frame = False
+    g.settings.figure_legend_frame = False
+    g.settings.linewidth = 1.5
+    g.settings.linewidth_contour = 1.5
     g.triangle_plot(
         [gaussian_obj, copula_obj],
         filled=[bool(filled_gaussian), bool(filled_copula)],
         contour_colors=[line_gauss, line_exact],
-        line_args=[{"color": line_gauss, "lw": 1.0}, {"color": line_exact, "lw": 1.0}],
+        contour_lws=[1.5, 1.5],
+        line_args=[{"color": line_gauss, "lw": 1.5}, {"color": line_exact, "lw": 1.5}],
         legend_labels=["Gaussian", "Copula"],
     )
 
