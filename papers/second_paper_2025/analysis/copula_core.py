@@ -13,8 +13,6 @@ import numpy as np
 import sys
 from scipy.stats import multivariate_normal, norm, gamma, t, lognorm
 
-# Add xilikelihood to path
-sys.path.insert(0, '/cluster/home/veoehl/xilikelihood')
 import xilikelihood as xlh
 
 
@@ -31,7 +29,7 @@ def simple_linear_model(param, n_data_points=10, slope=1.0, intercept=0.0):
         return slope * param[:, np.newaxis]**2 * x_values[np.newaxis, :] + intercept
 
 
-def generate_covariance(datavector, correlation, noise_scale=0.5):
+def generate_covariance(datavector, correlation, noise_scale=2.0):
     """
     Generate covariance matrix with specified correlation structure.
     Uses data-dependent covariance for stronger copula effects.
@@ -39,7 +37,7 @@ def generate_covariance(datavector, correlation, noise_scale=0.5):
     ndim = len(datavector)
     
     # Data-dependent base covariance
-    base_cov = noise_scale * np.outer(datavector / (np.arange(1, ndim+1) + 1), datavector / (np.arange(1, ndim+1) + 1)) 
+    base_cov = noise_scale * np.outer(datavector, datavector) 
     
     # Full correlation matrix
     corr_matrix = np.eye(ndim) * (1 - correlation) + correlation
@@ -47,8 +45,7 @@ def generate_covariance(datavector, correlation, noise_scale=0.5):
     # Element-wise multiplication
     cov = base_cov * corr_matrix
     
-    # Add small diagonal term for numerical stability
-    cov += np.eye(ndim) * 1e-6
+    
     
     return cov
 
@@ -93,6 +90,18 @@ def compute_marginal_likelihoods_and_cdfs(prediction, data, covariance, marginal
             scaled_resid = (pred-obs) / std
             cdf_val = t.cdf(scaled_resid, df=df_marginal)
             log_density = t.logpdf(scaled_resid, df=df_marginal) - np.log(std)
+
+        elif marginal_type == 'gamma':
+            if obs <= 0:
+                raise ValueError(f"Gamma marginal failed: observed data {obs:.6f} <= 0")
+            if pred <= 0 or std <= 0:
+                raise ValueError(
+                    f"Gamma marginal requires positive mean/std: mean={pred}, std={std}"
+                )
+            shape = (pred / std) ** 2
+            scale = (std ** 2) / pred
+            cdf_val = gamma.cdf(obs, a=shape, scale=scale)
+            log_density = gamma.logpdf(obs, a=shape, scale=scale)
             
         else:
             raise ValueError(f"Unknown marginal type: {marginal_type}")
@@ -133,7 +142,7 @@ def compute_log_likelihood(data_pred, data_obs, covariance, copula_type='gaussia
         elif copula_type == 'student_t':
             if df is None:
                 raise ValueError("df must be specified for Student-t copula")
-            copula_log_density = xlh.copula_funcs.student_t_copula_point_density(cdf_vals, covariance, df)
+            copula_log_density = xlh.copula_funcs.student_t_copula_point_density(cdf_vals, covariance, df,stability_check=False)
         else:
             raise ValueError(f"Unknown copula type: {copula_type}")
         
@@ -141,6 +150,7 @@ def compute_log_likelihood(data_pred, data_obs, covariance, copula_type='gaussia
             return -np.inf
             
     except Exception as e:
+        print(f"Student-t copula failed: {e}")
         return -np.inf
     
     return copula_log_density + total_marginal_log_density
