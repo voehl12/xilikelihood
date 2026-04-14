@@ -105,7 +105,7 @@ COMPARISON_CONFIGS = {
 }
 
 # Select which comparison to run
-ACTIVE_COMPARISON = "mask_comparison"  # Options: "mask_comparison", "scale_cut_comparison", "scale_cut_comparison_10000sqd"
+ACTIVE_COMPARISON = "scale_cut_comparison_10000sqd"  # Options: "mask_comparison", "scale_cut_comparison", "scale_cut_comparison_10000sqd"
 
 
 # =============================================================================
@@ -169,7 +169,7 @@ def create_comparison_figure(data_left, data_right,
     dx_right, dy_right = data_right["dx"], data_right["dy"]
     
     # Colors
-    color_scheme = get_exact_gaussian_colors(sigma_levels=sigma_levels)
+    color_scheme = get_exact_gaussian_colors(n_levels=len(sigma_levels))
     colors_exact = color_scheme["colors_exact"]
     colors_gauss = color_scheme["colors_gauss"]
     linecolor_exact = color_scheme["linecolor_exact"]
@@ -253,7 +253,7 @@ def create_comparison_figure(data_left, data_right,
     ax_main_right.legend(
         [plt.Line2D([0], [0], color=linecolor_gauss), 
          plt.Line2D([0], [0], color=linecolor_exact)],
-        [r"Gaussian", r"Exact"], 
+        [r"Gaussian", r"Copula"], 
         loc="upper right", frameon=False
     )
     
