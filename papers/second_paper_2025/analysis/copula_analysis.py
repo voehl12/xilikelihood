@@ -38,6 +38,7 @@ def run_copula_analysis(config):
     marginal_types = config['marginal_types']
     n_data_points_list = config['n_data_points_list']
     df = config.get('df', 10)
+    vary_covariance_with_param = config.get('vary_covariance_with_param', False)
     
     # Storage for results
     results = {}
@@ -65,13 +66,29 @@ def run_copula_analysis(config):
                 
                 # Gaussian copula
                 gaussian_result = analyze_single_copula(
-                    param_grid, fiducial_data, cov, 'gaussian', marginal_type, n_data, df=None
+                    param_grid,
+                    fiducial_data,
+                    cov,
+                    'gaussian',
+                    marginal_type,
+                    n_data,
+                    df=None,
+                    corr=corr,
+                    vary_covariance_with_param=vary_covariance_with_param,
                 )
                 results[n_data][marginal_type][corr]['gaussian'] = gaussian_result
                 
                 # Student-t copula
                 student_t_result = analyze_single_copula(
-                    param_grid, fiducial_data, cov, 'student_t', marginal_type, n_data, df=df
+                    param_grid,
+                    fiducial_data,
+                    cov,
+                    'student_t',
+                    marginal_type,
+                    n_data,
+                    df=df,
+                    corr=corr,
+                    vary_covariance_with_param=vary_covariance_with_param,
                 )
                 results[n_data][marginal_type][corr]['student_t_df10'] = student_t_result
                 
@@ -94,7 +111,18 @@ def run_copula_analysis(config):
     return results
 
 
-def analyze_single_copula(param_grid, fiducial_data, cov, copula_type, marginal_type, n_data, df=None):
+def analyze_single_copula(
+    param_grid,
+    fiducial_data,
+    cov,
+    copula_type,
+    marginal_type,
+    n_data,
+    df=None,
+    corr=None,
+    vary_covariance_with_param=False,
+    noise_scale=0.5,
+):
     """
     Analyze a single copula configuration.
     
@@ -106,7 +134,13 @@ def analyze_single_copula(param_grid, fiducial_data, cov, copula_type, marginal_
         log_likes = []
         for param in param_grid:
             pred_data = simple_linear_model(param, n_data_points=n_data)
-            log_like = compute_log_likelihood(pred_data, fiducial_data, cov, 
+            current_cov = cov
+            if vary_covariance_with_param:
+                if corr is None:
+                    raise ValueError("corr must be provided when vary_covariance_with_param=True")
+                current_cov = generate_covariance(pred_data, corr, noise_scale=noise_scale)
+
+            log_like = compute_log_likelihood(pred_data, fiducial_data, current_cov,
                                             copula_type=copula_type, df=df, 
                                             marginal_type=marginal_type)
             log_likes.append(log_like)
@@ -137,11 +171,12 @@ def get_default_config():
     """
     return {
         'fiducial_param': 5.0,
-        'param_grid': np.linspace(0.5, 8.5, 1000),
+        'param_grid': np.linspace(0.5, 10, 1000),
         'correlation_values': [0.0, 0.5, 0.7, 0.9],  # Removed 1.0 for stability
         'marginal_types': ['normal', 'lognormal', 'student_t'],
         'n_data_points_list': np.arange(1,20),
-        'df': 10
+        'df': 10,
+        'vary_covariance_with_param': False,
     }
         
 
@@ -155,5 +190,6 @@ def get_fast_config():
         'correlation_values': [0.0, 0.7, 0.9],  # Fewer correlations
         'marginal_types': ['normal', 'lognormal'],  # Fewer marginals
         'n_data_points_list': [5, 10],  # Fewer dimensions
-        'df': 10
+        'df': 10,
+        'vary_covariance_with_param': False,
     }
