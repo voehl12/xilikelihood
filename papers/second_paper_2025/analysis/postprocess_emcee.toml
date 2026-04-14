@@ -5,6 +5,9 @@
 # If true, only inspect input files and exit without plotting.
 inspect = false
 
+# If true, print integrated autocorrelation time estimates.
+autocorr = true
+
 # Standard postprocessing controls.
 burn = 0
 thin = 1
@@ -19,12 +22,12 @@ params = ["omega_m", "s8"]
 
 # GetDist smoothing controls (reduce values for sharper distributions, increase for smoother)
 # Default 0.6 gives crisp distributions; use 1.0 for GetDist default smoothing
-smooth_scale_1D = 1.5   # Smoothing for 1D marginal distributions
+smooth_scale_1D = 2.5   # Smoothing for 1D marginal distributions
 smooth_scale_2D = 1.5   # Smoothing for 2D contours
 
 # GetDist corner plot figure size (optional)
 # If not specified, GetDist auto-scales based on number of parameters.
-corner_fig_size = 6          # Square figure: 8 inches × 8 inches
+corner_fig_size = 5          # One-column style width
 # corner_fig_size = [10, 8]    # Rectangular: 10 inches wide, 8 inches tall
 
 # Optional plotting labels (e.g., LaTeX) by parameter name.
@@ -34,6 +37,16 @@ corner_fig_size = 6          # Square figure: 8 inches × 8 inches
 # w_c = "$\\omega_c$"
 # h = "$h$"
 # omega_m = "$\\Omega_m$"
+
+# Hard prior bounds used by GetDist KDE near sharp edges.
+# Defaults are taken from PRIOR_CONFIG["uniform"] in analysis/config.py.
+[analysis.prior_ranges]
+s8 = [0.1, 1.3]
+w_c = [0.051, 0.255]
+w_b = [0.019, 0.026]
+h = [0.64, 0.82]
+n_s = [0.84, 1.1]
+A_IA = [-6.0, 6.0]
 
 
 
