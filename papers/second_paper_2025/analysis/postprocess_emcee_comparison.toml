@@ -1,0 +1,92 @@
+# Config for postprocess_emcee.py
+# Keep input/output paths on CLI; put analysis behavior here.
+
+[analysis]
+# If true, only inspect input files and exit without plotting.
+inspect = false
+
+# Standard postprocessing controls.
+burn = 100
+thin = 1
+
+# Optional corner plot settings.
+# Set to a list of values matching chain parameter order, or leave empty to use built-in fiducials.
+truths = []
+# title = "Run title"
+
+# Optional subset of parameters to show in corner plot (others marginalized).
+params = ["omega_m", "s8"]
+
+# GetDist smoothing controls (reduce values for sharper distributions, increase for smoother)
+# Default 0.6 gives crisp distributions; use 1.0 for GetDist default smoothing
+smooth_scale_1D = 2.5   # Smoothing for 1D marginal distributions
+smooth_scale_2D = 1.5   # Smoothing for 2D contours
+
+# GetDist corner plot figure size (optional)
+# If not specified, GetDist auto-scales based on number of parameters.
+corner_fig_size = 5          # One-column style width
+# corner_fig_size = [10, 8]    # Rectangular: 10 inches wide, 8 inches tall
+
+# Optional plotting labels (e.g., LaTeX) by parameter name.
+# These are used in corner/trace/scatter axes.
+# [analysis.param_labels]
+# s8 = "$S_8$"
+# w_c = "$\\omega_c$"
+# h = "$h$"
+# omega_m = "$\\Omega_m$"
+
+# Hard prior bounds used by GetDist KDE near sharp edges.
+# Defaults are taken from PRIOR_CONFIG["uniform"] in analysis/config.py.
+[analysis.prior_ranges]
+s8 = [0.1, 1.3]
+w_c = [0.051, 0.255]
+w_b = [0.019, 0.026]
+h = [0.64, 0.82]
+n_s = [0.84, 1.1]
+A_IA = [-6.0, 6.0]
+
+
+
+[stuck_filter]
+# Remove middle segments where all walkers collapse to one value.
+enabled = true
+
+# A step is "stuck" if walker spread <= atol + rtol * scale
+atol = 0.0
+rtol = 1e-12
+
+# Only remove consecutive stuck runs of at least this many steps.
+min_run = 2
+
+# Extra steps removed before/after each detected stuck segment.
+# Use pre_padding to catch the onset spike where the collapse begins.
+pre_padding = 5
+post_padding = 25
+
+# Also remove steps where all selected parameters are ~0 for all walkers,
+# even if they are not part of a long stuck run.
+remove_all_zero_steps = true
+zero_tol = 0.0
+
+# Also remove isolated one-step global dips where all selected parameters
+# simultaneously collapse near zero relative to their typical scale.
+remove_isolated_global_drops = true
+global_drop_rel = 0.02
+
+# Optional subset of parameters used for stuck detection.
+# params = ["s8", "w_c"]
+
+
+[comparison]
+#base_dir = "/cluster/home/veoehl/xilikelihood-sampler/papers/second_paper_2025/slurm"
+# Optional overrides if chains live in different directories.
+gaussian_base_dir = "/cluster/home/veoehl/xilikelihood-sampler/papers/second_paper_2025/slurm/sampler_output_gaussian/"
+copula_base_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/slurm/sampler_output_test/chains/"
+
+run_name = "exact_lmax20_n1024_minang5"
+jobnumber = 6
+copula_likelihood_type = "copula"
+gaussian_likelihood_type = "gaussian"
+
+output_prefix = "smooth_twoD"
+
