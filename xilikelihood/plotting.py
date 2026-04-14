@@ -295,7 +295,7 @@ def plot_kernels(prefactors,save_path=None,ang_bins=None):
         plt.show()
 
         
-def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False,colormap=None):
+def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=False,colormap=None,alpha=1.0):
 
     bincenters_x, bincenters_y = bincenters
     X, Y = np.meshgrid(bincenters_x, bincenters_y)
@@ -309,10 +309,8 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
         diff_hist = np.ma.masked_where(sim_mean == 0, diff_hist)
         rel_res = diff_hist / sim_std
     print("Mean deviation from simulations: {} std".format(np.mean(np.fabs(rel_res))))
-    alpha_values = np.ones_like(rel_res)
-    alpha_values[np.abs(rel_res) < 1.0] = 0.0
-    alpha_values[np.abs(rel_res) >= 1.0] = 0.3
-    alpha_values[np.abs(rel_res) >= 3.0] = 1.0
+    sigma_res = np.ma.masked_where(np.ma.getmask(rel_res), rel_res)
+    alpha_values = np.full(rel_res.shape, float(alpha))
     alpha_values[np.ma.getmask(rel_res)] = 0.0
     # Display values per pixel using a heatmap
     rel_res = diff_hist / np.max(exact_grid)
@@ -329,9 +327,9 @@ def compare_to_sims_2d(axes, bincenters, sim_mean, sim_std, interp, vmax,log=Fal
     )
     #im2 = axes.contour(bincenters_x, bincenters_y,exact_grid,cmap='gray',levels=5)
 
-    return im
+    return im, sigma_res
 
-def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100, use_gaussian=False):
+def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_indices=[0, 1, 2], angular_indices=[0, 1],prefactors=None,theta=None,marginals=None,nbins=100, use_gaussian=False, alpha=1.0):
     """
     Create a corner plot with 2D marginals and 1D histograms for simulations,
     and overlay PDF contours. Additionally, compare 2D histograms to analytic PDFs.
@@ -373,6 +371,7 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     #colorbar_ax = fig.add_axes([0.95, 0.1, 0.04, 0.8])  # Big colorbar axis [0.92, 0.2, 0.02, 0.6] for paper
     colorbar_ax = fig.add_axes([0.92, 0.2, 0.02, 0.6])  # Big colorbar axis for paper
     im = None  # Initialize the colorbar reference
+    sigma_residuals_all = []
     data_subset = list(product(redshift_indices,angular_indices))
     n_dims = len(data_subset)
     
@@ -474,7 +473,20 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
                     pdf_grid = gauss_pdf if use_gaussian else exact_pdf
                     interp_pdf  = RegularGridInterpolator((y_pdf,x_pdf), pdf_grid,method='cubic')
                     # the y,x order is weird, but necessary due to the indexing convention of the interpolator vs the plotting convention used elsewhere!
-                    im = compare_to_sims_2d(ax, (bincenters_x, bincenters_y), sim_mean, std_dev, interp_pdf, vmax=.05,log=False,colormap=cmap)
+                    im, sigma_res = compare_to_sims_2d(
+                        ax,
+                        (bincenters_x, bincenters_y),
+                        sim_mean,
+                        std_dev,
+                        interp_pdf,
+                        vmax=.2,
+                        log=False,
+                        colormap=cmap,
+                        alpha=alpha,
+                    )
+                    sigma_flat = np.ma.compressed(sigma_res)
+                    if sigma_flat.size > 0:
+                        sigma_residuals_all.append(sigma_flat)
                     # Compute relative residuals
                 ax.set_xlim(hist[1][0],hist[1][-1])
                 ax.set_ylim(hist[2][0],hist[2][-1])
@@ -498,6 +510,46 @@ def plot_corner(simspath, likelihoodpath,njobs, lmax, save_path=None, redshift_i
     #plt.tight_layout(pad=0.5, h_pad=0.5, w_pad=0.5)  # Adjust padding to reduce space
     plt.subplots_adjust(wspace=0.12, hspace=0.12)
     #plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.2)
+
+    if sigma_residuals_all:
+        sigma_values = np.concatenate(sigma_residuals_all)
+        frac_gt3 = 100.0 * np.mean(np.abs(sigma_values) > 3.0)
+        print(f"Fraction of |delta| > 3 sigma (all 2D bins): {frac_gt3:.2f}%")
+
+        if save_path:
+            base, _ = os.path.splitext(save_path)
+            sigma_data_path = f"{base}_sigma_residuals.npz"
+            np.savez(
+                sigma_data_path,
+                sigma_residuals=sigma_values,
+                frac_abs_gt3=frac_gt3,
+            )
+            print(f"Sigma residual data saved to {sigma_data_path}")
+
+        fig_sigma, ax_sigma = plt.subplots(figsize=(5, 4))
+        hist_color = linecolor
+        ax_sigma.hist(sigma_values, bins=60, color=hist_color, alpha=float(alpha), density=True)
+        ax_sigma.axvline(-3.0, color="black", linestyle="--", linewidth=1.0)
+        ax_sigma.axvline(3.0, color="black", linestyle="--", linewidth=1.0)
+        ax_sigma.set_xlabel(r"$\Delta / \sigma_{\mathrm{bootstrap}}$")
+        ax_sigma.set_ylabel("Density")
+        ax_sigma.legend(
+            [Line2D([0], [0], color=hist_color, lw=1.5), Line2D([0], [0], color="black", lw=1.0, linestyle="--")],
+            ["All 2D bins", r"$\pm 3\sigma$"],
+            frameon=False,
+        )
+        fig_sigma.tight_layout()
+
+        if save_path:
+            base, ext = os.path.splitext(save_path)
+            sigma_png = f"{base}_sigma_hist.png"
+            sigma_pdf = f"{base}_sigma_hist.pdf"
+            fig_sigma.savefig(sigma_png, dpi=300, bbox_inches="tight")
+            fig_sigma.savefig(sigma_pdf, dpi=300, bbox_inches="tight")
+            print(f"Sigma histogram saved to {sigma_png} and {sigma_pdf}")
+        else:
+            plt.show()
+        plt.close(fig_sigma)
 
     if save_path:
         plt.savefig(save_path, dpi=500, bbox_inches="tight")
