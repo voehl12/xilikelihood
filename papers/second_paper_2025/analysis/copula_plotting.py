@@ -11,16 +11,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import cmasher as cmr
 
-# Set up LaTeX rendering
-plt.rcParams.update({
-    'text.usetex': True,
-    'font.family': 'serif',
-    'font.size': 11,
-    'axes.labelsize': 12,
-    'xtick.labelsize': 10,
-    'ytick.labelsize': 10,
-    'legend.fontsize': 10,
-})
+from matplotlib import rc
+#rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
+## for Palatino and other serif fonts use:
+rc('font',**{'family':'serif','serif':['Times']})
+rc('text', usetex=True)
+rc('text.latex', preamble=r'\usepackage{amsmath}')
 
 # Define color scheme using CMasher (consistent with plotting.py)
 COLORS = {
@@ -147,7 +143,7 @@ def create_copula_comparison_evolution_correlation(param_grid, results, fiducial
     
     ax.set_xlabel(r'Parameter $\theta$')
     ax.set_ylabel(r'Posterior $p(\theta|d)$')
-    ax.legend(frameon=True, fancybox=True, framealpha=0.9, ncol=2, fontsize=8)
+    ax.legend(frameon=False)
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
