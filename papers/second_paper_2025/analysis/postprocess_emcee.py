@@ -25,7 +25,7 @@ import argparse
 from pathlib import Path
 import re
 
-from plot_utils_style import configure_paper_plot_style, get_single_chain_color
+from plot_utils_style import configure_paper_plot_style, get_single_chain_color, get_default_figsize
 import postprocess_utils as putils
 
 try:
@@ -64,12 +64,14 @@ FIDUCIALS = {
 DEFAULT_CONFIG = {
     'analysis': {
         'inspect': False,
+        'autocorr': True,
         'burn': 0,
         'thin': 1,
         'truths': None,
         'title': None,
         'params': None,
         'param_labels': None,
+        'prior_ranges': None,
         'omega_transform': False,  # Transform w params to omega = w/h^2
         'smooth_scale_1D': 1.5,  # Smoothing for 1D marginals (lower = sharper)
         'smooth_scale_2D': 1.5,  # Smoothing for 2D contours (lower = sharper)
@@ -363,7 +365,8 @@ def load_multiple_chains(filepaths, verbose=True):
 def plot_corner(samples, params, output_path, burn_in=0, thin=1,
                 truths=None, title=None, quantiles=[0.16, 0.5, 0.84],
                 selected_params=None, param_labels=None,
-                smooth_scale_1D=0.6, smooth_scale_2D=0.6, corner_fig_size=None):
+                smooth_scale_1D=0.6, smooth_scale_2D=0.6, corner_fig_size=None,
+                prior_ranges=None):
     """
     Create corner plot with posterior distributions using GetDist.
     
@@ -427,11 +430,18 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
     
     # Create MCSamples object for GetDist
     plot_labels = get_plot_labels(plot_params, param_labels)
+    ranges_for_plot = None
+    if isinstance(prior_ranges, dict):
+        ranges_for_plot = {p: prior_ranges[p] for p in plot_params if p in prior_ranges}
+        if not ranges_for_plot:
+            ranges_for_plot = None
+
     samples_obj = getdist.MCSamples(
         samples=flat_samples,
         names=plot_params,
         labels=plot_labels,
         settings=smoothing_settings,
+        ranges=ranges_for_plot,
     )
     
     # Configure color scheme
@@ -439,12 +449,18 @@ def plot_corner(samples, params, output_path, burn_in=0, thin=1,
     
  
     # Create triangle plot (corner plot equivalent in GetDist)
-    g = gplots.get_subplot_plotter(width_inch = corner_fig_size)
+    plot_width = corner_fig_size if corner_fig_size is not None else get_default_figsize("single")[0]
+    g = gplots.get_subplot_plotter(width_inch=plot_width, scaling=False)
+    g.settings.legend_frame = False
+    g.settings.figure_legend_frame = False
+    g.settings.linewidth = 1.5
+    g.settings.linewidth_contour = 1.5
     g.triangle_plot(
         [samples_obj],
         filled=True,
         contour_colors=[color],
-        line_args=[{'color': color, 'lw': 1.0}],
+        contour_lws=[1.5],
+        line_args=[{'color': color, 'lw': 1.5}],
     )
     
     # Add truth values if provided
@@ -528,10 +544,32 @@ def main():
         print("Error: [analysis].param_labels in config must be a key/value table")
         return 1
 
+    prior_ranges = analysis_cfg.get('prior_ranges')
+    if prior_ranges is not None:
+        if not isinstance(prior_ranges, dict):
+            print("Error: [analysis].prior_ranges in config must be a table of parameter -> [min, max]")
+            return 1
+        for p, bounds in prior_ranges.items():
+            if not isinstance(bounds, list) or len(bounds) != 2:
+                print(f"Error: [analysis].prior_ranges.{p} must be [min, max] (use null for open bounds)")
+                return 1
+            lo, hi = bounds
+            if lo is not None and not isinstance(lo, (int, float)):
+                print(f"Error: lower bound for [analysis].prior_ranges.{p} must be a number or null")
+                return 1
+            if hi is not None and not isinstance(hi, (int, float)):
+                print(f"Error: upper bound for [analysis].prior_ranges.{p} must be a number or null")
+                return 1
+            if lo is not None and hi is not None and float(lo) >= float(hi):
+                print(f"Error: [analysis].prior_ranges.{p} has invalid bounds [{lo}, {hi}] (need min < max)")
+                return 1
+
     truths_from_config = analysis_cfg['truths']
     if truths_from_config is not None and not isinstance(truths_from_config, list):
         print("Error: [analysis].truths in config must be a list of numbers")
         return 1
+
+    autocorr_enabled = bool(analysis_cfg.get('autocorr', True))
 
     smooth_scale_1D = float(analysis_cfg.get('smooth_scale_1D', 0.6))
     smooth_scale_2D = float(analysis_cfg.get('smooth_scale_2D', 0.6))
@@ -716,6 +754,16 @@ def main():
             print(f"Updated fiducial values for transformed parameters: {dict(zip(params, truths))}")
         else:
             print(f"Fiducial values: {dict(zip(params, truths))}")
+
+    if autocorr_enabled:
+        acorr_samples = samples[burn_in::thin, :, :]
+        acorr = putils.compute_autocorrelation_time(acorr_samples, quiet=True)
+        if acorr is None:
+            print("Autocorrelation time estimate not available.")
+        else:
+            print("\nIntegrated autocorrelation time (steps):")
+            for name, tau in zip(params, acorr):
+                print(f"  {name:>12s}: {tau:8.2f}")
     
     # Create plots
     print("\nGenerating plots...")
@@ -740,7 +788,8 @@ def main():
                 param_labels=param_labels,
                 smooth_scale_1D=smooth_scale_1D,
                 smooth_scale_2D=smooth_scale_2D,
-                corner_fig_size=corner_fig_size)
+                corner_fig_size=corner_fig_size,
+                prior_ranges=prior_ranges)
     
     # Scatter plot (for 2D case)
     if ndim >= 2:
