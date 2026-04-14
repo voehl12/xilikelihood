@@ -18,7 +18,7 @@ from scipy.interpolate import PchipInterpolator, UnivariateSpline, RegularGridIn
 from scipy.integrate import cumulative_trapezoid as cumtrapz
 from .diagnostic_tools import plot_pdfs_and_cdfs
 from scipy.linalg import eigh
-from scipy.special import gamma
+from scipy.special import gammaln
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,9 @@ DEFAULT_INTERPOLATION_POINTS = 512
 DEFAULT_PDF_THRESHOLD = 1e-3
 DEFAULT_NORMALIZATION_TOLERANCE = 1e-3
 DEFAULT_SMALL_NUMBER = 1e-300
+DEFAULT_WARN_CONDITION_NUMBER = 1e8
+DEFAULT_WARN_MIN_EIGENVALUE = 1e-10
+DEFAULT_WARN_Z_ABS = 12.0
 
 __all__ = [
     # Core copula functions
@@ -65,6 +68,31 @@ __all__ = [
 # ============================================================================
 
 
+def _log_matrix_diagnostics(matrix, name, warn_cond=DEFAULT_WARN_CONDITION_NUMBER,
+                            warn_min_eig=DEFAULT_WARN_MIN_EIGENVALUE):
+    """Log matrix conditioning diagnostics and return (cond_number, min_eigenvalue)."""
+    if not np.all(np.isfinite(matrix)):
+        logger.warning(f"{name}: matrix contains non-finite entries")
+        return np.inf, -np.inf
+
+    # Numerical asymmetry can appear from round-off; evaluate condition on symmetrized matrix.
+    sym_matrix = 0.5 * (matrix + matrix.T)
+    eigvals = np.linalg.eigvalsh(sym_matrix)
+    min_eig = float(np.min(eigvals))
+    max_eig = float(np.max(eigvals))
+    cond_number = np.inf if min_eig <= 0 else max_eig / min_eig
+
+    if min_eig <= 0:
+        logger.warning(f"{name}: matrix is not positive definite (min eigenvalue={min_eig:.3e})")
+    elif min_eig < warn_min_eig:
+        logger.warning(f"{name}: very small minimum eigenvalue={min_eig:.3e}")
+
+    if cond_number > warn_cond:
+        logger.warning(f"{name}: large condition number={cond_number:.3e}")
+
+    return cond_number, min_eig
+
+
 def multivariate_student_t_logpdf(z, df, scale):
     """
     Compute the log-PDF of the multivariate Student-t distribution.
@@ -89,24 +117,44 @@ def multivariate_student_t_logpdf(z, df, scale):
         single_point = True
     else:
         single_point = False
+
+    if not np.all(np.isfinite(z)):
+        logger.warning("multivariate_student_t_logpdf: non-finite values in z input")
+
+    cond_number, min_eig = _log_matrix_diagnostics(scale, "Student-t scale matrix")
     
     d = z.shape[1]  # Dimensionality
-    inv_scale = np.linalg.inv(scale)
-    det_scale = np.linalg.det(scale)
-
+    try:
+        L = np.linalg.cholesky(scale)  # scale = L @ L.T
+    except np.linalg.LinAlgError as exc:
+        raise np.linalg.LinAlgError(
+            f"Cholesky failed for Student-t scale matrix (min_eig={min_eig:.3e}, cond={cond_number:.3e})"
+        ) from exc
+    log_det_scale = 2 * np.sum(np.log(np.diag(L)))
     # Mahalanobis distance
-    quad_form = np.sum(z @ inv_scale * z, axis=1)
+    z_solved = np.linalg.solve(L, z.T).T  # L \ z for each row
+    quad_form = np.sum(z_solved ** 2, axis=1)
+
+    z_abs_max = float(np.max(np.abs(z)))
+    if z_abs_max > DEFAULT_WARN_Z_ABS:
+        logger.warning(f"multivariate_student_t_logpdf: large |z| encountered (max={z_abs_max:.3f})")
+
+    if not np.all(np.isfinite(quad_form)):
+        logger.warning("multivariate_student_t_logpdf: non-finite Mahalanobis distances detected")
 
     # Log-PDF computation
     log_norm_const = (
-        np.log(gamma((df + d) / 2))
-        - np.log(gamma(df / 2))
+        gammaln((df + d) / 2)
+        - gammaln(df / 2)
         - 0.5 * d * np.log(df * np.pi)
-        - 0.5 * np.log(det_scale)
+        - 0.5 * log_det_scale
     )
-    log_kernel = -0.5 * (df + d) * np.log(1 + quad_form / df)
+    log_kernel = -0.5 * (df + d) * np.log1p(quad_form / df)
     
     result = log_norm_const + log_kernel
+
+    if not np.all(np.isfinite(result)):
+        logger.warning("multivariate_student_t_logpdf: non-finite log-pdf values produced")
     
     # Return scalar for single point, array for multiple points
     return result[0] if single_point else result
@@ -354,6 +402,12 @@ def _gaussian_copula_core(cdf_data, covariance_matrix, epsilon=1e-12, function_n
         logger.warning(f"{function_name}: Clipped {n_clipped} CDF values to avoid infinite quantiles")
     z = norm.ppf(cdf_clipped)
     corr_matrix = covariance_to_correlation(covariance_matrix)
+    _log_matrix_diagnostics(corr_matrix, f"{function_name} correlation matrix")
+
+    z_abs_max = float(np.max(np.abs(z)))
+    if z_abs_max > DEFAULT_WARN_Z_ABS:
+        logger.warning(f"{function_name}: large |z| from ppf (max={z_abs_max:.3f}, epsilon={epsilon:.1e})")
+
     return z, corr_matrix
 
 
@@ -449,6 +503,11 @@ def _student_t_copula_core(cdf_data, covariance_matrix, df, epsilon=None, stabil
     
     # Convert covariance matrix to correlation matrix
     corr_matrix = covariance_to_correlation(covariance_matrix)
+    _log_matrix_diagnostics(corr_matrix, f"{function_name} correlation matrix")
+
+    z_abs_max = float(np.max(np.abs(z)))
+    if z_abs_max > DEFAULT_WARN_Z_ABS:
+        logger.warning(f"{function_name}: large |z| from t.ppf (max={z_abs_max:.3f}, epsilon={epsilon:.1e}, df={df})")
     
     # Stability check for correlation matrix (if requested)
     if stability_check:
@@ -478,6 +537,7 @@ def _student_t_copula_core(cdf_data, covariance_matrix, df, epsilon=None, stabil
     # Use the standard parameterization: scale = corr_matrix * (df - 2) / df
     # This ensures the covariance matrix equals the correlation matrix
     scale = corr_matrix * (df - 2) / df
+    _log_matrix_diagnostics(scale, f"{function_name} scale matrix")
     
     return z, scale
 
@@ -708,7 +768,7 @@ def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     log_pdf_points = np.log(pdf_points)  # Shape: (n_total_points, n_dims)
   
 
-    # Compute joint PDF (in log space, then exponentiate)
+    # Compute joint PDF 
     joint_logpdf_values = copula_density + np.sum(log_pdf_points, axis=1)  # Shape: (n_total_points,)
 
     # Reshape the joint PDF to match the original data space
@@ -718,7 +778,7 @@ def joint_logpdf(cdfs, pdfs, cov, copula_type="gaussian", df=None):
     return joint_logpdf_reshaped
 
 
-def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
+def joint_logpdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     # Compute marginals
     u = cdf_X
     v = cdf_Y
@@ -726,10 +786,10 @@ def joint_pdf_2d(cdf_X, cdf_Y, pdf_X, pdf_Y, cov):
     pdf_points = np.vstack([pdf_x_grid.ravel(), pdf_y_grid.ravel()]).T
     # check shapes here and in joint_pdf - copula_density has been reshaped to match data
     # Compute copula density
-    copula_density = gaussian_copula_density(u, v, cov)
+    copula_density = gaussian_copula_density_2d(u, v, cov)
 
     # Joint PDF
-    return copula_density * np.prod(pdf_points, axis=1)
+    return copula_density * np.prod((pdf_points), axis=1)
 
 
 # ============================================================================
@@ -878,4 +938,37 @@ def evaluate(x_data, xs, pdfs, cdfs, cov, subset=None, copula_type="gaussian", d
 
 
 
+# ============================================================================
+# Sampling
+# ============================================================================
+
+
+def sample_t_copula(corr, df, n_samples):
+    d = corr.shape[0]
+    L = np.linalg.cholesky(corr)
+    # Sample correlated normals
+    z = np.random.standard_normal((n_samples, d))
+    x = z @ L.T
+    # Scale by chi-squared draw (shared across dimensions!)
+    chi2 = np.random.chisquare(df, size=(n_samples, 1))
+    x_t = x / np.sqrt(chi2 / df)
+    # Map to uniform marginals via t CDF
+    u = t.cdf(x_t, df=df)
+    return u  # shape (n_samples, d), each marginal ~ Uniform(0,1)
+
+
+
+def sample_from_copula(corr, df, marginal_ppfs, n_samples):
+    """
+    marginal_ppfs: list of d inverse-CDF functions, one per dimension
+                   e.g. [scipy.stats.norm(mu1,s1).ppf, 
+                         scipy.stats.gamma(a).ppf, 
+                         my_custom_dist.ppf, ...]
+    """
+    # Step 1: sample copula -> uniform marginals
+    u = sample_t_copula(corr, df, n_samples)  # shape (n_samples, d)
+    
+    # Step 2: apply inverse CDFs dimension-wise
+    x = np.column_stack([ppf(u[:, i]) for i, ppf in enumerate(marginal_ppfs)])
+    return x  # shape (n_samples, d), each marginal has its own distribution
 
