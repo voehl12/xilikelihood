@@ -19,7 +19,7 @@ import healpy as hp
 from . import wpm_funcs
 from . import cov_funcs
 from .file_handling import save_arrays, load_arrays, generate_filename, check_for_file, ensure_directory_exists
-from .core_utils import computation_phase
+from .core_utils import computation_phase, resolve_cache_root
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class SphereMask:
     l_smooth : int or 'auto', optional
         Smoothing scale parameter. If 'auto', uses exact_lmax
     working_dir : str, optional
-        Directory for caching arrays. Defaults to current directory
+        Directory for caching arrays. Defaults to resolved cache root
         
     Attributes
     ----------
@@ -100,9 +100,12 @@ class SphereMask:
         if not any(spin in [0, 2] for spin in spins):
             raise ValueError("spins must contain 0 and/or 2")
 
-        if working_dir is None:
-            working_dir = os.getcwd()
-        self.working_dir = Path(working_dir)
+        self.working_dir = Path(
+            resolve_cache_root(
+                explicit_cache_root=working_dir,
+                legacy_working_dir=None,
+            )
+        )
         
         # Initialize mask
         if maskpath is not None:
@@ -239,7 +242,7 @@ class SphereMask:
         self.name = f"circ{area:.0f}"
         
         # Create masks directory and set path
-        masks_dir = Path("masks")
+        masks_dir = self.working_dir / "masks"
         ensure_directory_exists(str(masks_dir))
         self.maskpath = masks_dir / f"circular_{area:.0f}sqd_nside{nside}.fits"
         
@@ -275,7 +278,7 @@ class SphereMask:
         self.mask = np.ones(npix)
         
         # Create masks directory and set path
-        masks_dir = Path("masks")
+        masks_dir = self.working_dir / "masks"
         ensure_directory_exists(str(masks_dir))
         self.maskpath = masks_dir / f"fullsky_nside{nside}.fits"
         
@@ -467,7 +470,7 @@ class SphereMask:
             "lmax": self._exact_lmax+cov_ell_buffer,
             "nside": self.nside,
             "mask": self.name,
-        }, base_dir=self.working_dir)
+        }, base_dir=str(self.working_dir))
         
 
     def set_mllppath(self):
@@ -477,7 +480,7 @@ class SphereMask:
                 "lmax": self._exact_lmax,
                 "nside": self.nside,
                 "mask": self.name
-            }, base_dir=self.working_dir)
+            }, base_dir=str(self.working_dir))
         
 
 

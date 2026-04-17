@@ -17,7 +17,7 @@ import logging
 from . import cov_funcs
 from . import noise_utils
 from .file_handling import generate_filename, save_arrays, check_for_file, load_arrays
-from .core_utils import check_property_equal
+from .core_utils import check_property_equal, resolve_cache_root
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class Cov:
     cov_ell_buffer : int, default=10
         Buffer in multipole space to ensure convergence
     working_dir : str, optional
-        Working directory for output files (defaults to current directory)
+        Working directory for output files. In non-chain mode, defaults to resolved cache root.
         
     Attributes:
     -----------
@@ -92,7 +92,17 @@ class Cov:
         if cov_ell_buffer < 0:
             raise ValueError("cov_ell_buffer must be non-negative")
             
-        self.working_dir = working_dir or os.getcwd()
+        if working_dir is not None:
+            self.working_dir = resolve_cache_root(
+                explicit_cache_root=working_dir,
+                legacy_working_dir=None,
+            )
+        elif not ischain:
+            # Non-chain mode performs cache I/O; use deterministic root instead of CWD.
+            self.working_dir = resolve_cache_root()
+        else:
+            # Keep chain mode behavior unchanged.
+            self.working_dir = os.getcwd()
         self.mask = mask
         self.theorycl = theorycl
         self._exact_lmax = exact_lmax
@@ -115,7 +125,7 @@ class Cov:
                 "mask":self.mask.name,
                 "theory":self.theorycl.name,
                 "sigma":self.theorycl.sigmaname,},
-                base_dir=self.working_dir
+                base_dir=str(self.working_dir)
             )
 
     @property
@@ -556,7 +566,7 @@ class Cov:
                 "theory": self.theorycl.name,
                 "sigma": self.theorycl.sigmaname,
             },
-            base_dir=self.working_dir
+            base_dir=str(self.working_dir)
         )
     
     def cl2pseudocl(self, ischain=False):

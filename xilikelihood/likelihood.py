@@ -26,6 +26,7 @@ import re
 import logging
 import gc
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
 
@@ -58,7 +59,7 @@ from .distributions import (
 from .cl2xi_transforms import prep_prefactors, cl2pseudocl
 from .diagnostic_tools import plot_eigenvalue_distributions, analyze_significant_eigenvalues
 from . import copula_funcs as cop
-from .core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal
+from .core_utils import LikelihoodConfig, temporary_arrays, computation_phase, check_property_equal, resolve_cache_root
 
 logger = logging.getLogger(__name__)
 
@@ -158,11 +159,19 @@ class XiLikelihood:
         logger.debug(f"CF settings: cf_steps={self.config.cf_steps}, pdf_steps={self.config.pdf_steps}, "
             f"ximax_sigma_factor={self.config.ximax_sigma_factor}, "
             f"ximin_sigma_factor={self.config.ximin_sigma_factor}")
-        # Set working directory
-        self.working_dir = self.config.working_dir or os.getcwd()
+        # Resolve a single cache root for this likelihood instance
+        self.cache_root = resolve_cache_root(
+            explicit_cache_root=self.config.cache_root,
+            legacy_working_dir=self.config.working_dir,
+        )
+        self.config.cache_root = self.cache_root
+        # Keep legacy attribute for compatibility with existing diagnostics/output calls
+        self.working_dir = self.cache_root
 
         # Core attributes
         self.mask = mask
+        if hasattr(self.mask, "working_dir"):
+            self.mask.working_dir = Path(self.cache_root)
         self.lmax = lmax if lmax is not None else 3 * self.mask.nside - 1
         self.noise = noise
         if include_ximinus:
@@ -298,7 +307,13 @@ class XiLikelihood:
         with computation_phase("pseudo alm covariances", 
                           log_memory=self.config.log_memory_usage):
             pseudo_alm_covs = [
-                Cov(self.mask, theory_cl, self._exact_lmax, ischain=True).cov_alm_xi(ischain=True)
+                Cov(
+                    self.mask,
+                    theory_cl,
+                    self._exact_lmax,
+                    working_dir=self.cache_root,
+                    ischain=True,
+                ).cov_alm_xi(ischain=True)
                 for theory_cl in self._theory_cl
             ]
             return pseudo_alm_covs

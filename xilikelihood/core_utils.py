@@ -42,6 +42,7 @@ class LikelihoodConfig:
     large_angle_threshold: float = 15/60  # Threshold for large angle bins in degrees
     # File paths
     working_dir: Optional[str] = None
+    cache_root: Optional[str] = None
     
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -51,6 +52,10 @@ class LikelihoodConfig:
             raise ValueError("ximax_sigma_factor must be positive")
         if self.ximin_sigma_factor <= 0:
             raise ValueError("ximin_sigma_factor must be positive")
+        self.cache_root = resolve_cache_root(
+            explicit_cache_root=self.cache_root,
+            legacy_working_dir=self.working_dir,
+        )
         
 
 
@@ -190,10 +195,35 @@ def check_property_equal(instances, property_name):
     return all(getattr(instance, property_name) == first_value for instance in instances)
 
 
+def resolve_cache_root(
+    explicit_cache_root: Optional[str] = None,
+    legacy_working_dir: Optional[str] = None,
+) -> str:
+    """Resolve cache root with backward-compatible precedence.
+
+    Precedence:
+    1) explicit cache_root
+    2) XILIKELIHOOD_CACHE_ROOT
+    3) legacy working_dir
+    4) repository root directory
+    """
+    default_repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), os.pardir)
+    )
+    cache_root = (
+        explicit_cache_root
+        or os.environ.get("XILIKELIHOOD_CACHE_ROOT")
+        or legacy_working_dir
+        or default_repo_root
+    )
+    return os.path.abspath(os.path.expanduser(cache_root))
+
+
 
 __all__ = [
     'LikelihoodConfig',
     'temporary_arrays', 
     'computation_phase',
     'check_property_equal',
+    'resolve_cache_root',
 ]
