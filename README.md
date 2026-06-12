@@ -2,6 +2,15 @@
 
 Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood.
 
+## Paper Reproducibility
+
+This repository is being prepared as the reference implementation for:
+
+- **New paper:** https://arxiv.org/abs/2604.07336
+- **First paper / earlier method:** https://arxiv.org/abs/2407.08718
+
+The final archived release and DOI will be added once the publication-ready repository tag is created. For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
+
 ## Installation
 
 ### Development Installation
@@ -35,43 +44,49 @@ If you don't have the custom GLASS version, simulation functions will raise an e
 ```python
 import xilikelihood as xlh
 import numpy as np
+from xilikelihood.core_utils import LikelihoodConfig
 
 # 1. Create a survey mask
-mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
+mask = xlh.SphereMask(
+    spins=[2],
+    circmaskattr=(1000, 256),
+    exact_lmax=10,
+    l_smooth=30,
+)
 
 # 2. Set up redshift bins and angular bins
 z = np.linspace(0.01, 3.0, 100)
-redshift_bins = [xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1), 
-                 xlh.RedshiftBin(nbin=2, z=z, zmean=1.0, zsig=0.1)]
-angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0), (4.0, 8.0)]
+redshift_bins = [
+    xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1),
+    xlh.RedshiftBin(nbin=2, z=z, zmean=1.0, zsig=0.1),
+]
+angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0)]
 
 # Or use fiducial setup
 # redshift_bins, angular_bins_in_deg = xlh.fiducial_dataspace()
 
-# 3. Prepare theory inputs and generate power spectra
-numerical_combinations, redshift_bin_combinations, is_cov_cross, shot_noise, 
-mapper = xlh.prepare_theory_cl_inputs(redshift_bins) # by default with shot noise
-theory_cls = xlh.generate_theory_cl(
-    mask.lmax,
-    redshift_bin_combinations,
-    shot_noise,
-    cosmo={'omega_m': 0.31, 's8': 0.8}
+# 3. Configure and set up the likelihood
+config = LikelihoodConfig(cf_steps=1024, pdf_steps=1024)
+likelihood = xlh.XiLikelihood(
+    mask=mask,
+    redshift_bins=redshift_bins,
+    ang_bins_in_deg=angular_bins_in_deg,
+    config=config,
 )
-
-# 4. Simulate correlation functions (optional)
-result = xlh.simulate_correlation_functions(
-    theory_cls, [mask], angular_bins_in_deg, n_batch=100
-)
-xi_plus, xi_minus = result['xi_plus'], result['xi_minus']
-
-# 5. Set up likelihood analysis
-likelihood = xlh.XiLikelihood(mask, redshift_bins, ang_bins_in_deg)
 likelihood.setup_likelihood()
 
-# 6. Evaluate likelihood with data
-# log_likelihood = likelihood.loglikelihood(data_vector, cosmology)
-# cosmology is a dictionary with cosmological parameters
+# 4. Evaluate the likelihood for a xi data vector.
+# Replace this toy vector with measured or simulated xi values with the same shape.
+observed_xi = np.zeros(likelihood.data_shape_full)
+test_cosmology = {"omega_m": 0.30, "s8": 0.82}
+log_likelihood = likelihood.loglikelihood(observed_xi, test_cosmology)
+print(log_likelihood)
 ```
+
+For deterministic mock data and Gaussian comparison covariances, use
+`xilikelihood.mock_data.create_mock_data(..., random=None)`. This path uses the
+fiducial theory mean and does not require GLASS simulations. Simulation-backed
+mock data (`random="frommap"`) requires the custom GLASS dependency.
 
 ## Key Features
 
@@ -97,7 +112,7 @@ likelihood.setup_likelihood()
 ### Optional Dependencies
 - **GLASS** (custom version): Required for Gaussian field simulations
   - Install from: `pip install -e ../glass`
-  - Without this, simulation functions will raise informative errors
+  - Without this, simulation functions will raise informative errors. Likelihood setup, transformations, and many tests can still be used without running simulations.
 - **TreeCorr**: For alternative correlation function estimation
 - **pyccl**: For cosmological computations
 - **wigner**: For curved sky correlation function calculations 
@@ -107,7 +122,8 @@ The package is designed to work without optional dependencies, providing informa
 ## Scientific Background
 
 This package implements the methods described in:
-- []
+- New copula likelihood paper: https://arxiv.org/abs/2604.07336
+- First paper / exact low-dimensional likelihood method: https://arxiv.org/abs/2407.08718
 
 ## Documentation
 
@@ -115,6 +131,6 @@ Full documentation: https://xilikelihood.readthedocs.io
 
 ## Examples
 
-- [Basic simulation example](examples/basic_simulation.py)
-- [Likelihood analysis example](examples/likelihood_analysis.py)
-- [Mask creation example](examples/mask_creation.py)
+- [Basic simulation example](docs/examples/basic_simulation.md)
+- [Quick start guide](docs/quickstart.md)
+- [Repository reference](docs/repository_reference.rst)

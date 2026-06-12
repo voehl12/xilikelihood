@@ -8,6 +8,7 @@ Welcome to the documentation for **xilikelihood**, a Python package for computin
 
 installation
 quickstart
+repository_reference
 api/index
 examples/index
 ```

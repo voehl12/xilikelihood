@@ -74,9 +74,6 @@ def create_mock_data(
     ...     random='gaussian'
     ... )
     """
-    # Import here to avoid circular imports
-    from .simulate import simulate_correlation_functions
-    
     # Default fiducial cosmology
     if fiducial_cosmo is None:
         fiducial_cosmo = {"omega_m": 0.31, "s8": 0.8}
@@ -109,6 +106,10 @@ def create_mock_data(
         # Reshape back to original shape
         mock_data = mock_data_flat.reshape(fiducial_mean.shape)
     elif random == 'frommap':
+        # Import only for the simulation-backed path so deterministic and
+        # Gaussian mock data do not require the optional GLASS dependency.
+        from .simulate import simulate_correlation_functions
+
         # Simulate from correlation function maps
         sim = simulate_correlation_functions(
             theory_cls,
