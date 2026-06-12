@@ -1,0 +1,204 @@
+# Reproducing the Paper Results
+
+This repository is the reference implementation for the copula likelihood
+analysis described in:
+
+- New paper: https://arxiv.org/abs/2604.07336
+- First paper / earlier method: https://arxiv.org/abs/2407.08718
+
+The final paper-reference Git tag and Zenodo DOI will be added here after the
+publication-ready release is archived.
+
+## Scope
+
+The GitHub release is intended to preserve the source code, tests, examples,
+and paper-analysis scripts needed to understand and rerun the likelihood
+workflow. It is not intended to contain every generated simulation, posterior,
+plot, SLURM log, or cached covariance product from the paper analysis.
+
+The reproducibility target is therefore split into three levels:
+
+1. **Code verification**: install the package and run focused tests.
+2. **Likelihood smoke check**: build a small likelihood, generate deterministic
+   mock data, and evaluate a log-likelihood.
+3. **Full paper analysis**: rerun the paper scripts on an HPC environment with
+   the required external/generated data products.
+
+## Environment
+
+Use Python 3.11 if possible; the current development environment used
+``likelihood-env`` with Python 3.11.6.
+
+Install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+For tests:
+
+```bash
+pip install -e ".[dev]"
+```
+
+The project depends on scientific Python packages including NumPy, SciPy, JAX,
+Healpy, TreeCorr, pyccl, and wigner. The simulation-backed paths additionally
+require a custom GLASS version. Deterministic likelihood and mock-data paths do
+not require GLASS simulations.
+
+On CPU-only systems or shared clusters, set JAX to CPU before importing the
+package:
+
+```bash
+export JAX_PLATFORM_NAME=cpu
+export JAX_PLATFORMS=cpu
+export CUDA_VISIBLE_DEVICES=""
+```
+
+## Quick Verification
+
+Run the focused mock-data tests:
+
+```bash
+likelihood-env/bin/python -m pytest tests/test_mock_data.py -q
+```
+
+Current result on this branch:
+
+```text
+2 passed in 79.11s
+```
+
+Run the full test suite when the full dependency stack is available:
+
+```bash
+likelihood-env/bin/python -m pytest
+```
+
+If using another environment, replace ``likelihood-env/bin/python`` with the
+Python executable for that environment.
+
+## Likelihood Smoke Check
+
+This smoke check exercises the main likelihood path without map simulations:
+
+```python
+import numpy as np
+import xilikelihood as xlh
+from xilikelihood.core_utils import LikelihoodConfig
+from xilikelihood.mock_data import create_mock_data
+
+mask = xlh.SphereMask(
+    spins=[2],
+    circmaskattr=(1000, 256),
+    exact_lmax=10,
+    l_smooth=30,
+)
+
+z = np.linspace(0.01, 3.0, 100)
+redshift_bins = [
+    xlh.RedshiftBin(nbin=1, z=z, zmean=0.5, zsig=0.1),
+    xlh.RedshiftBin(nbin=2, z=z, zmean=1.0, zsig=0.1),
+]
+angular_bins_in_deg = [(1.0, 2.0), (2.0, 4.0)]
+
+likelihood = xlh.XiLikelihood(
+    mask=mask,
+    redshift_bins=redshift_bins,
+    ang_bins_in_deg=angular_bins_in_deg,
+    config=LikelihoodConfig(cf_steps=1024, pdf_steps=1024),
+)
+likelihood.setup_likelihood()
+
+mock_data, gaussian_covariance = create_mock_data(
+    likelihood,
+    mock_data_path="mock_data_smoke.npz",
+    gaussian_covariance_path="gaussian_covariance_smoke.npz",
+    fiducial_cosmo={"omega_m": 0.31, "s8": 0.8},
+    random=None,
+)
+
+likelihood.gaussian_covariance = gaussian_covariance
+log_likelihood = likelihood.loglikelihood(
+    mock_data,
+    {"omega_m": 0.30, "s8": 0.82},
+)
+print(log_likelihood)
+```
+
+The output value is not a paper result; it is a functional check that the
+likelihood machinery runs end to end for a small configuration.
+
+## Paper Analysis Entry Points
+
+The second-paper analysis workspace is:
+
+```text
+papers/second_paper_2025/
+```
+
+Important files:
+
+- ``papers/second_paper_2025/analysis/config.py``: central constants for masks,
+  fiducial cosmology, priors, grid sizes, file names, and cluster paths.
+- ``papers/second_paper_2025/analysis/s8_om_posterior.py``: 2D
+  ``omega_m``/``S8`` grid posterior jobs.
+- ``papers/second_paper_2025/analysis/sampler.py``: MCMC workflow with
+  checkpointing and MPI-aware logging.
+- ``papers/second_paper_2025/analysis/postprocess_*.py``: posterior and chain
+  postprocessing.
+- ``papers/second_paper_2025/analysis/plot_sims.py``: comparison plots between
+  likelihood contours and simulation products.
+- ``papers/second_paper_2025/slurm/``: SLURM job scripts used for cluster runs.
+
+Several of these scripts contain absolute ETH/cluster paths and are intended to
+document the production workflow rather than run unchanged on a laptop.
+
+## Data and Generated Artifacts
+
+The GitHub repository should contain source code, tests, documentation, small
+test fixtures, and paper scripts. Large or generated products are not expected
+to be tracked in GitHub.
+
+Generated or environment-specific products include:
+
+- Wigner/mask coupling caches in ``wpm_arrays/`` and ``mllp_arrays/``.
+- Covariance products in ``covariances/``.
+- Pseudo-Cl and xi simulation products in ``pcls/``, ``cfs/``, and
+  simulation output directories.
+- Posterior grids, chains, corner plots, trace plots, figures, logs, and
+  profiler outputs under ``papers/second_paper_2025/`` and scratch paths.
+
+These products can be regenerated from the scripts when the required external
+dependencies, compute resources, and input paths are available.
+
+## Optional Simulation Dependency
+
+Simulation-backed mock data and map simulations require the custom GLASS
+dependency used by the analysis. The deterministic mock-data path
+``create_mock_data(..., random=None)`` uses the fiducial theory mean and does
+not require GLASS simulations. The map-backed path
+``create_mock_data(..., random="frommap")`` does require GLASS.
+
+## Known Limitations
+
+- ``include_ximinus=True`` is marked as incomplete/deprecated in the code
+  because the xi-minus covariance implementation is not fully validated.
+- Full paper reproduction is HPC-oriented and may require substantial memory
+  and runtime.
+- Some paper scripts preserve absolute cluster paths for reproducibility of the
+  original workflow.
+- The final archived DOI is pending until the paper-reference release is made.
+
+## Release Checklist
+
+Before citing the repository in the paper:
+
+1. Confirm this document matches the final paper scripts and data policy.
+2. Run the focused smoke tests and record the result.
+3. Run the full test suite if the dependency stack is available.
+4. Create a Git tag for the paper-reference state.
+5. Create a GitHub release from that tag.
+6. Archive the release on Zenodo.
+7. Update ``CITATION.cff``, this file, and the README with the Zenodo DOI.
+
