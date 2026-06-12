@@ -4,6 +4,7 @@ os.environ['JAX_PLATFORMS'] = 'cpu'
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 from itertools import product, combinations
 import xilikelihood as xlh
+from xilikelihood.core_utils import LikelihoodConfig
 from xilikelihood.plotting import plot_corner
 from config import (
     EXACT_LMAX,
@@ -38,8 +39,10 @@ ab = np.array([2, 3])
 rs_selection = [redshift_bins[i] for i in rs]
 ab_selection = [ang_bins_in_deg[i] for i in ab]
 print(ab_selection)
+config = LikelihoodConfig(cf_steps=1024, pdf_steps=4096,ximax_sigma_factor=310.)
+
 likelihood = xlh.XiLikelihood(
-        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False,highell=True)
+        mask=mask, redshift_bins=rs_selection, ang_bins_in_deg=ab_selection,noise=None,include_ximinus=False,highell=True,config=config)
 likelihood.setup_likelihood()
 likelihood._prepare_likelihood_components(FIDUCIAL_COSMO,highell=True)
 #xs,pdfs = likelihood._xs,likelihood._pdfs
@@ -94,4 +97,4 @@ for pair in subset_pairs:
 filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
 angular_bins_to_plot = [2,3]
 correlations_to_plot = [10,12]
-plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=767, njobs=1000,save_path="comparison_to_sims_with_bootstrap_subplot_viola_gauss_paper.png",redshift_indices=correlations_to_plot,angular_indices=angular_bins_to_plot,nbins=256,use_gaussian=True)
+plot_corner(simspath=filepath, likelihoodpath=cache_dir, lmax=767, njobs=1000,save_path="comparison_to_sims_with_bootstrap_subplot_viola_gauss_paper_test.png",redshift_indices=correlations_to_plot,angular_indices=angular_bins_to_plot,nbins=256,use_gaussian=False)
