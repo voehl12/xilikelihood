@@ -298,36 +298,52 @@ def high_low_s8(n=100,plot_single=False):
     
      
 def gausscompare_1d():
+    import xilikelihood as xlh
+    from xilikelihood.file_handling import read_sims_nd
+    from xilikelihood import plotting
+    from xilikelihood.theory_cl import BinCombinationMapper, n_combs_to_n_bins
+    from xilikelihood.core_utils import LikelihoodConfig
+
     filepath = "/cluster/work/refregier/veoehl/xi_sims/croco_KiDS_setup_circ10000smoothl30_nonoise_llim_767"
-    redshift_bins, ang_bins_in_deg = fiducial_dataspace()
-    redshift_i = [2,4]
-    ang_bin_i = -2
-    comb = (4,4)
+    data, sim_ang_bins_in_deg = read_sims_nd(filepath, 1000, 767)
+    redshift_bins_full, ang_bins_in_deg = xlh.fiducial_dataspace()
+    n_bins_sim = n_combs_to_n_bins(data.shape[1])
+    if len(redshift_bins_full) != n_bins_sim:
+        print(f"Mismatch in redshift bin count: fiducial has {len(redshift_bins_full)}, sims imply {n_bins_sim}.")
+        redshift_bins_full = redshift_bins_full[:n_bins_sim]
+    # Match plot_sims: build a reduced likelihood on a redshift/angle subset.
+    comb = (4, 4)
+    rs = [2, 4]
+    ab = [-2]
     
-    redshift_bins = [redshift_bins[i] for i in redshift_i]
-    ang_bins_in_deg = [ang_bins_in_deg[-2]]
-    print(redshift_bins,ang_bins_in_deg)
+
+    redshift_bins = [redshift_bins_full[i] for i in rs]
+    ang_bins_in_deg = [ang_bins_in_deg[i] for i in ab]
+    #ang_local = ab.index(ang_bin_full)
+    #print(redshift_bins, ang_bins_in_deg[ang_local])
     fiducial_cosmo = {
     "omega_m": 0.31,  # Matter density parameter
     "s8": 0.8,  # Amplitude of matter fluctuations
     }
-    mask = SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
-    likelihood = XiLikelihood(mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg, noise=None)
-    mapper = theory_cl.BinCombinationMapper(5)
-    corr = mapper.get_index(comb)
-    print('correlation:',corr)
-    likelihood.initiate_mask_specific()
-    likelihood.precompute_combination_matrices()
+    mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256), exact_lmax=30, l_smooth=30)
+    config = LikelihoodConfig(
+    cf_steps=2048,
+    pdf_steps=2048,
+    ximax_sigma_factor=120.0,
+    ximin_sigma_factor=120.0,
+)
+    likelihood = xlh.XiLikelihood(mask=mask, redshift_bins=redshift_bins, ang_bins_in_deg=ang_bins_in_deg, noise=None, config=config,include_ximinus=False)
+    likelihood.setup_likelihood()
+    
     likelihood._prepare_likelihood_components(fiducial_cosmo,highell=True)
     xs, pdfs = likelihood._xs, likelihood._pdfs
     exact_pdf = (xs[1,0], pdfs[1,0])
-    data, _ = read_sims_nd(filepath, 1000, 767)
     print('loaded sims with shape:',data.shape)
-    selected_data = data[:,corr,ang_bin_i]
+    selected_data = data[:,10,ab[0]]
     print('selected data shape:',selected_data.shape)
     fig, ax = plt.subplots(figsize=(4, 3.2))
     ax = plotting.plot_hist(ax, selected_data,name=None,exact_pdf=exact_pdf,fit_gaussian=True) 
-    fig.savefig('gausscompare_1d_3.pdf',bbox_inches='tight')
+    fig.savefig('gausscompare_1d_nohist.pdf',bbox_inches='tight',dpi=300)
 
     
 def all_marginals():
@@ -357,5 +373,3 @@ def all_marginals():
             #ax.set_title(f'Correlation {corr}, Angle {ang}')
             fig.savefig(f'marginal_corr{corr}_ang{i}.pdf', bbox_inches='tight')
             plt.close(fig)
-
-maps()
