@@ -100,10 +100,22 @@ def ensure_jax_device():
     except Exception as e:
         print(f"JAX import/device check failed: {e}")
 
-    print("Forcing JAX to CPU backend and restarting script...")
+    print("Forcing JAX to CPU backend...")
     os.environ["JAX_PLATFORM_NAME"] = "cpu"
     sys.modules.pop("jax", None)
     sys.modules.pop("jax.numpy", None)
+
+    # Interactive sessions (REPL/notebooks) and non-script entry points cannot
+    # be safely restarted via execv using sys.argv.
+    argv0 = sys.argv[0] if sys.argv else ""
+    is_interactive = argv0 in ("", "-c")
+    has_script_file = bool(argv0) and os.path.isfile(argv0)
+
+    if is_interactive or not has_script_file:
+        print("Running in interactive/non-script mode; continuing without restart on CPU.")
+        return
+
+    print("Restarting script with CPU backend...")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
