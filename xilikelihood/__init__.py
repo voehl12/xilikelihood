@@ -21,6 +21,7 @@ from . import wpm_funcs
 from . import theoretical_moments
 from . import pseudo_alm_cov
 from . import mock_data
+from . import copula_funcs
 
 __all__ = [
     # Main workflow functions
@@ -32,7 +33,7 @@ __all__ = [
     'SphereMask',
     'RedshiftBin',
     'XiLikelihood',
-    'TheoryCl'
+    'TheoryCl',
     
     # Key utilities
     'save_arrays',
@@ -45,7 +46,7 @@ __all__ = [
     'theoretical_moments',
     'pseudo_alm_cov',
     'mock_data',
-    'copula_funcs'
+    'copula_funcs',
     
     # Package info
     '__version__',

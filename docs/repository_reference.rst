@@ -107,11 +107,8 @@ Public API
 * Advanced submodules such as ``distributions``, ``wpm_funcs``,
   ``theoretical_moments``, ``pseudo_alm_cov``, and ``mock_data``.
 
-Note: ``__all__`` currently has missing commas between a few entries, and the
-README example calls ``xlh.simulate_correlation_functions`` even though that
-function is not re-exported from ``__init__.py``. Use
-``from xilikelihood.simulate import simulate_correlation_functions`` unless the
-public API is adjusted.
+The simulation interface is documented as ``xilikelihood.simulate`` rather than
+as a top-level export.
 
 Core Package Modules
 --------------------
@@ -263,9 +260,9 @@ Simulation Workflow
 
 The package-level simulation implementation is in ``xilikelihood/simulate.py``.
 ``simulation_scripts/xi_sim.py`` and ``xi_sim_nD.py`` are cluster-facing
-wrappers. The current README for that directory still mentions
-``2ptlikelihood`` and scratch paths; update those scripts carefully if moving to
-a different environment.
+wrappers. The current README for that directory still contains some historical
+naming and scratch-path assumptions; update those scripts carefully if moving
+to a different environment.
 
 The pseudo-Cl simulation path:
 
@@ -368,11 +365,10 @@ files. Build with:
    cd docs
    make html
 
-The docs currently include API stubs for the package modules, installation,
-quickstart, configuration, and examples. Some links and examples are stale:
-``docs/quickstart.md`` references ``theory.md`` although no such file is
-present, and both README/quickstart examples assume simulation is exported from
-the top-level package.
+The docs include API stubs and orientation pages for the package modules,
+installation, quickstart, configuration, and examples. The quickstart is
+likelihood-first; simulation examples import the simulation function from
+``xilikelihood.simulate``.
 
 Common Gotchas
 --------------
@@ -419,4 +415,3 @@ When adding a new likelihood feature:
    fixtures.
 4. Document any new file naming or cache convention in ``file_handling.py`` or
    this reference.
-

@@ -8,6 +8,7 @@ This example demonstrates how to set up and run a basic two-point correlation fu
 import xilikelihood as xlh
 import numpy as np
 import matplotlib.pyplot as plt
+from xilikelihood.simulate import simulate_correlation_functions
 
 # Create a survey mask
 mask = xlh.SphereMask(spins=[2], circmaskattr=(10000, 256))
@@ -35,7 +36,7 @@ theory_cls = xlh.generate_theory_cl(
 
 ```python
 # Generate correlation functions
-result = xlh.simulate_correlation_functions(
+result = simulate_correlation_functions(
     theory_cls, [mask], angular_bins_in_deg, n_batch=100
 )
 
@@ -93,7 +94,7 @@ all_xip = []
 all_xim = []
 
 for batch in range(n_batches):
-    batch_result = xlh.simulate_correlation_functions(
+    batch_result = simulate_correlation_functions(
         theory_cls, [mask], angular_bins_in_deg, n_batch=batch_size
     )
     all_xip.append(batch_result['xi_plus'])

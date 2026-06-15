@@ -3,13 +3,14 @@ import matplotlib.pyplot as plt
 from calc_pdf import get_combs
 from scipy.interpolate import UnivariateSpline  # Import UnivariateSpline
 from file_handling import read_posterior_files
+from config import OUTPUT_DIR
 
 numjobs = 30
 num_croco = 10
 num_auto = 5
 num_angular_bins = 3
-filestring_croco = "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_1000sqd_fiducial_nonoise_1dcomb_*.npz"
-filestring_auto = "/cluster/home/veoehl/2ptlikelihood/s8posts/s8post_1000sqd_fiducial_nonoise_1dcomb_*.npz"
+filestring_croco = str(OUTPUT_DIR / "s8post_1000sqd_fiducial_nonoise_1dcomb_*.npz")
+filestring_auto = str(OUTPUT_DIR / "s8post_1000sqd_fiducial_nonoise_1dcomb_*.npz")
 
 # Use regex to filter files for auto and croco
 posteriors_croco = read_posterior_files(filestring_croco, regex=r'1dcomb_\d+_croco\.npz')
