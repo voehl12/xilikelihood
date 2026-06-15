@@ -57,25 +57,40 @@ export CUDA_VISIBLE_DEVICES=""
 
 ## Official Smoke Check
 
-The official smoke check for the archived release is the focused mock-data test
-target:
+The official smoke check for the archived release is a finite copula
+log-likelihood evaluation:
+
+```bash
+likelihood-env/bin/python -m pytest tests/test_likelihood_gaussian_mode.py::test_copula_mode_does_not_require_fixed_covariance -q
+```
+
+This target verifies the core likelihood path used by the paper in a small
+configuration: likelihood setup, deterministic mock-data generation, exact
+marginal construction, copula evaluation, and a finite
+``XiLikelihood.loglikelihood(...)`` result without requiring the fixed Gaussian
+comparison covariance.
+
+Current result on this branch:
+
+```text
+1 passed in 50.97s
+```
+
+## Broader Verification
+
+The focused mock-data tests are a useful supporting check for deterministic
+mock data, Gaussian covariance generation, save/load behavior, and finite
+Gaussian mock-data draws:
 
 ```bash
 likelihood-env/bin/python -m pytest tests/test_mock_data.py -q
 ```
 
-This target verifies the small deterministic mock-data workflow used as the
-lightweight reproducibility check: likelihood setup, fiducial theory mean
-generation, Gaussian covariance construction, save/load behavior, and finite
-Gaussian mock-data draws.
-
-Current result on this branch:
+Current supporting-check result on this branch:
 
 ```text
 2 passed in 79.11s
 ```
-
-## Broader Verification
 
 Run the full test suite when the full dependency stack is available:
 
