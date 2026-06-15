@@ -70,10 +70,11 @@ marginal construction, copula evaluation, and a finite
 ``XiLikelihood.loglikelihood(...)`` result without requiring the fixed Gaussian
 comparison covariance.
 
-Current result on this branch:
+Current result on this branch, run on a Slurm compute node
+(``eu-a2p-341``) on 2026-06-15:
 
 ```text
-1 passed in 50.97s
+1 passed in 14.12s
 ```
 
 ## Broader Verification
