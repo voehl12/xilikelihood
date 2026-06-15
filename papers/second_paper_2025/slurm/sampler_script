@@ -11,5 +11,5 @@
 
 module load stack/2024-06 gcc/12.2.0 swig/4.1.1-ipvpwcc python/3.11.6 cuda/12.1.1 nccl/2.18.3-1 openblas/0.3.24 python_cuda/3.11.6 cmake/3.27.7 cudnn/9.2.0
 export JAX_PLATFORMS=cpu
-source /cluster/home/veoehl/xilikelihood/2ptlikelihood/bin/activate
+source /cluster/home/veoehl/xilikelihood/likelihood-env/bin/activate
 python /cluster/home/veoehl/xilikelihood/papers/second_paper_2025/analysis/sampler.py $SLURM_ARRAY_TASK_ID

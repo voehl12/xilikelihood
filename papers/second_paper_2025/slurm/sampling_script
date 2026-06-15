@@ -19,5 +19,6 @@ export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
 export JAX_PLATFORMS=cpu
 source /cluster/home/veoehl/xilikelihood/likelihood-env/bin/activate
-export PYTHONPATH=/cluster/home/veoehl/xilikelihood-sampler:$PYTHONPATH
-srun python /cluster/home/veoehl/xilikelihood-sampler/papers/second_paper_2025/analysis/sampler.py 7
+export PYTHONPATH=/cluster/home/veoehl/xilikelihood:$PYTHONPATH
+JOB_NUMBER=${SLURM_ARRAY_TASK_ID:-7}
+srun python /cluster/home/veoehl/xilikelihood/papers/second_paper_2025/analysis/sampler.py $JOB_NUMBER

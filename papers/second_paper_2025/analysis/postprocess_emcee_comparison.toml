@@ -78,9 +78,9 @@ global_drop_rel = 0.02
 
 
 [comparison]
-#base_dir = "/cluster/home/veoehl/xilikelihood-sampler/papers/second_paper_2025/slurm"
+#base_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/slurm"
 # Optional overrides if chains live in different directories.
-gaussian_base_dir = "/cluster/home/veoehl/xilikelihood-sampler/papers/second_paper_2025/slurm/sampler_output_gaussian/"
+gaussian_base_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/slurm/sampler_output_gaussian/"
 copula_base_dir = "/cluster/home/veoehl/xilikelihood/papers/second_paper_2025/slurm/sampler_output_test/chains/"
 
 run_name = "exact_lmax20_n1024_minang5"
@@ -89,4 +89,3 @@ copula_likelihood_type = "copula"
 gaussian_likelihood_type = "gaussian"
 
 output_prefix = "smooth_twoD"
-
