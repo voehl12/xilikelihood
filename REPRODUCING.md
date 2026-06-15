@@ -55,19 +55,27 @@ export JAX_PLATFORMS=cpu
 export CUDA_VISIBLE_DEVICES=""
 ```
 
-## Quick Verification
+## Official Smoke Check
 
-Run the focused mock-data tests:
+The official smoke check for the archived release is the focused mock-data test
+target:
 
 ```bash
 likelihood-env/bin/python -m pytest tests/test_mock_data.py -q
 ```
+
+This target verifies the small deterministic mock-data workflow used as the
+lightweight reproducibility check: likelihood setup, fiducial theory mean
+generation, Gaussian covariance construction, save/load behavior, and finite
+Gaussian mock-data draws.
 
 Current result on this branch:
 
 ```text
 2 passed in 79.11s
 ```
+
+## Broader Verification
 
 Run the full test suite when the full dependency stack is available:
 
@@ -78,9 +86,11 @@ likelihood-env/bin/python -m pytest
 If using another environment, replace ``likelihood-env/bin/python`` with the
 Python executable for that environment.
 
-## Likelihood Smoke Check
+## Smoke Check Workflow
 
-This smoke check exercises the main likelihood path without map simulations:
+The test target above is the recommended command to run. The following snippet
+shows the same style of workflow in a readable form and exercises the main
+likelihood path without map simulations:
 
 ```python
 import numpy as np
@@ -126,8 +136,9 @@ log_likelihood = likelihood.loglikelihood(
 print(log_likelihood)
 ```
 
-The output value is not a paper result; it is a functional check that the
-likelihood machinery runs end to end for a small configuration.
+The output value is not a paper result. The archived-release smoke check is the
+pytest command above; this snippet is included to make the workflow easy to
+inspect and adapt.
 
 ## Paper Analysis Entry Points
 
@@ -201,4 +212,3 @@ Before citing the repository in the paper:
 5. Create a GitHub release from that tag.
 6. Archive the release on Zenodo.
 7. Update ``CITATION.cff``, this file, and the README with the Zenodo DOI.
-
