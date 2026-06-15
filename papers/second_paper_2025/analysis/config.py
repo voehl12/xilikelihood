@@ -1,5 +1,11 @@
-# config.py in the analysis folder
-"""Configuration for S8 posterior analysis."""
+"""Configuration for second-paper S8/copula posterior analyses.
+
+This module centralizes the mask choices, fiducial cosmology, grid definitions,
+prior settings, and file-name conventions used by the paper-analysis scripts in
+this directory. Several paths intentionally reflect the ETH cluster environment
+used for the production runs; change ``PACKAGE_DIR`` and output roots when
+porting the scripts.
+"""
 
 from pathlib import Path
 
@@ -7,7 +13,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = DATA_DIR / "s8posts"
-PACKAGE_DIR = '/cluster/home/veoehl/xilikelihood/'  # Go up from analysis to package root
+# Package/cache root used by the production cluster runs. Override when running
+# outside the original ETH workspace.
+PACKAGE_DIR = '/cluster/home/veoehl/xilikelihood/'
 
 REDSHIFT_BINS_PATH = BASE_DIR.parent.parent.parent / "redshift_bins/KiDS"
 

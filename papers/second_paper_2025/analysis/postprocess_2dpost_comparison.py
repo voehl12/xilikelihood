@@ -1,5 +1,9 @@
-"""
-Create side-by-side 2D posterior comparison plots for different masks or scale cuts.
+"""Create side-by-side 2D posterior comparison plots.
+
+The comparison configurations below reproduce paper diagnostics for mask area
+and angular scale-cut choices. Their file paths point to the original cluster
+posterior products; update the active configuration or paths when using copied
+artifacts.
 """
 import numpy as np
 import matplotlib.pyplot as plt

@@ -1,3 +1,11 @@
+"""Derive 1D S8 posterior summaries from saved nD posterior files.
+
+This postprocessing helper reads the second-paper ``s8post_*_nd_*.npz`` outputs,
+splits them by auto/cross and angular-bin selections, and produces comparison
+plots for the copula and Gaussian approximations. It expects the files to live
+under ``OUTPUT_DIR`` from ``config.py``.
+"""
+
 import numpy as np
 from config import OUTPUT_DIR
 import xilikelihood as xlh

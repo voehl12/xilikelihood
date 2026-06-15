@@ -1,3 +1,15 @@
+"""Create pairwise likelihood-vs-simulation comparison plots.
+
+This script prepares a small two-redshift-bin/two-angular-bin likelihood,
+caches 2D likelihood slices, and calls ``xilikelihood.plotting.plot_corner`` to
+compare likelihood contours to precomputed simulation products. It is intended
+as a paper-plot reproduction helper and assumes access to the original cluster
+simulation paths configured below.
+
+The script sets JAX to CPU before importing ``xilikelihood`` to avoid GPU
+initialization issues on shared nodes.
+"""
+
 import numpy as np
 import os
 os.environ['JAX_PLATFORMS'] = 'cpu'

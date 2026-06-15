@@ -30,7 +30,9 @@ from config import (
     PACKAGE_DIR
 )
 
-# TODO: use larger mask, play with cf parameters, compare to gaussian likelihood in any case, plot times as well.
+# Production runs can switch between the configured mask variants in config.py.
+# The current script records both copula/Gaussian likelihood values and timing
+# for the active scale-cut grid.
 
 
 def make_plot(df, png_path, pdf_path=None):

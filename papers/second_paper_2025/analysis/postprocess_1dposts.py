@@ -1,3 +1,11 @@
+"""Postprocess saved 1D S8 posterior products.
+
+This script reads the ``s8post_*_1dcomb_*.npz`` files written by the
+second-paper S8 posterior jobs and compares auto- and cross-correlation
+constraints. It is a plotting/postprocessing helper for existing outputs rather
+than a likelihood-generation entry point.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from calc_pdf import get_combs

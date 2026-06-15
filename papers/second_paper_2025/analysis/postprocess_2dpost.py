@@ -1,5 +1,10 @@
-"""
-Postprocess 2D posterior grids and create contour plots with marginals.
+"""Postprocess 2D posterior grids and create contour plots with marginals.
+
+This script collects the ``posterior_<job>.npy`` chunks produced by
+``s8_om_posterior.py`` and turns them into normalized copula/Gaussian posterior
+surfaces for paper plots. The default input path in ``main`` points to the
+original cluster scratch location and should be changed when processing a local
+copy of the posterior grid.
 """
 import numpy as np
 import os

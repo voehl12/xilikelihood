@@ -1,6 +1,11 @@
-# Nautilus nested sampling for xilikelihood posterior analysis.
-# Run with: python sampler_nested.py <job_number>
-# Note: set USE_NESTED=True in config or pass --nested flag to use this sampler.
+"""Nautilus nested-sampling driver for second-paper posterior checks.
+
+Run with ``python sampler_nested.py <job_number>``. This is a production-analysis
+driver analogous to ``sampler.py`` and expects the configured paper data files,
+mask setup, and scratch/log locations to be available. Set ``USE_NESTED=True``
+in ``config.py`` or pass the corresponding workflow flag before using it as the
+active sampler.
+"""
 
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")

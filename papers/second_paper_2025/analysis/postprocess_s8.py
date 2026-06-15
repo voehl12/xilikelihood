@@ -1,3 +1,11 @@
+"""Legacy S8 posterior postprocessing scratch script.
+
+This predates the current ``xilikelihood`` package layout and keeps older import
+names such as ``likelihood``, ``theory_cl``, and ``simulate``. It is retained as
+historical analysis context; for the second-paper workflow use
+``s8_posteriors.py`` and the newer postprocessing scripts in this directory.
+"""
+
 import numpy as np
 import scipy
 from likelihood import XiLikelihood, fiducial_dataspace

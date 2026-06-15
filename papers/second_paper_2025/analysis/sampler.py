@@ -1,4 +1,17 @@
-# at current setup needs a lot of memory:  srun --pty  --mem-per-cpu=4096 --cpus-per-task=32 --time=4:00:00 bash
+"""MPI/emcee sampler entry point for second-paper posterior runs.
+
+This script is a production-analysis driver, not a lightweight example. It
+constructs the paper likelihood, creates deterministic mock data and a Gaussian
+comparison covariance, and samples the configured parameter space with emcee.
+The current implementation uses an MPI pool for parallel likelihood calls.
+Outputs are written to ``sampler_output_gaussian`` and per-rank logs are placed
+in scratch when available.
+
+The current setup can require substantial memory. The historical interactive
+allocation used during development was roughly:
+
+    srun --pty --mem-per-cpu=4096 --cpus-per-task=32 --time=4:00:00 bash
+"""
 
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")

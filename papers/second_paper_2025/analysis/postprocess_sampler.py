@@ -1,3 +1,10 @@
+"""Inspect and plot one saved sampler HDF5 chain.
+
+This is a small exploratory postprocessing helper for a historical sampler
+output file. The default ``filepath`` points to the original analysis workspace;
+change it before running on a copied chain.
+"""
+
 import h5py
 import numpy as np
 import corner

@@ -1,3 +1,17 @@
+"""Run one chunk of the second-paper 2D Omega_m/S8 posterior grid.
+
+Usage
+-----
+python s8_om_posterior.py <job_number>
+
+The full grid is split over ``N_JOBS_2D`` jobs configured in ``config.py`` and
+was intended to run through the SLURM array scripts in ``../slurm``. Each job
+writes a structured ``posterior_<job>.npy`` file under
+``/cluster/scratch/veoehl/posteriors/<SLURM_JOB_NAME>/``. The script constructs
+deterministic fiducial mock data in a temporary directory and evaluates both the
+copula likelihood and Gaussian comparison likelihood.
+"""
+
 import numpy as np
 import time, random
 import sys, os
@@ -170,7 +184,6 @@ try:
 except Exception as e:
     logger.error(f"Failed to save results: {e}")
     sys.exit(1)
-
 
 
 

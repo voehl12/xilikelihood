@@ -1,10 +1,13 @@
-"""
-Compare Gaussian and Lognormal simulation distributions.
+"""Compare Gaussian and lognormal simulation distributions.
 
 This script loads correlation function measurements from both Gaussian and lognormal
 simulations and creates corner plots to show that their distributions are similar
 (i.e., the non-Gaussianity in lognormal fields doesn't significantly affect the
 measured correlation functions).
+
+The input paths below point to the original cluster simulation outputs. Treat
+this as a postprocessing helper for already-generated simulations, not as a
+self-contained reproduction script.
 """
 
 import numpy as np
