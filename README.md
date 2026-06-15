@@ -9,7 +9,7 @@ This repository is being prepared as the reference implementation for:
 - **New paper:** https://arxiv.org/abs/2604.07336
 - **First paper / earlier method:** https://arxiv.org/abs/2407.08718
 
-The final archived release and DOI will be added once the publication-ready repository tag is created. For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
+The final archived release and DOI will be added once the publication-ready repository tag is created. Citation metadata is provided in [CITATION.cff](CITATION.cff). For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
 
 ## Installation
 

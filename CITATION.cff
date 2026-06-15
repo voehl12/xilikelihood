@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the archived repository release and the associated paper."
+title: "xilikelihood: non-Gaussian weak-lensing correlation-function likelihoods"
+version: "0.1.0"
+date-released: "2026-06-15"
+type: software
+license: MIT
+url: "https://github.com/veoehl12/xilikelihood"
+repository-code: "https://github.com/veoehl12/xilikelihood"
+abstract: >-
+  xilikelihood implements likelihood calculations for two-point weak-lensing
+  correlation-function data vectors, combining exact one-dimensional marginals
+  with a Gaussian copula approximation to the multivariate likelihood.
+authors:
+  - family-names: "Oehl"
+    given-names: "Veronika"
+    email: "veoehl@phys.ethz.ch"
+  - family-names: "Troester"
+    given-names: "Tilman"
+preferred-citation:
+  type: article
+  title: "The Non-Gaussian Weak-Lensing Likelihood: A Multivariate Copula Construction and Impact on Cosmological Constraints"
+  authors:
+    - family-names: "Oehl"
+      given-names: "Veronika"
+    - family-names: "Troester"
+      given-names: "Tilman"
+  year: 2026
+  doi: "10.48550/arXiv.2604.07336"
+  url: "https://arxiv.org/abs/2604.07336"
+references:
+  - type: article
+    title: "The exact non-Gaussian weak lensing likelihood: A framework to calculate analytic likelihoods for correlation functions on masked Gaussian random fields"
+    authors:
+      - family-names: "Oehl"
+        given-names: "Veronika"
+      - family-names: "Troester"
+        given-names: "Tilman"
+    year: 2025
+    doi: "10.33232/001c.144235"
+    url: "https://arxiv.org/abs/2407.08718"
