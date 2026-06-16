@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the archived repository release and the associated paper."
 title: "xilikelihood: non-Gaussian weak-lensing correlation-function likelihoods"
-version: "0.1.0"
+version: "1.1.0"
 date-released: "2026-06-16"
 type: software
 license: MIT

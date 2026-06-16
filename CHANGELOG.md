@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - 2026-06-16
+## 1.1.0 - 2026-06-16
 
 Paper-reference release preparation for the copula weak-lensing likelihood
 analysis.
