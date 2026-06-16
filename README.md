@@ -19,7 +19,7 @@ For development or if you need the custom GLASS version:
 
 ```bash
 # Clone the repository
-git clone https://github.com/veoehl12/xilikelihood.git
+git clone https://github.com/voehl12/xilikelihood.git
 cd xilikelihood
 
 

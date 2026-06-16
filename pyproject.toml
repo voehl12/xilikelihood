@@ -54,10 +54,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/veoehl12/xilikelihood"
-"Bug Tracker" = "https://github.com/veoehl12/xilikelihood/issues"
+Homepage = "https://github.com/voehl12/xilikelihood"
+"Bug Tracker" = "https://github.com/voehl12/xilikelihood/issues"
 Documentation = "https://xilikelihood.readthedocs.io/"
-"Source Code" = "https://github.com/veoehl12/xilikelihood"
+"Source Code" = "https://github.com/voehl12/xilikelihood"
 
 [tool.setuptools]
 packages = ["xilikelihood"]

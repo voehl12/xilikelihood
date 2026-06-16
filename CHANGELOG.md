@@ -1,0 +1,23 @@
+# Changelog
+
+## 0.1.0 - 2026-06-16
+
+Paper-reference release preparation for the copula weak-lensing likelihood
+analysis.
+
+- Added paper-facing citation metadata and reproduction guidance.
+- Documented the official finite copula likelihood smoke check.
+- Recorded the compute-node smoke-check result:
+  `tests/test_likelihood_gaussian_mode.py::test_copula_mode_does_not_require_fixed_covariance`
+  passed on 2026-06-15.
+- Clarified bundled data, generated artifacts, and external HPC path policy.
+- Added repository and API reference documentation for future maintainers.
+- Cleaned publication-facing paper-analysis script notes and stale batch paths.
+
+Known limitations:
+
+- Full paper reproduction remains HPC-oriented and depends on external/generated
+  analysis products that are not stored in Git.
+- Simulation-backed mock-data paths require the custom GLASS dependency.
+- `include_ximinus=True` remains incomplete/deprecated and is not part of the
+  validated paper-reference workflow.
