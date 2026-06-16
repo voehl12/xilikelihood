@@ -6,8 +6,7 @@ Post-release polish before Zenodo archival.
 
 - Aligned README dependency wording with package metadata.
 - Clarified that GLASS is the custom dependency for simulation-backed paths.
-- Emphasized JAX-accelerated likelihood kernels while noting CPU execution
-  support.
+- Emphasized JAX-accelerated likelihood kernels and CPU/GPU backend support.
 - Updated package, documentation, and citation metadata version strings.
 
 ## 1.1.0 - 2026-06-16

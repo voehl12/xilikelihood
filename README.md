@@ -1,6 +1,6 @@
 # xilikelihood
 
-Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood, with JAX-accelerated numerical kernels and CPU execution support.
+Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood, with JAX-accelerated numerical kernels that can run on CPU or GPU backends.
 
 ## Paper Reproducibility
 
@@ -91,7 +91,7 @@ mock data (`random="frommap"`) requires the custom GLASS dependency.
 ## Key Features
 
 - **Likelihood**: Exact likelihoods for correlation functions (currently only $\xi^+$)
-- **JAX acceleration**: Numerical likelihood kernels use JAX while supporting CPU-only execution for reproducible cluster and laptop runs
+- **JAX acceleration**: Numerical likelihood kernels use JAX and can run on CPU or GPU backends; the official smoke check was recorded on CPU for portability
 - **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
 - **Simulations**: Generate correlation functions from Gaussian random maps
 - **Theory**: Compute power spectra and correlation functions

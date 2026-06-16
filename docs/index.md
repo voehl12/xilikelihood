@@ -1,6 +1,6 @@
 # xilikelihood Documentation
 
-Welcome to the documentation for **xilikelihood**, a Python package for computing two-point correlation function likelihoods on masked spin-2 Gaussian random fields. The primary and currently implemented application are cosmic shear correlation function datavectors. The likelihood implementation uses JAX-accelerated numerical kernels while supporting CPU-only execution for reproducible runs on shared clusters.
+Welcome to the documentation for **xilikelihood**, a Python package for computing two-point correlation function likelihoods on masked spin-2 Gaussian random fields. The primary and currently implemented application are cosmic shear correlation function datavectors. The likelihood implementation uses JAX-accelerated numerical kernels that can run on CPU or GPU backends; the official smoke check was recorded on CPU for portability.
 
 ```{toctree}
 :maxdepth: 2
