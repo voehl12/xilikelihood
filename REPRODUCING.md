@@ -6,8 +6,8 @@ analysis described in:
 - New paper: https://arxiv.org/abs/2604.07336
 - First paper / earlier method: https://arxiv.org/abs/2407.08718
 
-The final paper-reference Git tag and Zenodo DOI will be added here after the
-publication-ready release is archived.
+The paper-reference release is archived on Zenodo:
+https://doi.org/10.5281/zenodo.20714933.
 
 ## Scope
 
@@ -256,16 +256,8 @@ not require GLASS simulations. The map-backed path
   and runtime.
 - Some paper scripts preserve absolute cluster paths for reproducibility of the
   original workflow.
-- The final archived DOI is pending until the paper-reference release is made.
 
-## Release Checklist
+Current archived release:
 
-Before citing the repository in the paper:
-
-1. Confirm this document matches the final paper scripts and data policy.
-2. Run the focused smoke tests and record the result.
-3. Run the full test suite if the dependency stack is available.
-4. Create a Git tag for the paper-reference state.
-5. Create a GitHub release from that tag.
-6. Archive the release on Zenodo.
-7. Update ``CITATION.cff``, this file, and the README with the Zenodo DOI.
+- Git tag: ``v1.1.1``
+- Zenodo DOI: https://doi.org/10.5281/zenodo.20714933

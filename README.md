@@ -4,12 +4,12 @@ Two-point correlation function likelihoods for cosmic shear surveys. Exact one-d
 
 ## Paper Reproducibility
 
-This repository is being prepared as the reference implementation for:
+This repository is the archived reference implementation for:
 
 - **New paper:** https://arxiv.org/abs/2604.07336
 - **First paper / earlier method:** https://arxiv.org/abs/2407.08718
 
-The final archived release and DOI will be added once the publication-ready repository tag is created. Citation metadata is provided in [CITATION.cff](CITATION.cff). For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
+Archived release DOI: https://doi.org/10.5281/zenodo.20714933. Citation metadata is provided in [CITATION.cff](CITATION.cff). For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
 
 ## Installation
 
