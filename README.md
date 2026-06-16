@@ -1,6 +1,6 @@
 # xilikelihood
 
-Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood.
+Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood, with JAX-accelerated numerical kernels and CPU execution support.
 
 ## Paper Reproducibility
 
@@ -91,6 +91,7 @@ mock data (`random="frommap"`) requires the custom GLASS dependency.
 ## Key Features
 
 - **Likelihood**: Exact likelihoods for correlation functions (currently only $\xi^+$)
+- **JAX acceleration**: Numerical likelihood kernels use JAX while supporting CPU-only execution for reproducible cluster and laptop runs
 - **Scale-dependent marginals**: Gaussian marginals below configurable angular scale cuts
 - **Simulations**: Generate correlation functions from Gaussian random maps
 - **Theory**: Compute power spectra and correlation functions
@@ -103,21 +104,25 @@ mock data (`random="frommap"`) requires the custom GLASS dependency.
 ## Dependencies
 
 ### Required Dependencies
-- `numpy>=1.20.0`
+- `numpy>=1.20.0,<2.0`
 - `scipy>=1.7.0`
+- `jax>=0.3.0`
+- `jaxlib>=0.3.0`
 - `healpy>=1.14.0`
+- `treecorr>=4.0.0`
+- `pyccl>=2.0.0`
 - `matplotlib>=3.5.0`
-- `jax>=0.3.0` (for accelerated computations)
+- `seaborn>=0.11.0`
+- `wigner>=1.0.0`
 
-### Optional Dependencies
-- **GLASS** (custom version): Required for Gaussian field simulations
+### Custom Simulation Dependency
+- **GLASS** (custom version): Required for Gaussian and lognormal field simulations and
+  simulation-backed mock data
   - Install from: `pip install -e ../glass`
   - Without this, simulation functions will raise informative errors. Likelihood setup, transformations, and many tests can still be used without running simulations.
-- **TreeCorr**: For alternative correlation function estimation
-- **pyccl**: For cosmological computations
-- **wigner**: For curved sky correlation function calculations 
 
-The package is designed to work without optional dependencies, providing informative error messages when they're needed.
+The deterministic likelihood and mock-data workflows documented for the
+paper-reference smoke checks do not require GLASS simulations.
 
 ## Scientific Background
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1 - 2026-06-16
+
+Post-release polish before Zenodo archival.
+
+- Aligned README dependency wording with package metadata.
+- Clarified that GLASS is the custom dependency for simulation-backed paths.
+- Emphasized JAX-accelerated likelihood kernels while noting CPU execution
+  support.
+- Updated package, documentation, and citation metadata version strings.
+
 ## 1.1.0 - 2026-06-16
 
 Paper-reference release preparation for the copula weak-lensing likelihood
