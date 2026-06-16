@@ -1,5 +1,7 @@
 # xilikelihood
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20717704.svg)](https://doi.org/10.5281/zenodo.20717704)
+
 Two-point correlation function likelihoods for cosmic shear surveys. Exact one-dimensional marginals and a copula approximation to the full n-dimensional likelihood, with JAX-accelerated numerical kernels that can run on CPU or GPU backends.
 
 ## Paper Reproducibility
