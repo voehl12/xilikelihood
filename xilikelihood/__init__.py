@@ -3,7 +3,7 @@
 xilikelihood: Two-point correlation function likelihood analysis.
 """
 
-__version__ = "1.1.1"
+__version__ = "2.0.0"
 
 # Core user-facing functions
 from .core_utils import ensure_jax_device

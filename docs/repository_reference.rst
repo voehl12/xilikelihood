@@ -392,12 +392,15 @@ Common Gotchas
 * ``LikelihoodConfig.large_angle_threshold`` is in degrees. The default is
   ``15/60`` degrees, so exact marginals are used for angular bins whose lower
   edge is at least 15 arcmin.
-* Cache names encode ``lmax``, ``nside``, mask name, theory name, and noise
-  where relevant. If a run silently reuses a cache, confirm those encoded
-  parameters match the intended analysis.
+* Cache filenames encode key parameters such as ``lmax``, ``nside``, mask name,
+  theory name, and noise state where relevant. They do not encode every
+  possible analysis choice, so a run can intentionally or accidentally reuse an
+  existing cache. If a result looks stale, check that the encoded parameters and
+  cache directory match the intended analysis before deleting or regenerating
+  files.
 
-Suggested Change Strategy
--------------------------
+Maintenance Guidance
+--------------------
 
 For reusable behavior, start in ``xilikelihood/`` and add focused tests in
 ``tests/``. For paper reproduction, change files under ``papers/.../analysis``

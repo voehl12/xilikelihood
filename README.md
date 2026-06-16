@@ -9,7 +9,7 @@ This repository is the archived reference implementation for:
 - **New paper:** https://arxiv.org/abs/2604.07336
 - **First paper / earlier method:** https://arxiv.org/abs/2407.08718
 
-Archived release DOI: https://doi.org/10.5281/zenodo.20714933. Citation metadata is provided in [CITATION.cff](CITATION.cff). For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
+Archived release DOI: https://doi.org/10.5281/zenodo.20714932. Citation metadata is provided in [CITATION.cff](CITATION.cff). For reproduction instructions, see [REPRODUCING.md](REPRODUCING.md). For the repository map and maintenance notes, see the [repository reference guide](docs/repository_reference.rst).
 
 ## Installation
 
