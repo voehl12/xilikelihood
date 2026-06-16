@@ -7,7 +7,7 @@ analysis described in:
 - First paper / earlier method: https://arxiv.org/abs/2407.08718
 
 The paper-reference release is archived on Zenodo:
-https://doi.org/10.5281/zenodo.20714932.
+https://doi.org/10.5281/zenodo.20717704.
 
 ## Scope
 
@@ -260,4 +260,4 @@ not require GLASS simulations. The map-backed path
 Current archived release:
 
 - Git tag: ``v2.0.0``
-- Zenodo DOI: https://doi.org/10.5281/zenodo.20714932
+- Zenodo DOI: https://doi.org/10.5281/zenodo.20717704

@@ -7,8 +7,7 @@ analysis.
 
 - Versioned as ``2.0.0`` to reflect API and workflow evolution since the
   first-paper code state.
-- Uses the Zenodo concept DOI for the archived repository:
-  https://doi.org/10.5281/zenodo.20714932.
+- Archived release on Zenodo: https://doi.org/10.5281/zenodo.20717704.
 - Keeps the ``v1.1.1`` metadata polish and Read the Docs fixes.
 - Clarifies repository-reference maintenance guidance and cache reuse caveats.
 
