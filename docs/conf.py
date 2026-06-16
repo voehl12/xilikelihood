@@ -3,6 +3,13 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import os
+
+# Keep documentation imports passive and portable on Read the Docs. The package
+# checks the JAX backend at import time, so force CPU before autodoc imports it.
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -30,13 +37,13 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_rtd_theme'
-html_static_path = ['_static']
+html_static_path = []
 
 # -- Options for autodoc ----------------------------------------------------
 autodoc_member_order = 'bysource'
 autodoc_typehints = 'description'
-# Mock imports for heavy dependencies that are hard to install on ReadTheDocs
-autodoc_mock_imports = ['glass', 'pyccl', 'healpy', 'treecorr', 'wigner', 'jax', 'jaxlib']
+# GLASS is a custom simulation dependency and is not installed on Read the Docs.
+autodoc_mock_imports = ['glass']
 
 # -- Options for Napoleon (Google/NumPy style docstrings) ------------------
 napoleon_google_docstring = True
@@ -50,7 +57,7 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'matplotlib': ('https://matplotlib.org/stable/', None),
-    'jax': ('https://jax.readthedocs.io/en/latest/', None),
+    'jax': ('https://docs.jax.dev/en/latest/', None),
 }
 
 # -- MyST Parser configuration ----------------------------------------------
